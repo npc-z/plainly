@@ -1,0 +1,349 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway, not production. Ticket 16.
+
+  Plan: three structurally different information architectures for the main
+  window (history + settings), switchable in the control bar, drawn with the
+  panel from ticket 06 visible so the relationship between the temporary surface
+  and the resident one is part of what gets judged.
+
+  Second axis is only for judging the settings/first-run screens; it is not a
+  design choice. Nothing here is real: no model, no storage, no clipboard.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>plainly — main window IA prototype (ticket 16)</title>
+<style>
+  :root{
+    --bg:#e9e7e1; --win:#ffffff; --ink:#22252b; --dim:#6b7280; --rule:#e3e1db;
+    --panel:#191d26; --pink:#eef1f7; --accent:#3b6fd4; --chip:#f1efe9;
+    --warn:#8a6d1f; --warnbg:#fdf6e0; --ok:#3f7d3f;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font:13px/1.5 system-ui,-apple-system,"Noto Sans CJK SC",sans-serif;
+       background:var(--bg);color:var(--ink);padding-bottom:80px}
+  .win{max-width:1180px;margin:22px auto;background:var(--win);border-radius:10px;
+       box-shadow:0 1px 4px rgba(0,0,0,.14);overflow:hidden;min-height:620px;
+       display:flex;flex-direction:column}
+  .tbar{display:flex;align-items:center;gap:14px;padding:10px 16px;border-bottom:1px solid var(--rule);
+        background:#fbfaf7}
+  .tbar .name{font-weight:600}
+  nav a{color:var(--dim);text-decoration:none;padding:4px 8px;border-radius:6px;cursor:pointer}
+  nav a.on{background:var(--chip);color:var(--ink);font-weight:600}
+  .body{flex:1;display:flex;min-height:0}
+  .col{display:flex;flex-direction:column;min-height:0}
+  .list{width:330px;border-right:1px solid var(--rule);background:#fcfbf9}
+  .detail{flex:1;padding:20px 24px;overflow:auto}
+  .search{padding:10px 12px;border-bottom:1px solid var(--rule)}
+  .search input{width:100%;padding:6px 9px;border:1px solid var(--rule);border-radius:7px;
+                font:12.5px inherit;background:#fff}
+  .row{padding:10px 12px;border-bottom:1px solid var(--rule);cursor:pointer}
+  .row.on{background:#eef2fb;border-left:3px solid var(--accent);padding-left:9px}
+  .row .txt{font-size:12.5px;color:#2f333b;margin-bottom:4px;
+            display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .meta{font-size:11px;color:var(--dim);display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  .tag{background:var(--chip);border-radius:999px;padding:1px 7px;font-size:10.5px}
+  .tag.local{background:var(--warnbg);color:var(--warn)}
+  h2{margin:0 0 4px;font-size:16px}
+  h3{margin:18px 0 6px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+  .orig{color:var(--dim);font-style:italic;font-size:12.5px;background:#faf9f6;
+        border-left:3px solid var(--rule);padding:8px 10px;border-radius:0 6px 6px 0}
+  .comp{font-size:14px;margin:10px 0}
+  .gl{margin:0 0 4px;color:#3c4250}
+  .gl code{background:var(--chip);padding:1px 5px;border-radius:4px;font:12px ui-monospace,monospace}
+  .zh{color:var(--ok);margin-top:8px}
+  .actions{display:flex;gap:6px;flex-wrap:wrap;margin:14px 0 0}
+  button{font:12px inherit;background:#fff;border:1px solid var(--rule);border-radius:7px;
+         padding:5px 10px;cursor:pointer}
+  button:hover{background:#f7f6f3}
+  button.pri{background:var(--accent);border-color:var(--accent);color:#fff}
+  button[disabled]{opacity:.45;cursor:not-allowed}
+  .note{font-size:11.5px;color:var(--dim);margin-top:4px}
+  .warnbox{background:var(--warnbg);border:1px solid #ecdcae;color:var(--warn);
+           border-radius:8px;padding:8px 10px;font-size:12px;margin:6px 0}
+  .field{margin:10px 0}
+  .field label{display:block;font-size:12px;color:#3c4250;margin-bottom:3px;font-weight:600}
+  .field select,.field input[type=number],.field textarea{
+    font:12.5px inherit;padding:5px 8px;border:1px solid var(--rule);border-radius:7px;background:#fff;width:100%}
+  .field textarea{height:96px;font:12px ui-monospace,monospace;resize:vertical}
+  .field select{width:auto;min-width:220px}
+  .inline{display:flex;gap:10px;align-items:center}
+  .inline input[type=number]{width:80px}
+  /* variant C: timeline + inspector, settings as a sheet */
+  .tl{width:330px;border-right:1px solid var(--rule);background:#fcfbf9;overflow:auto}
+  .tl .day{font-size:11px;color:var(--dim);padding:10px 12px 4px;position:sticky;top:0;
+           background:#fcfbf9;border-bottom:1px solid var(--rule)}
+  .tl .item{padding:9px 12px 9px 22px;position:relative;cursor:pointer;border-bottom:1px solid #f2f0ec}
+  .tl .item::before{content:"";position:absolute;left:10px;top:15px;width:6px;height:6px;
+                    border-radius:50%;background:var(--rule)}
+  .tl .item.on::before{background:var(--accent)}
+  .tl .item.on{background:#eef2fb}
+  .sheet{position:absolute;right:0;top:0;bottom:0;width:430px;background:#fff;
+         border-left:1px solid var(--rule);box-shadow:-8px 0 24px rgba(0,0,0,.08);padding:18px;overflow:auto}
+  .scrim{position:absolute;inset:0;background:rgba(20,22,26,.18)}
+  .stage{position:relative;flex:1;display:flex;min-height:0}
+  /* variant B: single column push */
+  .page{padding:22px 26px;overflow:auto;flex:1}
+  .back{color:var(--accent);cursor:pointer;font-size:12px;margin-bottom:10px;display:inline-block}
+  /* the panel from ticket 06, drawn so the relationship is visible */
+  .panel{position:fixed;top:22px;left:22px;width:400px;background:var(--panel);color:var(--pink);
+         border-radius:12px;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.45);font-size:12px;z-index:9}
+  .panel .ph{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#141821;
+             border-bottom:1px solid #2c3242;font-size:11.5px}
+  .panel .pp{padding:12px 14px}
+  .panel .orig{color:#7f8798;background:none;border:0;padding:0;font-size:11px;margin-bottom:8px}
+  .panel .zh{color:#9ece6a}
+  .panel .pchip{margin-left:auto;font-size:10.5px;padding:1px 7px;border-radius:999px;
+                border:1px solid #2a3a5a;background:#141c2c;color:#7aa2f7}
+  /* control bar: deliberately not part of the design */
+  .switcher{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);display:flex;
+            align-items:center;gap:9px;background:#0b0d12;color:#fff;padding:7px 12px;
+            border-radius:999px;box-shadow:0 8px 26px rgba(0,0,0,.4);font-size:12px;z-index:99}
+  .switcher button{background:#232838;color:#fff;border:1px solid #3a4152;border-radius:8px;padding:3px 9px}
+  .switcher button.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  .switcher .lab{min-width:180px;text-align:center;color:#cfd6e6}
+  .switcher .grp{display:flex;gap:4px;padding-left:9px;border-left:1px solid #2a2f3d}
+  .switcher .tag{color:#8b93a7}
+</style>
+</head>
+<body>
+
+<div class="win" id="win"></div>
+
+<div class="panel" id="panel">
+  <div class="ph"><span>Explain clipboard</span><span class="pchip">deepseek-flash</span></div>
+  <div class="pp">
+    <div class="orig">The report stops short of apportioning blame, but the implications are hard to miss.</div>
+    <div class="comp">The report does not say who is to blame, but the meaning is easy to see.</div>
+    <p class="gl"><code>stops short of</code> → does not go as far as</p>
+    <p class="gl"><code>hard to miss</code> → very easy to notice</p>
+    <div class="zh">报告没有指责任何人，但其中的含义很难被忽略。</div>
+  </div>
+</div>
+
+<div class="switcher">
+  <button id="prev">◀</button><span class="lab" id="lab">A (split view)</span><button id="next">▶</button>
+  <span class="grp"><span class="tag">screen</span>
+    <button data-screen="history" class="on">history</button>
+    <button data-screen="settings">settings</button>
+    <button data-screen="firstrun">first run</button></span>
+  <span class="grp"><span class="tag">provider</span>
+    <button data-prov="cloud" class="on">cloud</button>
+    <button data-prov="local">local</button></span>
+  <span class="grp"><button id="panelToggle">panel</button></span>
+</div>
+
+<script>
+const NAMES = { A:"split view", B:"single column", C:"timeline + sheet" };
+const V = ["A","B","C"];
+const q = new URLSearchParams(location.search);
+let variant = (q.get("variant")||"A").toUpperCase(); if(!V.includes(variant)) variant="A";
+let screen = q.get("screen")||"history";
+let prov = q.get("provider")||"cloud";
+let panelOn = q.get("panel") !== "off";
+
+const RECORDS = [
+  { id:1, text:"The report stops short of apportioning blame, but the implications are hard to miss.",
+    comp:"The report does not say who is to blame, but the meaning is easy to see.",
+    glosses:[["stops short of","does not go as far as"],["hard to miss","very easy to notice"]],
+    zh:"报告没有指责任何人，但其中的含义很难被忽略。",
+    level:"B2", prov:prov, model: prov==="local"?"Qwen3-4B":"deepseek-flash",
+    pv:"v6-synthesis · 8f3a1c", tags:["legal","work"], when:"今天 18:42" },
+  { id:2, text:"He bottled it at the last minute and threw his colleagues under the bus.",
+    comp:"He lost his nerve at the last moment and blamed his colleagues to save himself.",
+    glosses:[["bottled it","lost your nerve and failed to do something"],["threw … under the bus","sacrificed them to protect yourself"]],
+    zh:"他在最后一刻退缩了，还让同事替他背锅。",
+    level:"B2", prov:"local", model:"Qwen3-4B", pv:"v6-synthesis · 8f3a1c", tags:["idiom"], when:"今天 17:20" },
+  { id:3, text:"The lessee shall indemnify the lessor against all claims arising from the premises.",
+    comp:"The tenant must protect the landlord from any claims that come from the property.",
+    glosses:[["shall indemnify","must protect against loss"],["the lessee","the tenant"]],
+    zh:"承租人应就房屋引起的一切索赔向出租人作出赔偿。",
+    level:"B2", prov:"local", model:"Qwen3-4B", pv:"v6-synthesis · 8f3a1c", tags:["legal"], when:"昨天 21:05" }
+];
+
+const badge = r => `<span class="tag${r.prov==="local"?" local":""}">${r.model}</span>`;
+const rowMeta = r => `<div class="meta">${badge(r)}<span>${r.level}</span><span>${r.pv}</span>
+  ${r.tags.map(t=>`<span class="tag">${t}</span>`).join("")}<span>· ${r.when}</span></div>`;
+
+const detail = r => `
+  <h2>一条解释</h2>
+  <div class="meta" style="margin-bottom:12px">${badge(r)}<span>${r.level}</span><span>${r.pv}</span>
+    <span>· ${r.when}</span></div>
+  <div class="orig">${r.text}</div>
+  <h3>改写</h3><p class="comp">${r.comp}</p>
+  <h3>关键帮助</h3>${r.glosses.map(([e,g])=>`<p class="gl"><code>${e}</code> → ${g}</p>`).join("")}
+  <h3>翻译</h3><p class="zh">${r.zh}</p>
+  <div class="actions">
+    <button class="pri">重新生成</button><button>复制 markdown</button>
+    <button>导出这一条</button><button>加标签</button><button>删除</button>
+  </div>
+  <p class="note">同一段落可能有多个 prompt 版本的记录——这是可比对的特性，所以这里显示版本号。</p>`;
+
+const settingsBody = () => `
+  <h3>语言与等级</h3>
+  <div class="field"><label>等级</label>
+    <select><option>B2 — English-first；能读 nuance 与搭配</option>
+      <option>A2 — 极常见词、短句、具体</option>
+      <option>C1 — 更多保留原结构，处理语域与习语</option></select>
+    <p class="note">等级**必须带含义显示**：实测只发标签时，两个等级经常产出完全相同的解释。</p></div>
+  <div class="field"><label>母语（翻译语言）</label><select><option>中文</option><option>日本語</option></select></div>
+  <h3>Provider</h3>
+  <div class="field"><label>当前</label><select><option>deepseek-flash（云端）</option>
+    <option>Qwen3-4B（本地 · 127.0.0.1:3060）</option></select></div>
+  <div class="field"><label>思考模式</label>
+    <select><option>关（默认）— 1.3 秒</option><option>开 — 10–13 秒，更详尽</option></select>
+    <p class="note">只在这里可改；面板上不暴露，因为 10 秒在"按键看一眼"里不可用。</p></div>
+  <div class="field"><label>API key</label><input value="已保存在 keyring ········" disabled>
+    <p class="note">环境变量 &gt; keyring &gt; 仅本次会话，绝不落明文。</p></div>
+  <h3>提示词</h3>
+  <div class="field"><label>你的附录（追加在出厂提示词之后）</label>
+    <textarea>只解释学术与商务语域的搭配，日常口语可以略过。</textarea>
+    <p class="note">只能加、不能删基础规则——基础是 artifact 的定义，否则各人的历史不可比。</p></div>
+  <div class="warnbox">出厂提示词已更新（v6 → v7，内联了等级含义）。你的附录不受影响；
+    但之后每次查询会按新版本重新生成一次。</div>
+  <h3>行为</h3>
+  <div class="field"><label>复制后自动弹出面板</label>
+    <div class="inline"><input type="checkbox" disabled><span class="note" style="margin:0">
+      你的桌面不支持：需要 wlroots 类合成器的 data-control 协议（当前无此协议）</span></div></div>
+  <div class="field"><label>面板位置</label>
+    <select><option>左上（距上/左 28px）</option><option>右上</option><option>右下</option>
+      <option>左下</option><option>跟随当前显示器</option></select>
+    <p class="note">角是分辨率无关的——换分辨率或换显示器不会把面板丢到屏幕外。不做自由拖动。</p></div>
+  <div class="field"><label>面板自动消失</label>
+    <div class="inline"><input type="checkbox"><input type="number" value="20"><span>秒</span></div>
+    <p class="note">默认关。关掉时面板会一直留着，直到你用鼠标点掉（面板不接收键盘，Esc 无效）。</p></div>
+  <h3>数据</h3>
+  <div class="field"><label>导出</label><div class="actions">
+    <button>全部导出为 Markdown</button><button>全部导出为 Anki CSV</button><button>全部导出为原始 CSV</button></div></div>
+  <div class="actions"><button>打开数据目录</button><button>清除全部历史…</button></div>`;
+
+const firstRun = () => `
+  <h2>还没有可用的 provider</h2>
+  <p class="note" style="font-size:13px">plainly 需要至少一个能解释文本的模型。两条路，任选一条：</p>
+  <div class="field"><label>① 用云端（推荐，默认）</label>
+    <div class="actions"><button class="pri">填入 API key</button><button>查看支持哪些服务</button></div>
+    <p class="note">deepseek-flash，关思考：约 1.3 秒。key 存 keyring。</p></div>
+  <div class="field"><label>② 用本机模型（离线）</label>
+    <div class="actions"><button>探测本机常见端口</button></div>
+    <p class="note">会在 127.0.0.1 的常见端口上找 llama.cpp / Ollama / LM Studio。
+      已知它会**自信地把习语讲错**——够用，但不能无条件信任。</p></div>
+  <div class="actions"><button>稍后再说</button></div>`;
+
+/* ─────────────────────────── A: split view ─────────────────────────── */
+function A(){
+  const nav = `<div class="tbar"><span class="name">plainly</span>
+    <nav><a class="${screen!=="settings"&&screen!=="firstrun"?"on":""}" data-go="history">历史</a>
+         <a class="${screen==="settings"?"on":""}" data-go="settings">设置</a></nav></div>`;
+  if (screen==="firstrun") return nav + `<div class="body"><div class="detail">${firstRun()}</div></div>`;
+  if (screen==="settings") return nav + `<div class="body">
+      <div class="list" style="padding:10px 0">
+        <div class="row">语言与等级</div><div class="row on">Provider</div>
+        <div class="row">提示词</div><div class="row">行为</div><div class="row">数据</div></div>
+      <div class="detail">${settingsBody()}</div></div>`;
+  const sel = RECORDS[0];
+  return nav + `<div class="body">
+    <div class="list">
+      <div class="search"><input placeholder="搜索英文原文、改写、expression…"></div>
+      ${RECORDS.map((r,i)=>`<div class="row ${i===0?"on":""}" data-rec="${i}">
+        <div class="txt">${r.text}</div>${rowMeta(r)}</div>`).join("")}
+    </div>
+    <div class="detail">${detail(sel)}</div></div>`;
+}
+
+/* ─────────────────────── B: single column, push pages ─────────────────────── */
+let pushed = null;
+function B(){
+  const nav = `<div class="tbar"><span class="name">plainly</span>
+    <nav><a data-go="history">历史</a><a data-go="settings">设置</a></nav></div>`;
+  if (screen==="firstrun") return nav + `<div class="page">${firstRun()}</div>`;
+  if (screen==="settings") return nav + `<div class="page">${settingsBody()}</div>`;
+  if (pushed !== null) return nav + `<div class="page">
+      <span class="back" data-back="1">← 返回列表</span>${detail(RECORDS[pushed])}</div>`;
+  return nav + `<div class="page">
+    <div class="search" style="padding:0 0 12px;border:0"><input placeholder="搜索英文原文、改写、expression…"></div>
+    ${RECORDS.map((r,i)=>`<div class="row" data-rec="${i}" style="padding-left:0;padding-right:0">
+      <div class="txt">${r.text}</div>${rowMeta(r)}</div>`).join("")}</div>`;
+}
+
+/* ────────────────────── C: timeline + inspector, settings sheet ────────────────────── */
+function C(){
+  const nav = `<div class="tbar"><span class="name">plainly</span>
+    <nav><a data-go="history" class="${screen==="history"?"on":""}">时间线</a>
+         <a data-go="settings" class="${screen==="settings"?"on":""}">设置</a></nav>
+    <span class="note" style="margin-left:auto">共 ${RECORDS.length} 条</span></div>`;
+  if (screen==="firstrun") return nav + `<div class="stage"><div class="page">${firstRun()}</div></div>`;
+  const tl = `<div class="tl">
+      <div class="day">今天</div>
+      ${RECORDS.slice(0,2).map((r,i)=>`<div class="item ${i===0?"on":""}" data-rec="${i}">
+        <div class="txt" style="font-size:12.5px;margin-bottom:3px">${r.text.slice(0,58)}…</div>
+        <div class="meta">${badge(r)}<span>${r.level}</span></div></div>`).join("")}
+      <div class="day">昨天</div>
+      <div class="item" data-rec="2"><div class="txt" style="font-size:12.5px;margin-bottom:3px">
+        ${RECORDS[2].text.slice(0,58)}…</div><div class="meta">${badge(RECORDS[2])}</div></div>
+    </div>`;
+  const insp = `<div class="detail">${detail(RECORDS[0])}</div>`;
+  const sheet = screen==="settings" ? `<div class="scrim"></div>
+      <div class="sheet"><div class="actions" style="justify-content:flex-end;margin:0 0 10px">
+        <button data-go="history">关闭</button></div>${settingsBody()}</div>` : "";
+  return nav + `<div class="stage">${tl}${insp}${sheet}</div>`;
+}
+
+const R = { A, B, C };
+
+function draw(){
+  document.getElementById("win").innerHTML = R[variant]();
+  document.getElementById("lab").textContent = `${variant} (${NAMES[variant]})`;
+  document.getElementById("panel").style.display = panelOn ? "" : "none";
+  document.getElementById("panelToggle").classList.toggle("on", panelOn);
+  document.querySelectorAll("[data-screen]").forEach(b=>b.classList.toggle("on", b.dataset.screen===screen));
+  document.querySelectorAll("[data-prov]").forEach(b=>b.classList.toggle("on", b.dataset.prov===prov));
+  document.querySelectorAll("[data-go]").forEach(a=>a.onclick=()=>{ if(a.dataset.go==="history") pushed=null; screen=a.dataset.go; draw(); });
+  document.querySelectorAll("[data-back]").forEach(a=>a.onclick=()=>{ pushed=null; draw(); });
+  document.querySelectorAll("[data-rec]").forEach(el=>el.onclick=()=>{
+    pushed = +el.dataset.rec; screen="history"; draw();
+    // clicking a record in B pushes; in A/C the selection is cosmetic in this mock
+    if (variant==="B") draw();
+  });
+  const u = new URL(location.href);
+  ["variant","screen","provider"].forEach(k=>u.searchParams.set(k, {variant,screen,provider:prov}[k]));
+  if(!panelOn) u.searchParams.set("panel","off"); else u.searchParams.delete("panel");
+  history.replaceState(null,"",u);
+}
+document.getElementById("prev").onclick=()=>{ variant=V[(V.indexOf(variant)+2)%3]; draw(); };
+document.getElementById("next").onclick=()=>{ variant=V[(V.indexOf(variant)+1)%3]; draw(); };
+document.querySelectorAll("[data-screen]").forEach(b=>b.onclick=()=>{ screen=b.dataset.screen; pushed=null; draw(); });
+document.querySelectorAll("[data-prov]").forEach(b=>b.onclick=()=>{ prov=b.dataset.prov; draw(); });
+document.getElementById("panelToggle").onclick=()=>{ panelOn=!panelOn; draw(); };
+addEventListener("keydown",e=>{
+  const t=e.target; if(t&&(t.tagName==="INPUT"||t.tagName==="TEXTAREA"||t.isContentEditable)) return;
+  if(e.key==="ArrowLeft"){ variant=V[(V.indexOf(variant)+2)%3]; draw(); }
+  if(e.key==="ArrowRight"){ variant=V[(V.indexOf(variant)+1)%3]; draw(); }
+});
+
+// MOCK-ONLY affordance so the drag can be felt before committing to it.
+// The real panel moves by changing its layer-shell margins; this just moves a div.
+(function(){
+  const p = document.getElementById("panel");
+  p.style.cursor = "grab";
+  let dragging=false, ox=0, oy=0;
+  p.addEventListener("pointerdown", e=>{
+    if (e.target.closest("button")) return;          // buttons stay clickable
+    const r = p.getBoundingClientRect();
+    dragging=true; ox=e.clientX-r.left; oy=e.clientY-r.top;
+    p.setPointerCapture(e.pointerId); p.style.cursor="grabbing"; e.preventDefault();
+  });
+  p.addEventListener("pointermove", e=>{
+    if(!dragging) return;
+    p.style.left = Math.max(0, Math.min(innerWidth-80, e.clientX-ox)) + "px";
+    p.style.top  = Math.max(0, Math.min(innerHeight-60, e.clientY-oy)) + "px";
+  });
+  const stop=()=>{ if(!dragging) return; dragging=false; p.style.cursor="grab"; };
+  p.addEventListener("pointerup", stop);
+  p.addEventListener("pointercancel", stop);
+})();
+draw();
+</script>
+</body>
+</html>
