@@ -1,7 +1,7 @@
 # 12 Tauri 面板的内容渲染验证（宿主机）
 
 Type: task
-Status: open
+Status: resolved
 
 ## Question
 
@@ -13,25 +13,90 @@ Status: open
 - 但屏幕上一个像素都没有：表面 470x340、`is_layer_window() == true`、WebKit 的 WebProcess/NetworkProcess 都在跑、webview 子控件 `visible == true`。
 - 沙箱里的证据指向**环境**：没有 `/dev/dri`，MESA 报 `ZINK: failed to choose pdev` / `egl: failed to create dri2 screen`。纯 GTK（Cairo，CPU）画得出来，WebKit 的合成路径不行。
 
-## Checklist
+## Checklist（2026-10-05 修正：**不要 checkout 那个分支**）
+
+`prototype/panel-form` 是**孤立分支**——与 master 无共同祖先、只含 `prototype/panel-form/`。**检出它会把地图从工作区移走**（这是故意的，见票据 02）。所以用 worktree 取到仓库外的临时目录：
 
 ```sh
-git checkout prototype/panel-form
-cd prototype/panel-form/tauri
-nix-shell --run 'cargo run'
+cd /home/npc/github/user/plainly
+git worktree add /tmp/panel-proto prototype/panel-form
+cd /tmp/panel-proto/prototype/panel-form/tauri
+
+ls -l /dev/dri      # 沙箱里这项是 "No such file" —— 宿主上应该有，这是最可能的差异
+
+# 第一次要编译（约 400 个 crate + Tauri，几分钟）。顺手复用你已有的 cargo 缓存：
+nix-shell --run 'CARGO_HOME=$HOME/.cargo PANEL_SECONDS=25 cargo run'
 ```
 
-首次要重新编译（`target/` 与 `.cargo-home/` 已被清掉）。`tauri/shell.nix` 把 `CARGO_HOME` 与 XDG 目录指到工作区内，是为了绕开 agent 沙箱的只读限制；在宿主 shell 里 `~/.cargo` 可写，可以不管这些 export。
+**如果看到面板** → 就完事了：截图、告诉我路径。
+**如果仍然全屏无像素** → 依次试两个变体，每次都要**等日志出现 `[proto][t+1s]` 再截图**（那是面板 map 之后 1 秒，早截会误判）：
 
-依次观察并记录：
+```sh
+# 变体 2：软件 GL
+nix-shell --run 'CARGO_HOME=$HOME/.cargo LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe PANEL_SECONDS=25 cargo run' > v2.log 2>&1 &
+until grep -q 't+1s' v2.log 2>/dev/null; do sleep 1; done
+grim -g "0,0 700x640" v2.png
+wait
 
-1. 面板是否出现在屏幕**左上**（锚定、浮层、不抢焦点——切到终端继续打字，看输入是否仍进终端）。
-2. 若仍无像素，试 `LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe`。
-3. 再试**去掉** `WEBKIT_DISABLE_COMPOSITING_MODE=1`（这个环境变量在部分 WebKitGTK 版本上会导致空渲染）。
-4. 记录 `ls -l /dev/dri` 与 MESA 的输出，以及 `niri msg --json layers` 是否仍列出 `plainly-panel`。
+# 变体 3：去掉 WEBKIT_DISABLE_COMPOSITING_MODE（它在部分 WebKitGTK 版本上导致空渲染）
+nix-shell --run 'CARGO_HOME=$HOME/.cargo; unset WEBKIT_DISABLE_COMPOSITING_MODE; PANEL_SECONDS=25 cargo run' > v3.log 2>&1 &
+until grep -q 't+1s' v3.log 2>/dev/null; do sleep 1; done
+grim -g "0,0 700x640" v3.png
+wait
+```
+
+**要带回来的**（把**路径**贴给我就行，图我自己看）：
+
+1. 各次运行的 `*.png`
+2. `ls -l /dev/dri` 的输出
+3. 各次 `.log` 里的 MESA / EGL / GLR 行，以及全部 `[proto]` 行
+4. 运行期间 `niri msg --json layers` 是否列出 `plainly-panel`
+
+**收尾**（那个目录是一次性的）：
+
+```sh
+git worktree remove /tmp/panel-proto --force
+```
+
+**为什么原型现在是"不透明 + 实底"的样子**：`transparent(false)`，页面背景是纯色 `#2b3245`。那是沙箱里最后一次调试留下的状态，**正好适合这次测试**——只要 WebKit 画出任何东西，就是一个可见的矩形；透明底反而让"没画"和"画了透明内容"难以区分。
 
 ## Answer 要给出的事实
 
 一条结论就够：**"一个 Tauri 进程内做 layer-shell 面板"是可行的，还是必须退回独立面板进程**（C 原型已证明那条路可用，见分支上的 `panel.c`；截图按隐私决定未保留到仓库里）。
 
 若宿主机上仍画不出，请记下排查到的最后一层原因（是 WebKit 与 layer 表面的兼容问题，还是本机 GL 栈的问题）——这决定票据 07 与实现规格里面板该怎么写。
+
+## Answer
+
+**结论：不可以。一个 Tauri 进程内的 layer-shell 面板画不出内容——表面造得出来，却没有任何像素上屏。面板形态因此改为独立的 layer-shell 面板进程，即票据 02 当时列为退路、且已经实证过的那条。**
+
+### 怎么测的（全部在宿主机上，GPU 与命名空间均可用）
+
+先排除了环境：`/dev/dri` 可见（`card1`/`card2`/`renderD128`），EGL 正常（`AMD Radeon Graphics (radeonsi, renoir, DRM 3.64) Mesa 26.2.3`），`bwrap` 与 `unshare -Ur` 都 OK。（早先那条 `bwrap` 失败是**假阴性**——NixOS 没有 `/bin/true`。）
+
+然后逐条验证原型状态，**全部正常**：
+
+- `init_layer_shell` 之前：`mapped=false realized=false`（gtk-layer-shell 的前置条件满足）
+- 之后：`is_layer_window=true`
+- 合成器侧：`niri msg --json layers` 列出 `{"namespace":"plainly-panel","layer":"Overlay","keyboard_interactivity":"None"}`；焦点窗口 id 前后不变；不在 `niri msg windows` 里
+- 控件树：`GtkApplicationWindow alloc=470x340 mapped=true` → `GtkBox 470x340` → **`WebKitWebView alloc=470x340 mapped=true`**
+
+**而屏幕上一个像素都没有。** 左上抓过、屏幕中央抓过（排除"锚点没生效、表面被居中"）、`t+1s`/`t+5s`/`t+10s` 三个时刻抓过（排除"截早了"）。
+
+**决定性实验**：把窗口**自己**涂成纯红（`window { background-color: #cc2222; }`，**完全绕过 WebKit**）→ 仍然什么都没有。**全屏 2560×1600 的颜色直方图里，匹配 `#cc2222` 的像素为 0。**
+
+**对照组**：同一目录、同一会话里的独立 GTK C 原型（`panel.c`）**照常渲染**。
+
+### 结论与排除清单
+
+**表面能造，内容上不去。** 逐条排除：GPU、挂载命名空间、`/dev/dri`、窗口未 realize、控件未分配、锚点位置、截图时机——**以及 WebKit**（连 GTK 自己画在窗口上的纯色背景都不上屏）。
+
+### 对地图的影响
+
+- **票据 02 的结论更正**：它依据"合成器确认了表面"判定"一个 Tauri 进程就够"。表面确实造得出来，但**画不出内容**。面板形态改为**独立的面板进程**。
+- **票据 05 的"两个二进制"不再确定**：面板成为独立进程后，二进制集合可能是三个（`plainly` CLI / `plainly-panel` 面板 / `plainly-desktop` 主窗口）。
+- **票据 07 已解锁**，而它的核心问题变了：要定的是**谁 spawn 面板**——合成器键绑直接 spawn 面板进程（则桌面应用不必常驻），还是桌面应用常驻并由它 spawn。
+
+### 资产
+
+原型在 `prototype/panel-form` 分支；宿主机 worktree 跑完已清理（回收 2.2G），诊断用的红色已还原，结论写进分支 README。

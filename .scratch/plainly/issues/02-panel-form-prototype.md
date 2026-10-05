@@ -45,4 +45,14 @@ Status: resolved
 
 因此该分支**只读、不可合并、不要在其上工作**——检出它会把地图从工作区移走，合并它会删掉其余一切。要看文件用 `git show`，或 `git worktree add` 到一个临时目录。内含 C 原型 + Tauri 原型 + 运行说明（无截图）。
 
+### ⚠️ 更正（2026-10-05，来自票据 12）
+
+**上面"面板形态定为一个 Tauri 进程内的 layer-shell overlay"的结论被推翻。**
+
+宿主机复验（`/dev/dri` 可见、EGL 正常、命名空间可用、`init_layer_shell` 时窗口 `mapped=false realized=false`、控件全部正常分配 `WebKitWebView 470x340 mapped=true`、合成器也列出了表面）表明：**表面造得出来，内容画不上去**——连**直接画在窗口上的纯色背景**都不上屏（全屏颜色直方图匹配 0 像素），而同一会话里独立 GTK 的 C 原型照常渲染。
+
+**面板形态因此改为：独立的面板进程**（独立 GTK + gtk-layer-shell）。这正是本票据当时列为退路、并且**已经实证过**的那条。上面取舍表里"进程数 1"那一行不成立，第 2 行（独立面板进程，进程数 2）成为选定方案。
+
+仍然成立的结论：Tauri 的 reparenting hack 确实不需要（`visible(false)` + `init_layer_shell()` 先于 `show()` 足以创建表面），`show()` 不递归显示子控件所以要 `show_all()`，以及 `gtk-layer-shell` 需要 `v0_6` feature——这些对**任何**用 Tauri 的场景仍然有效，只是不能用来做面板。
+
 **遗留的环境知识**（票据 07 与 nix flake 要用）：在这台机器上跑 Tauri 需要 `rustc`（系统 profile 里没有）、`pkg-config`、`gtk3`、`gtk-layer-shell`、`webkitgtk_4_1`、`glib-networking`、`openssl`；`CARGO_HOME` 与 XDG 目录不能落在只读的 `~/.cargo`、`~/.cache`、`~/.local/share`；并且 `icons/icon.png` 必须存在，否则 `generate_context!` 直接 panic。

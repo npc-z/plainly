@@ -67,3 +67,8 @@ Status: resolved
 - **票据 13**：workspace 必须拆到能让 CLI 单独构建（`cargo build -p plainly-cli`）且不带 GUI 依赖；**devShell 本身不变**（桌面 crate 仍需要那套 GTK 依赖）。
 - **票据 07**：键绑指向 **`plainly-desktop --explain-clipboard`**，不是 `plainly`。
 - **票据 06**：面板可以由**运行中实例收到的 argv** 触发（single-instance 回调），UI 要给这条路径一个明确的状态。
+
+## Comments
+
+- **⚠️ 2026-10-05 更正（来自票据 12）**：上面"两个二进制"里的第二个——`plainly-desktop`（Tauri GUI）——**画不出 layer 面板**（票据 12 实测：表面造得出来，连纯色背景都不上屏）。所以**二进制集合很可能是三个**：`plainly`（CLI）/ **`plainly-panel`（独立 layer-shell 面板进程）** / `plainly-desktop`（Tauri 主窗口：历史、设置、导出）。
+  这不推翻本票据的其他决策（CLI 依旧瘦、依旧不依赖 GUI；stdout/stderr 约定、退出码、`--regenerate` 都不变），只是"两个"这个数字不再确定。**谁 spawn 面板由票据 07 决定。**
