@@ -20,3 +20,7 @@ Blocked by: 02, 12
 - niri 的已知 bug 应对：`spawn` 在按键按下时就触发，客户端可能收不到修饰键抬起。
 
 输入：`research/os-integration-feasibility.md` 第 5 节。
+
+## Comments
+
+- **来自票据 05 的一条接口事实**：键绑应指向 **`plainly-desktop --explain-clipboard`**，**不是** `plainly`。理由：CLI 是瘦的、不依赖 GUI（票据 05 决策 1），它无法触发面板；而桌面二进制用 `tauri-plugin-single-instance` 的 D-Bus 交接**自己就能做到**"已有实例 → 转发 argv → 面板显示；无实例 → 冷启动并显示面板"。所以票据 05 已把"CLI → unix socket → 守护进程"这条备选整条删掉，这里的最小配置片段也不该出现 CLI。

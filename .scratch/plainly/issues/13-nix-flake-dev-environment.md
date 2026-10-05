@@ -42,3 +42,11 @@ Status: resolved
 - **`sqlite3` 命令行工具**是另一回事：应用不需要它，但开发时想手动翻历史库会用得上。可**可选地**放进 devShell（几 MB，与发布物无关），或临时 `nix-shell -p sqlite`。这不改变"sqlite 不进 flake"的决定——那条说的是**库**。
 
 **这张票据没有做、也不做**：不写 flake。flake 本身是实现，归 `/to-spec` 之后的实现阶段。
+
+### 后续补充（2026-10-05，来自票据 05）
+
+票据 05 定了**两个二进制**：瘦 `plainly`（CLI，只依赖 core）+ `plainly-desktop`（Tauri GUI），并明确 **CLI crate 不得依赖 GTK/webkit**。对开发环境的影响：
+
+- **devShell 的包清单不变**——桌面 crate 仍然需要那套 GTK/webkit 依赖，flake 照样要提供。
+- **但 workspace 必须拆到能单独构建 CLI**（`cargo build -p plainly-cli`），否则"CLI 不依赖图形库"只是一句空话。这条约束落在实现阶段的 crate 布局上，flake 只需保证 `-p` 单独构建能跑通（CI 若要跑 CLI 单测，就靠这个）。
+- 因此票据 13 的"是否同时当 CI 环境"那条推迟决定依然成立，但**多了一个前提**：CI 里的 CLI 作业需要用 `-p plainly-cli` 构建，而不是整个 workspace。
