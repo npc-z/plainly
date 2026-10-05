@@ -38,6 +38,7 @@ Labels: wayfinder:map
 - [13 开发环境（nix flake）的范围与内容](issues/13-nix-flake-dev-environment.md)：`flake-utils` + `fenix` 的 flake（锁 `nixos-unstable`），v0 只列 `x86_64-linux`；环境含 `gtk-layer-shell` + `webkitgtk_4_1` + **`GDK_BACKEND=wayland`（与 readest 相反）**；不抄 readest 的 `nixConfig`/Cachix 块；sqlite 走 `rusqlite` 的 `bundled`，系统无需安装；**CI 推迟到实现阶段**；图标提交占位图。
 - [03 默认本地模型质量门槛](issues/03-local-model-quality-bar.md)：手上那个 4B（Qwen3-4B-Instruct-2507 Q4_K_M，`--ctx-size 16384`，RTX 3060）**12/12 契约通过**、平均 **1.87 秒/段**（热态）、冷启动 7.2 秒——**本地模式可用，我早先"30–60 秒"的判断作废**。但内容有硬错：`bottled it` 讲反、`grammar` 0/12、语域与反讽出错。**本地 = 够用但不可无条件信任**。同时补上了票据 01 的空白（schema 首次跑通 provider 路径）。
 - [14 第一版系统提示词的标定](issues/14-prompt-calibration.md)：出厂提示词 = **v6-synthesis**（v2 的 grammar 措辞 + v5 的准确规则 + "必须是真改写"）；**`grammar` 字段保留**（云端 10–11/12 触发，本地 0/12 是能力边界）；**默认 provider = 云端 + 关闭思考**（1.3 秒、15× 少 token，详尽度降但正确性不降），**本地为离线备选**；`expression` 子串校验做。**本地那些错是能力问题不是提示词问题**——同一批提示词云端全对。分步式 v3 剔除（本地照抄原文 5/12，云端字段名漂移 12/12 违约）。
+- [04 Provider 抽象与运行时探测](issues/04-provider-abstraction.md)：**预设 + 自定义**配置面（必须能选模型）；**能力靠试一次探针**（DeepSeek `json_schema` → 400，llama.cpp → 200）并缓存，拒绝会腐烂的静态表；云端默认 `deepseek-flash` + 关思考，本地**探测常见端口**而非猜；错误分四类（畸形重试 / **同一错误重复即停** / 4xx 降级并重探 / 429-5xx 退避）；**thinking 建模为 `on|off|unsupported` 能力**（默认 off）；**v0 不做流式**（与"必须等完整 JSON 才校验"天生冲突，而等待只有 1.3–1.7 秒）。
 
 ## Not yet specified
 
@@ -49,7 +50,6 @@ Labels: wayfinder:map
 - 搜索与标签的具体形态（等 08）。
 - 应用自身 UI 的语言与本地化策略：01 已把 markdown 与 UI 的标题拆开（markdown 用固定英文，UI 标题可本地化），**UI 本身中/英/双语仍待定**。
 - 剪贴板里的敏感内容（密码管理器 hint）如何处理。
-- 思考开关的归属：**写死关闭**（票据 14 的默认就是它），还是作为"详尽档 / 快速档"暴露给用户？答案大概取决于票据 06 怎样呈现设置页——所以现在只是可疑问题，还不是票据。
 
 ## Out of scope
 
