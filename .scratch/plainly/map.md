@@ -39,6 +39,7 @@ Labels: wayfinder:map
 - [03 默认本地模型质量门槛](issues/03-local-model-quality-bar.md)：手上那个 4B（Qwen3-4B-Instruct-2507 Q4_K_M，`--ctx-size 16384`，RTX 3060）**12/12 契约通过**、平均 **1.87 秒/段**（热态）、冷启动 7.2 秒——**本地模式可用，我早先"30–60 秒"的判断作废**。但内容有硬错：`bottled it` 讲反、`grammar` 0/12、语域与反讽出错。**本地 = 够用但不可无条件信任**。同时补上了票据 01 的空白（schema 首次跑通 provider 路径）。
 - [14 第一版系统提示词的标定](issues/14-prompt-calibration.md)：出厂提示词 = **v6-synthesis**（v2 的 grammar 措辞 + v5 的准确规则 + "必须是真改写"）；**`grammar` 字段保留**（云端 10–11/12 触发，本地 0/12 是能力边界）；**默认 provider = 云端 + 关闭思考**（1.3 秒、15× 少 token，详尽度降但正确性不降），**本地为离线备选**；`expression` 子串校验做。**本地那些错是能力问题不是提示词问题**——同一批提示词云端全对。分步式 v3 剔除（本地照抄原文 5/12，云端字段名漂移 12/12 违约）。
 - [04 Provider 抽象与运行时探测](issues/04-provider-abstraction.md)：**预设 + 自定义**配置面（必须能选模型）；**能力靠试一次探针**（DeepSeek `json_schema` → 400，llama.cpp → 200）并缓存，拒绝会腐烂的静态表；云端默认 `deepseek-flash` + 关思考，本地**探测常见端口**而非猜；错误分四类（畸形重试 / **同一错误重复即停** / 4xx 降级并重探 / 429-5xx 退避）；**thinking 建模为 `on|off|unsupported` 能力**（默认 off）；**v0 不做流式**（与"必须等完整 JSON 才校验"天生冲突，而等待只有 1.3–1.7 秒）。
+- [15 配置与密钥的存放](issues/15-config-and-secrets-store.md)：**配置走 TOML 文件、记录走 SQLite**（config 目录 vs data 目录，Tauri 的 `appConfigDir`/`appDataDir`）；**能力探测缓存单独放 `appCacheDir`**（可重算，不与人的选择竞争）；**密钥三级：环境变量 > keyring > 仅会话内存，绝不落明文**；一个文件分 `[app]` / `[providers.*]` / `[prompts]` 三段；identifier 定为 `dev.plainly.app`；项目级覆盖 v0 不做。**边界：存储归 15 / 记录归 08 / 提示词内容归 09**——等级与母语的值存在 `[app]`，但每条 Record 盖上"当时用的值"。
 
 ## Not yet specified
 

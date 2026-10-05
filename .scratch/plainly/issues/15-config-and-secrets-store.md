@@ -1,7 +1,7 @@
 # 15 配置与密钥的存放
 
 Type: grilling
-Status: open
+Status: resolved
 
 ## Question
 
@@ -22,3 +22,54 @@ Status: open
 ## Comments
 
 - 一个已实测的相关事实：`~/.config/plainly/deepseek.key` 这个"一个文件一个密钥、权限 600"的临时做法已经在用（票据 14 的实验），但它**不是**产品方案——它只是让 agent 能拿到 key 跑基准。产品方案在本票据定。
+
+## Answer
+
+五条决策，2026-10-05 全部按推荐采纳。
+
+### 探测到的事实
+
+- XDG 变量都未设 → 走默认：`~/.config` / `~/.local/share` / `~/.cache`。
+- readest 的 identifier 是 `com.bilingify.readest`，但**这台机器上没有它的任何配置/数据目录**（只克隆过、没运行过）——所以它只是命名约定，**不构成"Tauri 应用实际落在哪"的经验先例**。
+- **keyring 4.2.0 在 Linux 上不需要 C 库**：默认 `v1` feature 挂的是 `zbus-secret-service-keyring-store`（**纯 Rust D-Bus**），也可拆成 `keyring-core` + 该 store 的更瘦组合。与本机 `org.freedesktop.secrets` 已注册正好对得上——**flake 里不需要 libsecret**。
+
+### 1. 配置走文件，记录走 SQLite
+
+- **配置：TOML**，放 config 目录（`appConfigDir()`）。
+- **历史库：SQLite**，放 data 目录（`appDataDir()`）。
+
+理由：配置要能人编、进 dotfiles、可 diff；历史库是重数据、要索引与事务。
+**认下的代价**：CLI 与 GUI 都会写同一份配置 → 必须**原子写**（临时文件 + rename）与**外部修改检测**（mtime），否则两个进程会互相吃掉对方的修改。这是"选文件格式"的直接后果，不是实现细节。
+
+### 2. 能力探测缓存与配置分开
+
+探测结果进 **`XDG_CACHE_HOME`**（`appCacheDir()`）。理由：它**可重算、会被覆盖**；混进配置就等于让"机器探测的结论"与"人写下的选择"在同一处竞争，而清 cache 不该丢失用户意图。代价：云端重探要一次极小 API 调用（票据 04 已定探针形态）。
+
+### 3. 密钥三级，绝不落明文
+
+优先级：**环境变量 `PLAINLY_<PROVIDER>_API_KEY`** > **OS keyring** > **仅本次会话内存**（退出即失，明确告知）。
+
+- 环境变量优先的额外好处：agent / 脚本能临时喂 key，而不碰用户的 keyring。
+- **拒绝明文文件**：那正是"密钥进 keyring"要避免的东西，写了等于推翻该决策。
+- 也**拒绝直接禁用云端功能**：headless 环境会被彻底挡住。
+
+### 4. 一个文件、分 section；三条边界
+
+- `[app]`：等级、母语、导出格式、UI 语言
+- `[providers.<name>]`：endpoint、model、thinking
+- `[prompts]`：**归票据 09**
+
+**边界（精确版）**：**存储归 15 / 记录归 08 / 提示词内容归 09**。
+
+有一处交叉必须说准，否则两边会打架：**等级与母语是存储在 `[app]` 里的值（15 的地盘：文件格式、位置、原子写、密钥），但它们的含义、默认值、如何喂进提示词、以及版本迁移归 09**；而**每条 Record 会盖上"当时用的"等级与母语（08 的地盘）**——这正是"改设置不会改变旧记录"能成立的机制。09 的迁移语义必须与它一致，或明确推翻它。
+
+### 5. 位置、identifier、项目级覆盖
+
+- 位置用 Tauri 的 `appConfigDir()` / `appDataDir()` / `appCacheDir()`（Linux 落在 `$XDG_*_HOME/<identifier>`），**不另造 `~/.config/plainly/`**。
+- **identifier 定为 `dev.plainly.app`**（原型里是 `dev.plainly.panelproto`）——它决定配置目录名。
+- **项目级覆盖：v0 不做**（单用户桌面应用没有"项目"概念）；配置格式留出"从 cwd 向上查找"的余地。
+
+### 留给下游
+
+- 票据 09：等级/母语等 prompt 输入参数的语义归它（已加 Comment 划清）。
+- 票据 08：Record 里存的是**当时用的值**（字符串），不是指向当前设置的外键（已加 Comment）。
