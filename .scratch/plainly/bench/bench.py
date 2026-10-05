@@ -43,8 +43,11 @@ else:
     )
     API_KEY = os.environ.get("LLAMA_API_KEY", "")
 
-LEVEL = "B2"
-NATIVE = "Chinese"
+# The shipped prompt's two structured parameters ({{LEVEL}}, {{NATIVE}}).
+# Overridable so one run can vary one of them -- that is how we find out whether
+# a knob actually moves the output (ticket 09).
+LEVEL = os.environ.get("BENCH_LEVEL", "B2")
+NATIVE = os.environ.get("BENCH_NATIVE", "Chinese")
 ATTEMPTS = int(os.environ.get("BENCH_ATTEMPTS", "3"))
 # Reasoning models spend most of their completion budget before the artifact:
 # deepseek-flash burned 1304 reasoning tokens to produce 115 tokens of JSON on a

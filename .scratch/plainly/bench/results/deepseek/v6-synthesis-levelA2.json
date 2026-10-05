@@ -1,0 +1,209 @@
+{
+  "provider": "deepseek",
+  "model": "deepseek-flash",
+  "base": "https://api.deepseek.com/v1",
+  "prompt": "v6-synthesis",
+  "level": "A2",
+  "native_language": "Chinese",
+  "temperature": 0,
+  "n": 4,
+  "valid": 4,
+  "contract_pass_rate": 1.0,
+  "latency_s": {
+    "first": 1.23,
+    "min": 1.23,
+    "max": 1.95,
+    "mean": 1.55
+  },
+  "attempts_total": 4,
+  "records": [
+    {
+      "id": "p02",
+      "kind": "phrasal verb + colloquial",
+      "text": "He bottled it at the last minute and threw his colleagues under the bus.",
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "prompt": "v6-synthesis",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\n  \"comprehensible\": \"At the last minute, he lost his nerve and did something that put his colleagues in trouble, without caring about them.\",\n  \"glosses\": [\n    {\n      \"expression\": \"bottled it\",\n      \"gloss\": \"lost his nerve and failed to do something he was supposed to do\"\n    },\n    {\n      \"expression\": \"threw his colleagues under the bus\",\n      \"gloss\": \"did something that put his colleagues in trouble or made them take the blame, to protect himself\"\n    }\n  ],\n  \"grammar\": null,\n  \"translation\": \"他在最后一刻临阵退缩，还把自己的同事推出去当替罪羊。\"\n}",
+      "artifact": {
+        "comprehensible": "At the last minute, he lost his nerve and did something that put his colleagues in trouble, without caring about them.",
+        "glosses": [
+          {
+            "expression": "bottled it",
+            "gloss": "lost his nerve and failed to do something he was supposed to do"
+          },
+          {
+            "expression": "threw his colleagues under the bus",
+            "gloss": "did something that put his colleagues in trouble or made them take the blame, to protect himself"
+          }
+        ],
+        "grammar": null,
+        "translation": "他在最后一刻临阵退缩，还把自己的同事推出去当替罪羊。"
+      },
+      "latency_s": 1.23,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 590,
+        "completion_tokens": 149,
+        "total_tokens": 739,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 590
+      },
+      "attempts": 1,
+      "note": ""
+    },
+    {
+      "id": "p04",
+      "kind": "literary / formal register",
+      "text": "The house stood in a state of genteel decay, its occupants having long since repaired to the Continent.",
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "prompt": "v6-synthesis",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\n  \"comprehensible\": \"The house was in a state of quiet, upper-class decline. The people who used to live there had moved to mainland Europe a long time ago.\",\n  \"glosses\": [\n    {\n      \"expression\": \"genteel decay\",\n      \"gloss\": \"a kind of decline that still looks respectable and upper-class, not rough or poor\"\n    },\n    {\n      \"expression\": \"its occupants having long since repaired to the Continent\",\n      \"gloss\": \"the people who lived there had moved to mainland Europe a long time before\"\n    },\n    {\n      \"expression\": \"repaired to\",\n      \"gloss\": \"went to; moved to (a formal or old-fashioned way to say this)\"\n    },\n    {\n      \"expression\": \"the Continent\",\n      \"gloss\": \"mainland Europe (used especially by British speakers)\"\n    }\n  ],\n  \"grammar\": \"The phrase 'its occupants having long since repaired to the Continent' is a participle clause. It does not have a subject or a helping verb like 'had'. It gives a reason or background for the state of the house: the house was in decay because the occupants had moved away long before. The word 'having' shows that the moving happened before the house's decay.\",\n  \"translation\": \"这栋房子处于一种体面而衰败的状态，因为它的住户早已迁往欧洲大陆。\"\n}",
+      "artifact": {
+        "comprehensible": "The house was in a state of quiet, upper-class decline. The people who used to live there had moved to mainland Europe a long time ago.",
+        "glosses": [
+          {
+            "expression": "genteel decay",
+            "gloss": "a kind of decline that still looks respectable and upper-class, not rough or poor"
+          },
+          {
+            "expression": "its occupants having long since repaired to the Continent",
+            "gloss": "the people who lived there had moved to mainland Europe a long time before"
+          },
+          {
+            "expression": "repaired to",
+            "gloss": "went to; moved to (a formal or old-fashioned way to say this)"
+          },
+          {
+            "expression": "the Continent",
+            "gloss": "mainland Europe (used especially by British speakers)"
+          }
+        ],
+        "grammar": "The phrase 'its occupants having long since repaired to the Continent' is a participle clause. It does not have a subject or a helping verb like 'had'. It gives a reason or background for the state of the house: the house was in decay because the occupants had moved away long before. The word 'having' shows that the moving happened before the house's decay.",
+        "translation": "这栋房子处于一种体面而衰败的状态，因为它的住户早已迁往欧洲大陆。"
+      },
+      "latency_s": 1.95,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 596,
+        "completion_tokens": 297,
+        "total_tokens": 893,
+        "prompt_tokens_details": {
+          "cached_tokens": 384
+        },
+        "prompt_cache_hit_tokens": 384,
+        "prompt_cache_miss_tokens": 212
+      },
+      "attempts": 1,
+      "note": ""
+    },
+    {
+      "id": "p06",
+      "kind": "legal register",
+      "text": "The lessee shall indemnify the lessor against all claims arising from any breach of the covenants herein.",
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "prompt": "v6-synthesis",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\n  \"comprehensible\": \"The person renting the property must protect the owner from any claims that come from breaking any of the promises in this agreement.\",\n  \"glosses\": [\n    {\n      \"expression\": \"indemnify\",\n      \"gloss\": \"protect someone from loss or damage by paying for it\"\n    },\n    {\n      \"expression\": \"lessee\",\n      \"gloss\": \"the person who rents something\"\n    },\n    {\n      \"expression\": \"lessor\",\n      \"gloss\": \"the person who owns and rents out something\"\n    },\n    {\n      \"expression\": \"covenants\",\n      \"gloss\": \"formal promises in a contract\"\n    },\n    {\n      \"expression\": \"herein\",\n      \"gloss\": \"in this document\"\n    }\n  ],\n  \"grammar\": null,\n  \"translation\": \"承租人应赔偿出租人因违反本协议中的任何约定而引起的所有索赔。\"\n}",
+      "artifact": {
+        "comprehensible": "The person renting the property must protect the owner from any claims that come from breaking any of the promises in this agreement.",
+        "glosses": [
+          {
+            "expression": "indemnify",
+            "gloss": "protect someone from loss or damage by paying for it"
+          },
+          {
+            "expression": "lessee",
+            "gloss": "the person who rents something"
+          },
+          {
+            "expression": "lessor",
+            "gloss": "the person who owns and rents out something"
+          },
+          {
+            "expression": "covenants",
+            "gloss": "formal promises in a contract"
+          },
+          {
+            "expression": "herein",
+            "gloss": "in this document"
+          }
+        ],
+        "grammar": null,
+        "translation": "承租人应赔偿出租人因违反本协议中的任何约定而引起的所有索赔。"
+      },
+      "latency_s": 1.43,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 596,
+        "completion_tokens": 201,
+        "total_tokens": 797,
+        "prompt_tokens_details": {
+          "cached_tokens": 384
+        },
+        "prompt_cache_hit_tokens": 384,
+        "prompt_cache_miss_tokens": 212
+      },
+      "attempts": 1,
+      "note": ""
+    },
+    {
+      "id": "p12",
+      "kind": "archaic / formal",
+      "text": "It behoves us to consider whether such a course of action is consonant with our obligations.",
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "prompt": "v6-synthesis",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\n  \"comprehensible\": \"It is right for us to think about whether doing something like this fits with what we must do.\",\n  \"glosses\": [\n    {\n      \"expression\": \"behoves us\",\n      \"gloss\": \"it is right or proper for us\"\n    },\n    {\n      \"expression\": \"such a course of action\",\n      \"gloss\": \"doing something like this\"\n    },\n    {\n      \"expression\": \"consonant with\",\n      \"gloss\": \"in agreement with; fitting with\"\n    },\n    {\n      \"expression\": \"our obligations\",\n      \"gloss\": \"the things we must do\"\n    }\n  ],\n  \"grammar\": \"The sentence uses a formal pattern: 'It behoves us to consider...' means 'We should consider...'. The 'whether' clause is the object of 'consider', so the whole thing means we should think about if the action agrees with our duties.\",\n  \"translation\": \"我们应当考虑这样的做法是否符合我们的义务。\"\n}",
+      "artifact": {
+        "comprehensible": "It is right for us to think about whether doing something like this fits with what we must do.",
+        "glosses": [
+          {
+            "expression": "behoves us",
+            "gloss": "it is right or proper for us"
+          },
+          {
+            "expression": "such a course of action",
+            "gloss": "doing something like this"
+          },
+          {
+            "expression": "consonant with",
+            "gloss": "in agreement with; fitting with"
+          },
+          {
+            "expression": "our obligations",
+            "gloss": "the things we must do"
+          }
+        ],
+        "grammar": "The sentence uses a formal pattern: 'It behoves us to consider...' means 'We should consider...'. The 'whether' clause is the object of 'consider', so the whole thing means we should think about if the action agrees with our duties.",
+        "translation": "我们应当考虑这样的做法是否符合我们的义务。"
+      },
+      "latency_s": 1.59,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 593,
+        "completion_tokens": 217,
+        "total_tokens": 810,
+        "prompt_tokens_details": {
+          "cached_tokens": 384
+        },
+        "prompt_cache_hit_tokens": 384,
+        "prompt_cache_miss_tokens": 209
+      },
+      "attempts": 1,
+      "note": ""
+    }
+  ]
+}

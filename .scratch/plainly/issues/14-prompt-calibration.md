@@ -79,3 +79,10 @@ Status: resolved
 `.scratch/plainly/bench/`：`FINDINGS.md`（本地 vs 云端全对照 + 思考开关实测）、`prompts/`（v1–v6）、`schema.json`、`passages.json`、`bench.py`（双 provider + 重试 + 思考开关，仅 stdlib）、`results/`（全部原始输出）。
 
 **本票据不做**：不写实现。**提示词文本归这里；参数化、存储、版本化与迁移归票据 09。**
+
+## Comments
+
+- **⚠️ 2026-10-05 票据 09 结清后回填：出厂提示词要从 v6 升到 v7。** 要求是**内联等级描述表**——即 `{{LEVEL}}` 不能只代入标签，要代入"标签 + 含义"（如 `A2 (very common words, short sentences, concrete)`）。
+  理由不是措辞偏好，而是**实测**：只发标签时，**3/8 个相邻等级对产出了逐字相同**的解释（p04/p06/p12 上两个等级完全相同）；把原技能里本来就有、却没进提示词的那张等级表内联之后，降到 **1/8**，A2 的平均词长 4.29→**4.05**、与原文相似度 0.460→**0.395**（改写更彻底）。
+  另外实测发现**契约内部有一处互相拉扯**：C1 的描述"keep most of the original structure"与本票据保留的那条"it must be a real restatement: never return the passage unchanged"冲突——而后者赢，这很可能就是 **B2 与 C1 无法区分**（4.32 vs 4.29）的原因。v7 的 C1 描述要在**不与"必须真改写"冲突**的前提下表达"保留更多原结构"。
+  数据：`bench/FINDINGS.md` 的 "The two parameters have very different teeth" 一节；原始输出 `bench/results/deepseek/v6-synthesis-{level,desc}*.json`。

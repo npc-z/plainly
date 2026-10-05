@@ -123,3 +123,44 @@ the 4B is wrong.
 
 They are no longer ranked by speed: the cloud path is the accurate one, the local path is the offline
 one. The same prompt serves both.
+
+## The two parameters have very different teeth (ticket 09)
+
+The shipped prompt has exactly two parameter sites — `{{LEVEL}}` (twice) and `{{NATIVE}}` (twice).
+Measured with `BENCH_LEVEL` / `BENCH_NATIVE` (now env-overridable), `deepseek-flash`, thinking off,
+temperature 0, on four passages spanning registers (p02 idioms, p04 literary, p06 legal, p12 formal).
+24 requests across six runs, no retries needed (contract 4/4 every time).
+
+**Native language is a strong, clean knob.** With `BENCH_NATIVE=Japanese`, all four translations came
+back in Japanese (43–49 kana/kanji) while `comprehensible` and **every gloss stayed English**, 4/4.
+The product's promise — explain hard English in English — is not contaminated by the native-language
+setting. (The risk worth checking was the glosses leaking, not the translation switching.)
+
+**Level is a weak, coarse knob, and it needs its descriptor to do anything at all.**
+
+| | levels collapsing to byte-identical text | mean word length A2/B2/C1 | mean similarity to the original A2/B2/C1 |
+|---|---|---|---|
+| label only (`A2`, `B2`, `C1`) | **3 of 8** adjacent pairs | 4.29 / 4.27 / 4.26 | 0.460 / 0.475 / 0.463 |
+| label + descriptor | **1 of 8** | **4.05** / 4.32 / 4.29 | **0.395** / 0.463 / 0.462 |
+
+The descriptors are the source contract's own: A1–A2 "very common words, short sentences, concrete";
+B2 "English-first; nuance and collocations"; C1+ "keep most of the original structure; subtle
+meaning, register, idiom, style".
+
+- **A bare label is close to sending nothing**: two of the three levels produced identical bytes on
+  p04, p06 and p12.
+- **Inlining the descriptor separates A2** from the other two — mean word length 4.29 → 4.05 and
+  similarity to the original 0.460 → 0.395, i.e. a more thorough restatement. Two of the three
+  collapse pairs disappear.
+- **B2 and C1 stay indistinguishable** (4.32 vs 4.29; 0.463 vs 0.462). The likely mechanism is a
+  contradiction inside the contract: C1's descriptor says "keep most of the original structure",
+  while the prompt's own rule says "it must be a real restatement: never return the passage
+  unchanged". The rule wins.
+- Even A2 is not reliably the simplest: on p06 and p12 its mean word length is the *highest* of the
+  three.
+
+Caveat: four passages, one model, one run per condition. Temperature 0 makes each row reproducible,
+and "two levels produced identical bytes" is not sampling noise — but the direction is a tendency,
+not a law. The takeaway is not "level does nothing"; it is **"level is a hint, not a contract, and it
+has to ship with its descriptor"**.
+

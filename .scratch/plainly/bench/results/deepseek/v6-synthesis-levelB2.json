@@ -1,0 +1,201 @@
+{
+  "provider": "deepseek",
+  "model": "deepseek-flash",
+  "base": "https://api.deepseek.com/v1",
+  "prompt": "v6-synthesis",
+  "level": "B2",
+  "native_language": "Chinese",
+  "temperature": 0,
+  "n": 4,
+  "valid": 4,
+  "contract_pass_rate": 1.0,
+  "latency_s": {
+    "first": 1.01,
+    "min": 1.01,
+    "max": 1.68,
+    "mean": 1.31
+  },
+  "attempts_total": 4,
+  "records": [
+    {
+      "id": "p02",
+      "kind": "phrasal verb + colloquial",
+      "text": "He bottled it at the last minute and threw his colleagues under the bus.",
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "prompt": "v6-synthesis",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\n  \"comprehensible\": \"At the very last moment, he lost his nerve and betrayed his colleagues by shifting the blame onto them.\",\n  \"glosses\": [\n    {\n      \"expression\": \"bottled it\",\n      \"gloss\": \"lost his nerve and failed to do what he was supposed to do\"\n    },\n    {\n      \"expression\": \"threw his colleagues under the bus\",\n      \"gloss\": \"betrayed his colleagues to protect himself, by putting the blame on them\"\n    }\n  ],\n  \"grammar\": null,\n  \"translation\": \"他在最后一刻临阵退缩，还把责任推给了同事。\"\n}",
+      "artifact": {
+        "comprehensible": "At the very last moment, he lost his nerve and betrayed his colleagues by shifting the blame onto them.",
+        "glosses": [
+          {
+            "expression": "bottled it",
+            "gloss": "lost his nerve and failed to do what he was supposed to do"
+          },
+          {
+            "expression": "threw his colleagues under the bus",
+            "gloss": "betrayed his colleagues to protect himself, by putting the blame on them"
+          }
+        ],
+        "grammar": null,
+        "translation": "他在最后一刻临阵退缩，还把责任推给了同事。"
+      },
+      "latency_s": 1.01,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 590,
+        "completion_tokens": 139,
+        "total_tokens": 729,
+        "prompt_tokens_details": {
+          "cached_tokens": 384
+        },
+        "prompt_cache_hit_tokens": 384,
+        "prompt_cache_miss_tokens": 206
+      },
+      "attempts": 1,
+      "note": ""
+    },
+    {
+      "id": "p04",
+      "kind": "literary / formal register",
+      "text": "The house stood in a state of genteel decay, its occupants having long since repaired to the Continent.",
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "prompt": "v6-synthesis",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\n  \"comprehensible\": \"The house was in a state of dignified but shabby decline, because the people who lived there had moved away to mainland Europe a long time ago.\",\n  \"glosses\": [\n    {\n      \"expression\": \"genteel decay\",\n      \"gloss\": \"a kind of decline that still keeps a respectable, upper-class appearance\"\n    },\n    {\n      \"expression\": \"having long since repaired to\",\n      \"gloss\": \"having moved to (a place) a long time ago\"\n    },\n    {\n      \"expression\": \"the Continent\",\n      \"gloss\": \"mainland Europe (used especially by British speakers)\"\n    }\n  ],\n  \"grammar\": \"The phrase 'its occupants having long since repaired to the Continent' is a participial clause that gives the reason for the house's decay. It does not have a subject-verb structure like a normal clause; 'having repaired' means 'because they had moved'.\",\n  \"translation\": \"这栋房子处于一种体面而破败的状态，因为它的住户早已移居到欧洲大陆去了。\"\n}",
+      "artifact": {
+        "comprehensible": "The house was in a state of dignified but shabby decline, because the people who lived there had moved away to mainland Europe a long time ago.",
+        "glosses": [
+          {
+            "expression": "genteel decay",
+            "gloss": "a kind of decline that still keeps a respectable, upper-class appearance"
+          },
+          {
+            "expression": "having long since repaired to",
+            "gloss": "having moved to (a place) a long time ago"
+          },
+          {
+            "expression": "the Continent",
+            "gloss": "mainland Europe (used especially by British speakers)"
+          }
+        ],
+        "grammar": "The phrase 'its occupants having long since repaired to the Continent' is a participial clause that gives the reason for the house's decay. It does not have a subject-verb structure like a normal clause; 'having repaired' means 'because they had moved'.",
+        "translation": "这栋房子处于一种体面而破败的状态，因为它的住户早已移居到欧洲大陆去了。"
+      },
+      "latency_s": 1.68,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 596,
+        "completion_tokens": 233,
+        "total_tokens": 829,
+        "prompt_tokens_details": {
+          "cached_tokens": 384
+        },
+        "prompt_cache_hit_tokens": 384,
+        "prompt_cache_miss_tokens": 212
+      },
+      "attempts": 1,
+      "note": ""
+    },
+    {
+      "id": "p06",
+      "kind": "legal register",
+      "text": "The lessee shall indemnify the lessor against all claims arising from any breach of the covenants herein.",
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "prompt": "v6-synthesis",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\n  \"comprehensible\": \"The person renting the property must protect the owner from any claims that come from breaking any of the promises in this agreement.\",\n  \"glosses\": [\n    {\n      \"expression\": \"indemnify\",\n      \"gloss\": \"protect someone from loss or damage by paying for it\"\n    },\n    {\n      \"expression\": \"lessee\",\n      \"gloss\": \"the person who rents the property\"\n    },\n    {\n      \"expression\": \"lessor\",\n      \"gloss\": \"the person who owns the property and rents it out\"\n    },\n    {\n      \"expression\": \"covenants\",\n      \"gloss\": \"formal promises in a contract\"\n    },\n    {\n      \"expression\": \"herein\",\n      \"gloss\": \"in this document\"\n    }\n  ],\n  \"grammar\": null,\n  \"translation\": \"承租人应就因违反本协议中的任何约定而引起的所有索赔，向出租人作出赔偿。\"\n}",
+      "artifact": {
+        "comprehensible": "The person renting the property must protect the owner from any claims that come from breaking any of the promises in this agreement.",
+        "glosses": [
+          {
+            "expression": "indemnify",
+            "gloss": "protect someone from loss or damage by paying for it"
+          },
+          {
+            "expression": "lessee",
+            "gloss": "the person who rents the property"
+          },
+          {
+            "expression": "lessor",
+            "gloss": "the person who owns the property and rents it out"
+          },
+          {
+            "expression": "covenants",
+            "gloss": "formal promises in a contract"
+          },
+          {
+            "expression": "herein",
+            "gloss": "in this document"
+          }
+        ],
+        "grammar": null,
+        "translation": "承租人应就因违反本协议中的任何约定而引起的所有索赔，向出租人作出赔偿。"
+      },
+      "latency_s": 1.36,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 596,
+        "completion_tokens": 208,
+        "total_tokens": 804,
+        "prompt_tokens_details": {
+          "cached_tokens": 384
+        },
+        "prompt_cache_hit_tokens": 384,
+        "prompt_cache_miss_tokens": 212
+      },
+      "attempts": 1,
+      "note": ""
+    },
+    {
+      "id": "p12",
+      "kind": "archaic / formal",
+      "text": "It behoves us to consider whether such a course of action is consonant with our obligations.",
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "prompt": "v6-synthesis",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\n  \"comprehensible\": \"It is proper for us to think about whether acting in that way fits with what we are obliged to do.\",\n  \"glosses\": [\n    {\n      \"expression\": \"behoves us\",\n      \"gloss\": \"is right or proper for us\"\n    },\n    {\n      \"expression\": \"such a course of action\",\n      \"gloss\": \"acting in that way\"\n    },\n    {\n      \"expression\": \"consonant with\",\n      \"gloss\": \"in agreement with; fitting with\"\n    }\n  ],\n  \"grammar\": null,\n  \"translation\": \"我们应当考虑，这样的做法是否符合我们的义务。\"\n}",
+      "artifact": {
+        "comprehensible": "It is proper for us to think about whether acting in that way fits with what we are obliged to do.",
+        "glosses": [
+          {
+            "expression": "behoves us",
+            "gloss": "is right or proper for us"
+          },
+          {
+            "expression": "such a course of action",
+            "gloss": "acting in that way"
+          },
+          {
+            "expression": "consonant with",
+            "gloss": "in agreement with; fitting with"
+          }
+        ],
+        "grammar": null,
+        "translation": "我们应当考虑，这样的做法是否符合我们的义务。"
+      },
+      "latency_s": 1.18,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 593,
+        "completion_tokens": 144,
+        "total_tokens": 737,
+        "prompt_tokens_details": {
+          "cached_tokens": 384
+        },
+        "prompt_cache_hit_tokens": 384,
+        "prompt_cache_miss_tokens": 209
+      },
+      "attempts": 1,
+      "note": ""
+    }
+  ]
+}
