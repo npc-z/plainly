@@ -97,3 +97,16 @@ binds {
 - **票据 06**：面板的触发路径改为"合成器直接 spawn"；重入由 GApplication 处理（**不再是** Tauri 的 single-instance 回调）；"复制自动弹"的灰掉+说明要落进设置页。
 - **票据 05**：二进制集合确认为**三个**：`plainly` / `plainly-panel` / `plainly-desktop`。
 - **票据 12**：GtkApplication 假设已被测试推翻（见上）。
+
+### ⚠️ 一个已经咬过人的实现陷阱（务必传给实现阶段）
+
+**`GtkApplication` 的主循环是 `g_application_run`，`gtk_main_quit()` 管不了它。** 要退出必须用 `g_application_quit()`（或销毁窗口并让应用自行退出）。
+
+这不是理论——**我自己的探针程序就踩了**：`t.c` 里用 `gtk_main_quit` 做 12 秒自动退出，结果变体 A 的进程**从来没退出**，在用户桌面上挂了 **23 分钟**的 `plainly-test` overlay 表面，直到被手工 kill（`pid=350374`，`niri msg layers` 一直列着它）。
+
+**为什么这个坑严重**：面板的 `keyboard_mode=NONE`，所以
+
+- **用户按 Esc 没用**（面板根本不接收键盘事件）；
+- 于是**退出只有两条路**：定时器自动消失，或指针操作（点面板外、点关闭区）。
+
+两者之一写错，用户就会得到一个**关不掉、永远盖在最上层**的面板。所以：自动消失必须走 `g_application_quit()`；并且**指针可关闭**不是可选装饰，是唯一的另一条出路。（自动消失的时长与"点击外侧关闭"的语义归票据 06。）
