@@ -34,6 +34,7 @@ Labels: wayfinder:map
 
 - [10 结构化输出在各 provider 的支持面](issues/10-structured-output-support.md)：能真正强制 schema 的是 OpenAI / llama.cpp / LM Studio / Ollama（≥0.31.2，thinking 开，非 cloud）；DeepSeek 只能提示词+校验+重试。硬约束：禁矛盾上下界、优先 `maxItems`-only、OpenAI strict 下无长度/模式约束。
 - [01 输出契约 schema 与 markdown 渲染](issues/01-output-contract.md)：一个 Explanation 对应一个 Passage；模型只产 `comprehensible` / `glosses[]` / `grammar|null` / `translation`，原文与元数据由应用附加；markdown 逐字复刻原型五节；版本号为 `artifact_version` + `prompt_version`。
+- [02 面板形态原型](issues/02-panel-form-prototype.md)：面板 = **一个 Tauri 进程内的 layer-shell overlay**（`visible(false)` → 在 map 之前 `init_layer_shell` → `show`），reparenting hack 与第二个进程都不需要；独立 GTK 面板已验证可用，作为退路保留。WebKit 的内容渲染待宿主机复验（[12](issues/12-tauri-panel-render-check-host.md)）。
 
 ## Not yet specified
 
