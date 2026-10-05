@@ -72,3 +72,8 @@ Status: resolved
 
 - **⚠️ 2026-10-05 更正（来自票据 12）**：上面"两个二进制"里的第二个——`plainly-desktop`（Tauri GUI）——**画不出 layer 面板**（票据 12 实测：表面造得出来，连纯色背景都不上屏）。所以**二进制集合很可能是三个**：`plainly`（CLI）/ **`plainly-panel`（独立 layer-shell 面板进程）** / `plainly-desktop`（Tauri 主窗口：历史、设置、导出）。
   这不推翻本票据的其他决策（CLI 依旧瘦、依旧不依赖 GUI；stdout/stderr 约定、退出码、`--regenerate` 都不变），只是"两个"这个数字不再确定。**谁 spawn 面板由票据 07 决定。**
+- **✅ 2026-10-05 由票据 07 定案：三个二进制。**
+  - `plainly` —— 瘦 CLI，只依赖 core
+  - `plainly-panel` —— **独立的 layer-shell 面板进程**，`GtkApplication`（id `dev.plainly.panel`），由合成器键绑 `spawn "plainly-panel" "--clipboard"` 直接拉起；自己用 data-control 读剪贴板，**桌面应用不必常驻**
+  - `plainly-desktop` —— Tauri 主窗口（历史、设置、导出）
+  **`--regenerate` 的归属要注意**：面板走的是幂等键缓存（票据 08），所以"重新生成"这个出口在**面板上**也要有（面板是用户唯一会看到解释的地方），不能只在 CLI 里。

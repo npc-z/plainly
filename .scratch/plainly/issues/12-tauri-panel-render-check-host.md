@@ -100,3 +100,8 @@ git worktree remove /tmp/panel-proto --force
 ### 资产
 
 原型在 `prototype/panel-form` 分支；宿主机 worktree 跑完已清理（回收 2.2G），诊断用的红色已还原，结论写进分支 README。
+
+## Comments
+
+- **2026-10-05 追加：一条中间假设被测试推翻。** 我曾怀疑"`GtkApplication` + layer-shell 就不画"——依据是 C 原型用裸 `GtkWindow` 能画、而 Tauri 用的是 `GtkApplicationWindow`。**实测：`GtkApplication` + layer-shell 正常绘制**（有截图确认，`keyboard_mode=NONE`、无焦点）。
+  所以本票据的失败是 **tao/wry 特有**的，与 GtkApplication 无关。**根因没有定位，但决策不依赖它**（面板已改为独立进程，见票据 02 与 07）。**后人若要追根因，别从 GtkApplication 这条线查。**
