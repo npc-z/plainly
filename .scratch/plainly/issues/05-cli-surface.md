@@ -12,3 +12,8 @@ Status: open
 - 子命令与选项（`explain`、`history`、`config` 之类）以及**退出码语义**。
 - `plainly --explain-clipboard` 如何把请求投递给**已在运行的桌面进程**：倾向 `tauri-plugin-single-instance` 的 argv 传递（回调能拿到第二个进程的 argv，无需自建 IPC 服务）；备选是 `$XDG_RUNTIME_DIR` 下的 unix socket。决定用哪个、以及桌面进程没在跑时的行为（自己起、还是纯 CLI 输出）。
 - CLI 是 v0 的一等公民（core 的验证器），不是附属品——但界面能力以文本为准。
+
+## Comments
+
+- **来自票据 08 的一条要求**：CLI 要能**绕开幂等键缓存重新生成**（例如 `--regenerate`）。理由：同一段文本默认会命中已落库的 Explanation（票据 08 的 `lookup_key`），而"重新生成"是唯一的修正手段——在有缓存的系统里它不是可选功能。脚本里没有它就等于没有修正途径。
+- 顺带注意：CLI 与 GUI 会**同时写同一份配置**（票据 15 已认下这个代价），所以 CLI 的写操作也要走原子写 + 外部修改检测。
