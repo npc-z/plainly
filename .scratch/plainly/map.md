@@ -44,17 +44,20 @@ Labels: wayfinder:map
 - [05 CLI 命令面与守护进程触发](issues/05-cli-surface.md)：**两个二进制**——瘦 `plainly`（CLI，只依赖 core）与 `plainly-desktop`（GUI）；**IPC 整条删掉**，因为没有场景需要 CLI 触发面板（键绑直接指向桌面二进制，它自带 single-instance 的 D-Bus 交接，名字 `<identifier>.SingleInstance`）。四个顶层子命令 `explain`（无子命令时默认）/ `history` / `providers` / `config`；**stdout 只出产物、stderr 出人类信息**；`--format markdown\|json`、`--regenerate`；退出码 0/1/2/3；**CLI crate 不得依赖 GTK/webkit**。
 - [12 Tauri 面板的内容渲染验证（宿主机）](issues/12-tauri-panel-render-check-host.md)：**不可以**。宿主机上（GPU/EGL/命名空间全部正常、窗口未 realize、控件全部分配、合成器也列出了表面）**一个像素都不上屏**——连**绕过 WebKit、直接画在窗口上的纯色背景**都不上屏（全屏颜色直方图匹配 0 像素）。对照组独立 GTK C 原型照常渲染。**结论：Tauri 能创建 layer 表面，画不出内容** → 面板必须是独立进程（更正 02），二进制集合可能变三个（影响 05），解锁 07 且问题变为"谁 spawn 面板"。
 - [07 Linux 触发集成与能力探测](issues/07-linux-trigger-integration.md)：**合成器键绑直接 spawn `plainly-panel`**（GtkApplication，id `dev.plainly.panel`）——桌面应用**不必常驻**；`GtkApplication` 白送单实例（实测连按两次只出一个面板，`activate` 里复用已有窗口）。**取词必须走 data-control**：实测无焦点 layer 表面上 `wl-paste` 拿到值而 `gtk_clipboard` **直接失败**。能力探测查 `ext_data_control_manager_v1`/`zwlr_data_control_manager_v1`，**降级路径自洽**（GNOME 既无 data-control 也无 wlr-layer-shell → 面板退化为取焦点的普通窗口，此时 GTK 剪贴板可用）。"复制自动弹"不具备能力时**灰掉+说明**（不是隐藏）。**X11 不在 v0 范围**（明确写进规格，不留白）。niri 的 `spawn` 修饰键 bug 天然规避（键盘模式 NONE）。**二进制三个**：`plainly` / `plainly-panel` / `plainly-desktop`。
+- [06 桌面 UI 信息架构](issues/06-desktop-ui-ia.md)：**面板 = 固定标题栏（provenance chip + 复制 / ⟳ 重新生成 / ⤢ 历史 / ✕）+ A 的正文密度**（原文常显 → 改写 → gloss 紧凑列表 → 翻译；分节可折叠，`grammar` 为空时显示"本段不需要"而非消失）；**本地 provider 时正文下方固定"请对照原文 / 换云端重生成"提示**——把票据 14 的结论与 08 的核对要求落到界面固定位置。变体 C（渐进出卡，原文与翻译默认隐藏）**因与"原文可核对"冲突而不采纳**，只作代价证明留在原型里。退出路径：**自动消失默认关**（打开后默认 20 秒；开关与时长是两个独立键，**不用 `0` 表示"永不"**）+ 点外侧关闭 + ✕，且**任何状态（含加载/出错）都有出路**（`keyboard_mode=NONE` 下 Esc 无效——所以默认关时**指针是唯一出路**）。`activate` 复用 = **重读剪贴板并刷新**；思考开关**只在设置里、默认关**；**UI 中文为主 + 文案集中为可替换资源（不引 i18n 框架）**。原型 `.scratch/plainly/ui/panel-ia.html`。**主窗口那一半拆成 16。**
 
 ## Not yet specified
 
 <!-- 在范围内、但还看不清的问题；前沿推进后毕业成票据。不要在这里预切片。 -->
 
-- 超长输入的切分**阈值**：切在段落边界已定（01），**本地上下文预算也已定**（llama.cpp 服务 `--ctx-size 16384`，03），云端仍待 04。剩下的是经验规则——"超过多少 token 就切"，而且现在**可测**（harness 现成，1.9 秒/段）。
-- 失败与降级 UX：**失败分类已由票据 10 查清**（OpenAI refusal、LM Studio 的 `reasoning_content` 空洞、DeepSeek 的 JSON mode 漂移、超时/限流）；剩下的是它们在面板里各自怎么呈现。
-- 首次运行引导：provider、key、模型下载。
-- 搜索与标签的具体形态（等 08）。
-- 应用自身 UI 的语言与本地化策略：01 已把 markdown 与 UI 的标题拆开（markdown 用固定英文，UI 标题可本地化），**UI 本身中/英/双语仍待定**。
+- 超长输入的切分**阈值**：切在段落边界已定（01），**本地上下文预算也已定**（llama.cpp 服务 `--ctx-size 16384`，03）。剩下的是经验规则——"超过多少 token 就切"，而且现在**可测**（harness 现成，1.9 秒/段）。
 - 剪贴板里的敏感内容（密码管理器 hint）如何处理。
+
+<!-- 已毕业/已消化（离开 fog 的去处）：
+     · 失败与降级 UX —— 分类与重试策略归 04/10，面板里的**形态**归 06；剩下的是每类失败的具体文案，属规格层面，不是决策。
+     · 首次运行引导、搜索与标签的具体形态 —— 毕业成 [16](issues/16-main-window-ia.md)。
+     · 应用 UI 的语言与本地化 —— 由 06 结清（中文为主 + 文案集中为可替换资源，不引 i18n 框架）。 -->
+
 
 ## Out of scope
 

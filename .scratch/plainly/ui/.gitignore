@@ -1,0 +1,4 @@
+# Renders of the prototype are verification output, not the artifact:
+# re-render with firefox --headless --screenshot. Same reasoning as the
+# panel prototype, where the screenshot was deliberately not kept.
+*.png

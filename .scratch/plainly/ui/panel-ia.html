@@ -1,0 +1,302 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway, not production. Ticket 06.
+
+  Plan: three structurally different variants of the explanation panel,
+  switchable in the control bar (or via ?variant=), mocked against a fake
+  document window so the panel is judged in context rather than in a vacuum.
+
+  Two more axes exist only so the states can be seen, not as part of the design:
+  state (loading / result / error) and provider (cloud / local). The local mode
+  is where the "check it against the original" requirement bites.
+
+  Nothing here is real: no model, no clipboard, no storage.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>plainly — panel IA prototype (ticket 06)</title>
+<style>
+  :root{
+    --panel:#191d26; --page:#2b3245; --ink:#eef1f7; --dim:#7f8798;
+    --gloss:#c3cbdb; --rule:#2c3242; --accent:#7aa2f7; --ok:#9ece6a;
+    --warn:#e0af68; --err:#f7768e;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font:14px/1.55 system-ui,-apple-system,"Noto Sans CJK SC",sans-serif;
+       color:#22252b;background:#e9e7e1;padding-bottom:96px}
+  .doc{max-width:820px;margin:24px auto;background:#fff;border-radius:8px;
+       padding:30px 36px;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+  .doc h1{font-size:20px;margin:0 0 14px}
+  .doc p{color:#41454d;margin:0 0 12px}
+  .doc .hard{background:#fff6d9;padding:2px 4px;border-radius:3px}
+
+  /* ── the panel: anchored top-left with a 28px margin, like the real one ── */
+  .panel{position:fixed;top:28px;left:28px;width:470px;background:var(--panel);
+         color:var(--ink);border-radius:14px;overflow:hidden;
+         box-shadow:0 14px 44px rgba(0,0,0,.5);font-size:13px}
+  .panel .pad{padding:16px 18px}
+  .orig{color:var(--dim);font-style:italic;font-size:12px;margin:0 0 10px}
+  .comp{font-size:14.5px;margin:0 0 12px}
+  .gl{margin:0 0 5px;color:var(--gloss)}
+  .gl code{color:var(--ink);background:#232838;padding:1px 5px;border-radius:4px;
+           font:12.5px ui-monospace,monospace}
+  .arrow{color:#565f75;padding:0 4px}
+  .zh{color:var(--ok);margin:10px 0 0}
+  hr.sep{border:0;border-top:1px solid var(--rule);margin:12px 0}
+  h4.sec{margin:14px 0 6px;font-size:11px;letter-spacing:.09em;text-transform:uppercase;
+         color:var(--accent);font-weight:600}
+  h4.sec:first-child{margin-top:0}
+
+  /* variant B: header bar + collapsible sections + countdown */
+  .bar{display:flex;align-items:center;gap:8px;padding:10px 14px;
+       background:#141821;border-bottom:1px solid var(--rule)}
+  .bar .t{font-weight:600;font-size:12.5px;letter-spacing:.02em}
+  .chip{margin-left:auto;font-size:11px;padding:2px 8px;border-radius:999px;
+        border:1px solid var(--rule);color:var(--dim)}
+  .chip.local{color:var(--warn);border-color:#5a4a2a;background:#241f14}
+  .chip.cloud{color:var(--accent);border-color:#2a3a5a;background:#141c2c}
+  .acts{display:flex;gap:4px}
+  .btn{font:12px inherit;background:#20263a;color:var(--ink);border:1px solid var(--rule);
+       border-radius:7px;padding:4px 9px;cursor:pointer}
+  .btn:hover{background:#28304a}
+  .btn.ghost{background:transparent}
+  .sect{border-bottom:1px solid var(--rule)}
+  .sect>summary{cursor:pointer;padding:9px 16px;list-style:none;color:var(--accent);
+                font-size:11px;letter-spacing:.09em;text-transform:uppercase;font-weight:600}
+  .sect>summary::-webkit-details-marker{display:none}
+  .sect>summary::before{content:"▸ ";color:#565f75}
+  .sect[open]>summary::before{content:"▾ "}
+  .sect .body{padding:0 16px 12px}
+  .count{display:flex;align-items:center;gap:8px;padding:8px 14px;color:var(--dim);font-size:11.5px;
+         background:#141821;border-top:1px solid var(--rule)}
+  .ring{width:13px;height:13px;border-radius:50%;border:2px solid var(--rule);
+        border-top-color:var(--accent);animation:spin 1s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .verify{margin:10px 16px 12px;padding:8px 10px;border-radius:8px;background:#241f14;
+          border:1px solid #5a4a2a;color:#e8c98a;font-size:12px}
+
+  /* variant C: cards + progressive disclosure */
+  .hero{font-size:15.5px;margin:0 0 14px;line-height:1.5}
+  .cards{display:flex;flex-direction:column;gap:6px}
+  .card{background:#20263a;border:1px solid var(--rule);border-radius:9px;padding:9px 12px;
+        cursor:pointer}
+  .card .ex{font:12.5px ui-monospace,monospace;color:var(--ink)}
+  .card .gl2{color:var(--gloss);margin-top:5px;display:none}
+  .card.open .gl2{display:block}
+  .card .hint{float:right;color:#565f75;font-size:11px}
+  .reveal{margin-top:12px;color:var(--accent);cursor:pointer;font-size:12.5px}
+  .hidden{display:none}
+
+  /* states */
+  .skeleton{background:linear-gradient(90deg,#20263a,#2a3148,#20263a);background-size:200% 100%;
+            animation:sh 1.2s linear infinite;border-radius:5px;height:11px;margin:8px 0}
+  @keyframes sh{to{background-position:-200% 0}}
+  .err{color:var(--err);font-size:12.5px}
+  .errbox{margin-top:8px;padding:9px 11px;border-radius:8px;background:#2a161c;
+          border:1px solid #6b2b38;color:#f7a3b1;font-size:12px}
+
+  /* ── the switcher: deliberately not part of the design ── */
+  .switcher{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);
+            display:flex;align-items:center;gap:10px;background:#0b0d12;color:#fff;
+            padding:8px 12px;border-radius:999px;box-shadow:0 8px 26px rgba(0,0,0,.4);
+            font-size:12px;z-index:99}
+  .switcher button{background:#232838;color:#fff;border:1px solid #3a4152;border-radius:8px;
+                   padding:4px 9px;cursor:pointer;font:12px inherit}
+  .switcher button.on{background:var(--accent);border-color:var(--accent);color:#0b0d12;font-weight:600}
+  .switcher .lab{min-width:150px;text-align:center;color:#cfd6e6}
+  .switcher .grp{display:flex;gap:4px;padding-left:10px;border-left:1px solid #2a2f3d}
+  .switcher .tag{color:#8b93a7}
+</style>
+</head>
+<body>
+
+<div class="doc">
+  <h1>On the interpretation of clause 7</h1>
+  <p>The committee conducted a thorough investigation into the matter, but the manager had
+     already gone to ground. What the committee had taken for a routine oversight was in fact a
+     deliberate omission.</p>
+  <p>The report stops short of apportioning blame, but the implications are hard to miss. It
+     behoves us to consider whether such a course of action is consonant with our obligations.</p>
+  <p><em>(A fake document, only here so the panel is judged over real-looking text.)</em></p>
+</div>
+
+<div id="panel"></div>
+
+<div class="switcher">
+  <button id="prev">◀</button>
+  <span class="lab" id="lab">A (lean strip)</span>
+  <button id="next">▶</button>
+  <span class="grp">
+    <span class="tag">state</span>
+    <button data-state="result" class="on">result</button>
+    <button data-state="loading">loading</button>
+    <button data-state="error">error</button>
+  </span>
+  <span class="grp">
+    <span class="tag">provider</span>
+    <button data-prov="cloud" class="on">cloud</button>
+    <button data-prov="local">local</button>
+  </span>
+</div>
+
+<script>
+const NAMES = { A:"lean strip", B:"header + sections", C:"progressive cards" };
+const VARIANTS = ["A","B","C"];
+const q = new URLSearchParams(location.search);
+let variant = (q.get("variant") || "A").toUpperCase();
+if (!VARIANTS.includes(variant)) variant = "A";
+let state = q.get("state") || "result";
+let prov  = q.get("provider") || "cloud";
+
+const DATA = {
+  original: "The committee conducted a thorough investigation into the matter, but the manager had already gone to ground.",
+  comp: "The committee tried hard to find out what had happened, but the manager had already gone into hiding.",
+  glosses: [
+    ["conduct an investigation", "try to find out what happened"],
+    ["the matter",             "the situation being discussed"],
+    ["go to ground",           "hide so that nobody can find you"]
+  ],
+  grammar: null,
+  zh: "委员会对此事进行了彻底调查，但那位经理已经躲了起来。"
+};
+
+const chip = () => prov === "local"
+  ? `<span class="chip local">Qwen3-4B · local</span>`
+  : `<span class="chip cloud">deepseek-flash</span>`;
+
+/* ── shared bits (a shared header would defeat the point; these are atoms only) ── */
+const glossList = () => DATA.glosses.map(([e,g]) =>
+  `<p class="gl"><code>${e}</code><span class="arrow">→</span>${g}</p>`).join("");
+
+const loadingInner = () => `
+    <div class="orig">${DATA.original}</div>
+    <div class="skeleton" style="width:92%"></div>
+    <div class="skeleton" style="width:78%"></div>
+    <div class="skeleton" style="width:85%"></div>
+    <p class="gl" style="margin-top:12px;color:#565f75">explaining…</p>`;
+
+const errorInner = () => `
+    <div class="orig">${DATA.original}</div>
+    <p class="err">Could not explain this passage.</p>
+    <div class="errbox">deepseek-flash · 429 rate limited. Retried twice, then stopped.<br>
+      <span style="color:#8b93a7">The clipboard text is unchanged; nothing was stored.</span></div>`;
+
+/* ─────────────────────────── VARIANT A: lean strip ─────────────────────────── */
+function A(){
+  if (state==="loading") return `<div class="panel"><div class="pad">${loadingInner()}</div></div>`;
+  if (state==="error")   return `<div class="panel"><div class="pad">${errorInner()}</div></div>`;
+  return `<div class="panel">
+    <div class="pad">
+      <div class="orig">${DATA.original}</div>
+      <p class="comp">${DATA.comp}</p>
+      ${glossList()}
+      <p class="zh">${DATA.zh}</p>
+    </div>
+    <div class="count">
+      ${chip()}
+      <span style="margin-left:auto"></span>
+      <button class="btn ghost" title="regenerate">⟳</button>
+      <button class="btn ghost" title="open history">⤢</button>
+    </div>
+  </div>`;
+}
+
+/* ────────────────────── VARIANT B: header bar + sections ───────────────────── */
+function B(){
+  const head = `<div class="bar">
+      <span class="t">Explain clipboard</span>
+      ${chip()}
+      <span class="acts">
+        <button class="btn ghost" title="copy">⧉</button>
+        <button class="btn ghost" title="regenerate">⟳</button>
+        <button class="btn ghost" title="open history">⤢</button>
+        <button class="btn ghost" title="close">✕</button>
+      </span>
+    </div>`;
+  if (state==="loading") return `<div class="panel">${head}<div class="pad">${loadingInner()}</div></div>`;
+  if (state==="error")   return `<div class="panel">${head}<div class="pad">${errorInner()}</div></div>`;
+  const verify = prov==="local"
+    ? `<div class="verify">Local model. Its idiom glosses can be confidently wrong —
+         check against the original above, or ⟳ regenerate with the cloud model.</div>` : "";
+  return `<div class="panel">
+    ${head}
+    <details class="sect"><summary>Original</summary>
+      <div class="body"><div class="orig" style="margin:0">${DATA.original}</div></div></details>
+    <details class="sect" open><summary>Plain English</summary>
+      <div class="body"><p class="comp" style="margin:0">${DATA.comp}</p></div></details>
+    <details class="sect" open><summary>Key help (${DATA.glosses.length})</summary>
+      <div class="body">${glossList()}</div></details>
+    <details class="sect"><summary>Grammar</summary>
+      <div class="body"><p class="gl">Not needed for this passage.</p></div></details>
+    <details class="sect" open><summary>Translation</summary>
+      <div class="body"><p class="zh" style="margin:0">${DATA.zh}</p></div></details>
+    ${verify}
+    <div class="count"><span class="ring"></span> disappears in 20s · click outside to close</div>
+  </div>`;
+}
+
+/* ───────────────────── VARIANT C: progressive cards ────────────────────────── */
+function C(){
+  if (state==="loading") return `<div class="panel"><div class="pad">${loadingInner()}</div></div>`;
+  if (state==="error")   return `<div class="panel"><div class="pad">${errorInner()}</div></div>`;
+  const cards = DATA.glosses.map(([e,g],i) =>
+    `<div class="card${i===0?" open":""}" onclick="this.classList.toggle('open')">
+       <span class="hint">tap</span><span class="ex">${e}</span>
+       <div class="gl2">${g}</div></div>`).join("");
+  return `<div class="panel">
+    <div class="pad">
+      <p class="hero">${DATA.comp}</p>
+      <div class="cards">${cards}</div>
+      <div class="reveal" onclick="document.getElementById('zh').classList.toggle('hidden')">
+        show translation ▾</div>
+      <p class="zh hidden" id="zh">${DATA.zh}</p>
+      <hr class="sep">
+      <div class="reveal" onclick="document.getElementById('orig').classList.toggle('hidden')">
+        show original ▾</div>
+      <div class="orig hidden" id="orig">${DATA.original}</div>
+    </div>
+    <div class="count">${chip()}
+      <span style="margin-left:auto"></span>
+      <button class="btn ghost">⟳</button><button class="btn ghost">⤢</button></div>
+  </div>`;
+}
+
+const RENDER = { A, B, C };
+
+function draw(){
+  document.getElementById("panel").innerHTML = RENDER[variant]();
+  document.getElementById("lab").textContent = `${variant} (${NAMES[variant]})`;
+  document.querySelectorAll("[data-state]").forEach(b =>
+    b.classList.toggle("on", b.dataset.state === state));
+  document.querySelectorAll("[data-prov]").forEach(b =>
+    b.classList.toggle("on", b.dataset.prov === prov));
+  const u = new URL(location.href);
+  u.searchParams.set("variant", variant);
+  u.searchParams.set("state", state);
+  u.searchParams.set("provider", prov);
+  history.replaceState(null, "", u);
+}
+
+function cycle(step){
+  variant = VARIANTS[(VARIANTS.indexOf(variant) + step + VARIANTS.length) % VARIANTS.length];
+  draw();
+}
+document.getElementById("prev").onclick = () => cycle(-1);
+document.getElementById("next").onclick = () => cycle(1);
+document.querySelectorAll("[data-state]").forEach(b => b.onclick = () => { state = b.dataset.state; draw(); });
+document.querySelectorAll("[data-prov]").forEach(b => b.onclick = () => { prov = b.dataset.prov; draw(); });
+
+// the switcher must not steal arrow keys from fields (there are none here, but be correct)
+addEventListener("keydown", e => {
+  const t = e.target;
+  if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+  if (e.key === "ArrowLeft") cycle(-1);
+  if (e.key === "ArrowRight") cycle(1);
+});
+
+draw();
+</script>
+</body>
+</html>
