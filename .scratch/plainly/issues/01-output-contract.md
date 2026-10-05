@@ -21,6 +21,12 @@ Status: resolved
 - 必读：`../research/structured-output-support.md`。
 - **该票据的自然起点**：把 schema 真的编译过一遍各 provider 路径——票据 10 没有起过任何服务，所有结论都是文档/源码级。
 
+## Comments
+
+- **2026-10-05 更新：这条空白已补上。** [03 默认本地模型质量门槛](03-local-model-quality-bar.md) 用这张 schema 在 llama.cpp 上跑了 12 段真实难句：**12/12 契约通过**（嵌套 `response_format.json_schema.schema` + temperature 0，`finish_reason` 全 `stop`）。第一版具体 schema 在 `.scratch/plainly/bench/schema.json`。
+- 但同一批结果暴露：`grammar` **0/12**（含倒装句），以及习语/语域层面的自信误读——当时归因于提示词，见 [14 第一版系统提示词的标定](14-prompt-calibration.md)。
+- **2026-10-05 归因更正**：`grammar` 0/12 **不是契约或提示词的问题，是那个 4B 的能力边界**。同一份 schema 与提示词下，云端模型触发 **10–11/12**（思考关也有 3–4/12），且注释质量高。所以 `grammar` 字段保留；"null 则整节省略"这条渲染规则就是它的兜底。习语/语域那类错同理——**能力问题**，同一批提示词云端全对。
+
 ## Answer
 
 六个决策，2026-10-05 全部按推荐采纳：

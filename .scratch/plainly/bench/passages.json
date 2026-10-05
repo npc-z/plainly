@@ -1,0 +1,65 @@
+{
+  "_note": "PROTOTYPE-GRADE sample set for ticket 03. Hard English passages chosen to cover the blocker taxonomy in the comprehensible-english prompt: idioms, phrasal verbs, collocations, structural obstacles, literary/legal/technical register.",
+  "passages": [
+    {
+      "id": "p01",
+      "kind": "idiom + business",
+      "text": "The board gave the proposal short shrift, and the CFO was left to carry the can."
+    },
+    {
+      "id": "p02",
+      "kind": "phrasal verb + colloquial",
+      "text": "He bottled it at the last minute and threw his colleagues under the bus."
+    },
+    {
+      "id": "p03",
+      "kind": "structural (inversion)",
+      "text": "Not until the auditors had gone did the manager admit that the figures had been doctored."
+    },
+    {
+      "id": "p04",
+      "kind": "literary / formal register",
+      "text": "The house stood in a state of genteel decay, its occupants having long since repaired to the Continent."
+    },
+    {
+      "id": "p05",
+      "kind": "academic / hedging",
+      "text": "The findings are suggestive rather than conclusive, and ought not to be over-read."
+    },
+    {
+      "id": "p06",
+      "kind": "legal register",
+      "text": "The lessee shall indemnify the lessor against all claims arising from any breach of the covenants herein."
+    },
+    {
+      "id": "p07",
+      "kind": "collocation",
+      "text": "The report stops short of apportioning blame, but the implications are hard to miss."
+    },
+    {
+      "id": "p08",
+      "kind": "understatement / irony",
+      "text": "He was, to put it mildly, not best pleased with the outcome."
+    },
+    {
+      "id": "p09",
+      "kind": "long complex sentence",
+      "text": "What the committee had taken for a routine oversight was in fact a deliberate omission, designed to spare the minister an awkward question."
+    },
+    {
+      "id": "p10",
+      "kind": "idiom + financial",
+      "text": "The company was on the hook for a sum it could ill afford."
+    },
+    {
+      "id": "p11",
+      "kind": "technical / scientific",
+      "text": "The reaction proceeds only in the presence of a catalyst, without which the activation energy is prohibitively high."
+    },
+    {
+      "id": "p12",
+      "kind": "archaic / formal",
+      "text": "It behoves us to consider whether such a course of action is consonant with our obligations."
+    }
+  ]
+}

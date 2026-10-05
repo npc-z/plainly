@@ -1,0 +1,22 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["comprehensible", "glosses", "grammar", "translation"],
+  "properties": {
+    "comprehensible": { "type": "string" },
+    "glosses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["expression", "gloss"],
+        "properties": {
+          "expression": { "type": "string" },
+          "gloss": { "type": "string" }
+        }
+      }
+    },
+    "grammar": { "type": ["string", "null"] },
+    "translation": { "type": "string" }
+  }
+}

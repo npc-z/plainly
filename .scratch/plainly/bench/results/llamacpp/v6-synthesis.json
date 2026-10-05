@@ -1,0 +1,455 @@
+{
+  "provider": "llamacpp",
+  "model": "unsloth/Qwen3-4B-Instruct-2507-GGUF:Q4_K_M",
+  "base": "http://127.0.0.1:3060",
+  "prompt": "v6-synthesis",
+  "level": "B2",
+  "native_language": "Chinese",
+  "temperature": 0,
+  "n": 12,
+  "valid": 12,
+  "contract_pass_rate": 1.0,
+  "latency_s": {
+    "first": 3.53,
+    "min": 0.82,
+    "max": 3.53,
+    "mean": 1.73
+  },
+  "attempts_total": 12,
+  "records": [
+    {
+      "id": "p01",
+      "kind": "idiom + business",
+      "text": "The board gave the proposal short shrift, and the CFO was left to carry the can.",
+      "provider": "llamacpp",
+      "model": "unsloth/Qwen3-4B-Instruct-2507-GGUF:Q4_K_M",
+      "prompt": "v6-synthesis",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\"comprehensible\": \"The board didn't take the proposal seriously, and the CFO had to take full responsibility for it.\", \"glosses\": [{\"expression\": \"gave the proposal short shrift\", \"gloss\": \"treated the proposal as unimportant or not serious\"}, {\"expression\": \"carry the can\", \"gloss\": \"take the blame or responsibility for something\"}], \"grammar\": null, \"translation\": \"董事会对这个提议不重视，财务总监只好独自承担全部责任。\"}",
+      "artifact": {
+        "comprehensible": "The board didn't take the proposal seriously, and the CFO had to take full responsibility for it.",
+        "glosses": [
+          {
+            "expression": "gave the proposal short shrift",
+            "gloss": "treated the proposal as unimportant or not serious"
+          },
+          {
+            "expression": "carry the can",
+            "gloss": "take the blame or responsibility for something"
+          }
+        ],
+        "grammar": null,
+        "translation": "董事会对这个提议不重视，财务总监只好独自承担全部责任。"
+      },
+      "latency_s": 3.53,
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 107,
+        "prompt_tokens": 585,
+        "total_tokens": 692,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "attempts": 1,
+      "note": ""
+    },
+    {
+      "id": "p02",
+      "kind": "phrasal verb + colloquial",
+      "text": "He bottled it at the last minute and threw his colleagues under the bus.",
+      "provider": "llamacpp",
+      "model": "unsloth/Qwen3-4B-Instruct-2507-GGUF:Q4_K_M",
+      "prompt": "v6-synthesis",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\n  \"comprehensible\": \"He decided to keep the information secret at the last moment and blamed his coworkers instead.\",\n  \"glosses\": [\n    {\n      \"expression\": \"bottled it\",\n      \"gloss\": \"kept something secret, especially at the last minute\"\n    },\n    {\n      \"expression\": \"threw his colleagues under the bus\",\n      \"gloss\": \"blamed his coworkers for a mistake or failure\"\n    }\n  ],\n  \"grammar\": null,\n  \"translation\": \"他最后时刻把事情藏起来，并把责任推给了他的同事。\"\n}",
+      "artifact": {
+        "comprehensible": "He decided to keep the information secret at the last moment and blamed his coworkers instead.",
+        "glosses": [
+          {
+            "expression": "bottled it",
+            "gloss": "kept something secret, especially at the last minute"
+          },
+          {
+            "expression": "threw his colleagues under the bus",
+            "gloss": "blamed his coworkers for a mistake or failure"
+          }
+        ],
+        "grammar": null,
+        "translation": "他最后时刻把事情藏起来，并把责任推给了他的同事。"
+      },
+      "latency_s": 1.86,
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 126,
+        "prompt_tokens": 581,
+        "total_tokens": 707,
+        "prompt_tokens_details": {
+          "cached_tokens": 561
+        }
+      },
+      "attempts": 1,
+      "note": ""
+    },
+    {
+      "id": "p03",
+      "kind": "structural (inversion)",
+      "text": "Not until the auditors had gone did the manager admit that the figures had been doctored.",
+      "provider": "llamacpp",
+      "model": "unsloth/Qwen3-4B-Instruct-2507-GGUF:Q4_K_M",
+      "prompt": "v6-synthesis",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\"comprehensible\": \"The manager only admitted that the numbers had been changed when the auditors had left.\", \"glosses\": [], \"grammar\": null, \"translation\": \"直到审计人员离开后，经理才承认数字被篡改了。\"}",
+      "artifact": {
+        "comprehensible": "The manager only admitted that the numbers had been changed when the auditors had left.",
+        "glosses": [],
+        "grammar": null,
+        "translation": "直到审计人员离开后，经理才承认数字被篡改了。"
+      },
+      "latency_s": 0.82,
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 55,
+        "prompt_tokens": 586,
+        "total_tokens": 641,
+        "prompt_tokens_details": {
+          "cached_tokens": 561
+        }
+      },
+      "attempts": 1,
+      "note": ""
+    },
+    {
+      "id": "p04",
+      "kind": "literary / formal register",
+      "text": "The house stood in a state of genteel decay, its occupants having long since repaired to the Continent.",
+      "provider": "llamacpp",
+      "model": "unsloth/Qwen3-4B-Instruct-2507-GGUF:Q4_K_M",
+      "prompt": "v6-synthesis",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\n  \"comprehensible\": \"The house was in a polite kind of decline, and its people had long since moved to the Continent.\",\n  \"glosses\": [\n    {\n      \"expression\": \"a state of genteel decay\",\n      \"gloss\": \"a polite or respectful appearance of falling apart\"\n    },\n    {\n      \"expression\": \"having long since repaired to the Continent\",\n      \"gloss\": \"having already moved to the Continent\"\n    }\n  ],\n  \"grammar\": null,\n  \"translation\": \"房子处于一种体面的衰败状态，其住户早已搬去了欧洲大陆。\"\n}",
+      "artifact": {
+        "comprehensible": "The house was in a polite kind of decline, and its people had long since moved to the Continent.",
+        "glosses": [
+          {
+            "expression": "a state of genteel decay",
+            "gloss": "a polite or respectful appearance of falling apart"
+          },
+          {
+            "expression": "having long since repaired to the Continent",
+            "gloss": "having already moved to the Continent"
+          }
+        ],
+        "grammar": null,
+        "translation": "房子处于一种体面的衰败状态，其住户早已搬去了欧洲大陆。"
+      },
+      "latency_s": 1.94,
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 131,
+        "prompt_tokens": 587,
+        "total_tokens": 718,
+        "prompt_tokens_details": {
+          "cached_tokens": 561
+        }
+      },
+      "attempts": 1,
+      "note": ""
+    },
+    {
+      "id": "p05",
+      "kind": "academic / hedging",
+      "text": "The findings are suggestive rather than conclusive, and ought not to be over-read.",
+      "provider": "llamacpp",
+      "model": "unsloth/Qwen3-4B-Instruct-2507-GGUF:Q4_K_M",
+      "prompt": "v6-synthesis",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\"comprehensible\": \"The results point to something possible, but they don't prove it, and should not be taken as definite.\", \"glosses\": [{\"expression\": \"are suggestive rather than conclusive\", \"gloss\": \"point to a possibility, but do not prove it\"}, {\"expression\": \"ought not to be over-read\", \"gloss\": \"should not be interpreted too deeply or taken as certain\"}], \"grammar\": null, \"translation\": \"这些发现是提示性的而非确定性的，不应被过度解读。\"}",
+      "artifact": {
+        "comprehensible": "The results point to something possible, but they don't prove it, and should not be taken as definite.",
+        "glosses": [
+          {
+            "expression": "are suggestive rather than conclusive",
+            "gloss": "point to a possibility, but do not prove it"
+          },
+          {
+            "expression": "ought not to be over-read",
+            "gloss": "should not be interpreted too deeply or taken as certain"
+          }
+        ],
+        "grammar": null,
+        "translation": "这些发现是提示性的而非确定性的，不应被过度解读。"
+      },
+      "latency_s": 1.66,
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 112,
+        "prompt_tokens": 582,
+        "total_tokens": 694,
+        "prompt_tokens_details": {
+          "cached_tokens": 562
+        }
+      },
+      "attempts": 1,
+      "note": ""
+    },
+    {
+      "id": "p06",
+      "kind": "legal register",
+      "text": "The lessee shall indemnify the lessor against all claims arising from any breach of the covenants herein.",
+      "provider": "llamacpp",
+      "model": "unsloth/Qwen3-4B-Instruct-2507-GGUF:Q4_K_M",
+      "prompt": "v6-synthesis",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\n  \"comprehensible\": \"The person who rents the property must cover all costs if someone makes a claim because they broke the promises in this agreement.\",\n  \"glosses\": [\n    {\n      \"expression\": \"indemnify\",\n      \"gloss\": \"to pay for something when someone else is wronged or makes a claim\"\n    },\n    {\n      \"expression\": \"arising from\",\n      \"gloss\": \"coming from or caused by\"\n    },\n    {\n      \"expression\": \"breach of the covenants\",\n      \"gloss\": \"breaking the promises made in the agreement\"\n    }\n  ],\n  \"grammar\": null,\n  \"translation\": \"承租人必须对因违反本协议中承诺而产生的所有索赔负责。\"\n}",
+      "artifact": {
+        "comprehensible": "The person who rents the property must cover all costs if someone makes a claim because they broke the promises in this agreement.",
+        "glosses": [
+          {
+            "expression": "indemnify",
+            "gloss": "to pay for something when someone else is wronged or makes a claim"
+          },
+          {
+            "expression": "arising from",
+            "gloss": "coming from or caused by"
+          },
+          {
+            "expression": "breach of the covenants",
+            "gloss": "breaking the promises made in the agreement"
+          }
+        ],
+        "grammar": null,
+        "translation": "承租人必须对因违反本协议中承诺而产生的所有索赔负责。"
+      },
+      "latency_s": 2.42,
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 163,
+        "prompt_tokens": 589,
+        "total_tokens": 752,
+        "prompt_tokens_details": {
+          "cached_tokens": 562
+        }
+      },
+      "attempts": 1,
+      "note": ""
+    },
+    {
+      "id": "p07",
+      "kind": "collocation",
+      "text": "The report stops short of apportioning blame, but the implications are hard to miss.",
+      "provider": "llamacpp",
+      "model": "unsloth/Qwen3-4B-Instruct-2507-GGUF:Q4_K_M",
+      "prompt": "v6-synthesis",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\"comprehensible\": \"The report does not say who is to blame, but it is clear what the consequences are.\", \"glosses\": [], \"grammar\": null, \"translation\": \"报告没有明确指出谁该负责，但其后果是显而易见的。\"}",
+      "artifact": {
+        "comprehensible": "The report does not say who is to blame, but it is clear what the consequences are.",
+        "glosses": [],
+        "grammar": null,
+        "translation": "报告没有明确指出谁该负责，但其后果是显而易见的。"
+      },
+      "latency_s": 0.9,
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 60,
+        "prompt_tokens": 584,
+        "total_tokens": 644,
+        "prompt_tokens_details": {
+          "cached_tokens": 562
+        }
+      },
+      "attempts": 1,
+      "note": ""
+    },
+    {
+      "id": "p08",
+      "kind": "understatement / irony",
+      "text": "He was, to put it mildly, not best pleased with the outcome.",
+      "provider": "llamacpp",
+      "model": "unsloth/Qwen3-4B-Instruct-2507-GGUF:Q4_K_M",
+      "prompt": "v6-synthesis",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\"comprehensible\": \"He was, to put it mildly, not very happy with the result.\", \"glosses\": [{\"expression\": \"to put it mildly\", \"gloss\": \"to say something is true, but in a soft or weak way, meaning it's not actually very good\"}], \"grammar\": null, \"translation\": \"他对此结果并不满意，说起来委婉一点。\"}",
+      "artifact": {
+        "comprehensible": "He was, to put it mildly, not very happy with the result.",
+        "glosses": [
+          {
+            "expression": "to put it mildly",
+            "gloss": "to say something is true, but in a soft or weak way, meaning it's not actually very good"
+          }
+        ],
+        "grammar": null,
+        "translation": "他对此结果并不满意，说起来委婉一点。"
+      },
+      "latency_s": 1.28,
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 86,
+        "prompt_tokens": 581,
+        "total_tokens": 667,
+        "prompt_tokens_details": {
+          "cached_tokens": 561
+        }
+      },
+      "attempts": 1,
+      "note": ""
+    },
+    {
+      "id": "p09",
+      "kind": "long complex sentence",
+      "text": "What the committee had taken for a routine oversight was in fact a deliberate omission, designed to spare the minister an awkward question.",
+      "provider": "llamacpp",
+      "model": "unsloth/Qwen3-4B-Instruct-2507-GGUF:Q4_K_M",
+      "prompt": "v6-synthesis",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\"comprehensible\": \"The committee thought it was just a normal check, but it was actually a purposeful skip, meant to avoid asking the minister a difficult question.\", \"glosses\": [{\"expression\": \"taken for a routine oversight\", \"gloss\": \"thought was a normal check or inspection\"}, {\"expression\": \"deliberate omission\", \"gloss\": \"a purposeful decision to leave something out\"}, {\"expression\": \"designed to spare the minister an awkward question\", \"gloss\": \"intended to avoid asking the minister a difficult or uncomfortable question\"}], \"grammar\": null, \"translation\": \"委员会原本认为这只是例行检查，实际上却是一次故意的遗漏，目的是避免向部长提出一个尴尬的问题。\"}",
+      "artifact": {
+        "comprehensible": "The committee thought it was just a normal check, but it was actually a purposeful skip, meant to avoid asking the minister a difficult question.",
+        "glosses": [
+          {
+            "expression": "taken for a routine oversight",
+            "gloss": "thought was a normal check or inspection"
+          },
+          {
+            "expression": "deliberate omission",
+            "gloss": "a purposeful decision to leave something out"
+          },
+          {
+            "expression": "designed to spare the minister an awkward question",
+            "gloss": "intended to avoid asking the minister a difficult or uncomfortable question"
+          }
+        ],
+        "grammar": null,
+        "translation": "委员会原本认为这只是例行检查，实际上却是一次故意的遗漏，目的是避免向部长提出一个尴尬的问题。"
+      },
+      "latency_s": 2.3,
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 154,
+        "prompt_tokens": 591,
+        "total_tokens": 745,
+        "prompt_tokens_details": {
+          "cached_tokens": 561
+        }
+      },
+      "attempts": 1,
+      "note": ""
+    },
+    {
+      "id": "p10",
+      "kind": "idiom + financial",
+      "text": "The company was on the hook for a sum it could ill afford.",
+      "provider": "llamacpp",
+      "model": "unsloth/Qwen3-4B-Instruct-2507-GGUF:Q4_K_M",
+      "prompt": "v6-synthesis",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\"comprehensible\": \"The company had to pay a large amount of money, but it was far beyond what it could really afford.\", \"glosses\": [{\"expression\": \"on the hook for\", \"gloss\": \"required to pay or responsible for\"}, {\"expression\": \"a sum it could ill afford\", \"gloss\": \"a large amount of money that was much more than it could pay\"}], \"grammar\": null, \"translation\": \"公司必须支付一笔它根本负担不起的金额。\"}",
+      "artifact": {
+        "comprehensible": "The company had to pay a large amount of money, but it was far beyond what it could really afford.",
+        "glosses": [
+          {
+            "expression": "on the hook for",
+            "gloss": "required to pay or responsible for"
+          },
+          {
+            "expression": "a sum it could ill afford",
+            "gloss": "a large amount of money that was much more than it could pay"
+          }
+        ],
+        "grammar": null,
+        "translation": "公司必须支付一笔它根本负担不起的金额。"
+      },
+      "latency_s": 1.61,
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 107,
+        "prompt_tokens": 580,
+        "total_tokens": 687,
+        "prompt_tokens_details": {
+          "cached_tokens": 561
+        }
+      },
+      "attempts": 1,
+      "note": ""
+    },
+    {
+      "id": "p11",
+      "kind": "technical / scientific",
+      "text": "The reaction proceeds only in the presence of a catalyst, without which the activation energy is prohibitively high.",
+      "provider": "llamacpp",
+      "model": "unsloth/Qwen3-4B-Instruct-2507-GGUF:Q4_K_M",
+      "prompt": "v6-synthesis",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\"comprehensible\": \"The reaction only happens when there is a catalyst. Without it, the energy needed to start the reaction is too high.\", \"glosses\": [{\"expression\": \"prohibitively high\", \"gloss\": \"so high that it is impossible to overcome\"}], \"grammar\": null, \"translation\": \"该反应只有在有催化剂的情况下才会发生，没有催化剂时，所需活化能过高。\"}",
+      "artifact": {
+        "comprehensible": "The reaction only happens when there is a catalyst. Without it, the energy needed to start the reaction is too high.",
+        "glosses": [
+          {
+            "expression": "prohibitively high",
+            "gloss": "so high that it is impossible to overcome"
+          }
+        ],
+        "grammar": null,
+        "translation": "该反应只有在有催化剂的情况下才会发生，没有催化剂时，所需活化能过高。"
+      },
+      "latency_s": 1.35,
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 90,
+        "prompt_tokens": 587,
+        "total_tokens": 677,
+        "prompt_tokens_details": {
+          "cached_tokens": 562
+        }
+      },
+      "attempts": 1,
+      "note": ""
+    },
+    {
+      "id": "p12",
+      "kind": "archaic / formal",
+      "text": "It behoves us to consider whether such a course of action is consonant with our obligations.",
+      "provider": "llamacpp",
+      "model": "unsloth/Qwen3-4B-Instruct-2507-GGUF:Q4_K_M",
+      "prompt": "v6-synthesis",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\"comprehensible\": \"It is important for us to think about whether taking this action matches our responsibilities.\", \"glosses\": [{\"expression\": \"behooves us\", \"gloss\": \"it is in our best interest or it is important for us\"}], \"grammar\": null, \"translation\": \"我们必须考虑这种做法是否符合我们的义务。\"}",
+      "artifact": {
+        "comprehensible": "It is important for us to think about whether taking this action matches our responsibilities.",
+        "glosses": [
+          {
+            "expression": "behooves us",
+            "gloss": "it is in our best interest or it is important for us"
+          }
+        ],
+        "grammar": null,
+        "translation": "我们必须考虑这种做法是否符合我们的义务。"
+      },
+      "latency_s": 1.13,
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 75,
+        "prompt_tokens": 585,
+        "total_tokens": 660,
+        "prompt_tokens_details": {
+          "cached_tokens": 561
+        }
+      },
+      "attempts": 1,
+      "note": ""
+    }
+  ]
+}

@@ -1,0 +1,537 @@
+{
+  "provider": "deepseek",
+  "model": "deepseek-flash",
+  "base": "https://api.deepseek.com/v1",
+  "prompt": "v5-cautious-understatement",
+  "level": "B2",
+  "native_language": "Chinese",
+  "temperature": 0,
+  "n": 12,
+  "valid": 12,
+  "contract_pass_rate": 1.0,
+  "latency_s": {
+    "first": 1.28,
+    "min": 0.85,
+    "max": 2.15,
+    "mean": 1.38
+  },
+  "attempts_total": 12,
+  "records": [
+    {
+      "id": "p01",
+      "kind": "idiom + business",
+      "text": "The board gave the proposal short shrift, and the CFO was left to carry the can.",
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "prompt": "v5-cautious-understatement",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\n  \"comprehensible\": \"The board dealt with the proposal quickly and without much attention, and the CFO was left to take the blame.\",\n  \"glosses\": [\n    {\n      \"expression\": \"gave the proposal short shrift\",\n      \"gloss\": \"dealt with the proposal quickly and without giving it much attention or consideration\"\n    },\n    {\n      \"expression\": \"carry the can\",\n      \"gloss\": \"take the blame or responsibility for something that has gone wrong\"\n    }\n  ],\n  \"grammar\": null,\n  \"translation\": \"董事会对该提案草草处理，首席财务官只好背黑锅。\"\n}",
+      "artifact": {
+        "comprehensible": "The board dealt with the proposal quickly and without much attention, and the CFO was left to take the blame.",
+        "glosses": [
+          {
+            "expression": "gave the proposal short shrift",
+            "gloss": "dealt with the proposal quickly and without giving it much attention or consideration"
+          },
+          {
+            "expression": "carry the can",
+            "gloss": "take the blame or responsibility for something that has gone wrong"
+          }
+        ],
+        "grammar": null,
+        "translation": "董事会对该提案草草处理，首席财务官只好背黑锅。"
+      },
+      "latency_s": 1.28,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 545,
+        "completion_tokens": 139,
+        "total_tokens": 684,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 545
+      },
+      "attempts": 1,
+      "note": ""
+    },
+    {
+      "id": "p02",
+      "kind": "phrasal verb + colloquial",
+      "text": "He bottled it at the last minute and threw his colleagues under the bus.",
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "prompt": "v5-cautious-understatement",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\n  \"comprehensible\": \"At the very last moment, he lost his nerve and betrayed his colleagues by shifting the blame onto them.\",\n  \"glosses\": [\n    {\n      \"expression\": \"bottled it\",\n      \"gloss\": \"lost his nerve and failed to do what he was supposed to do\"\n    },\n    {\n      \"expression\": \"threw his colleagues under the bus\",\n      \"gloss\": \"betrayed his colleagues by putting the blame on them to protect himself\"\n    }\n  ],\n  \"grammar\": null,\n  \"translation\": \"他在最后一刻临阵退缩，还把责任推给了同事。\"\n}",
+      "artifact": {
+        "comprehensible": "At the very last moment, he lost his nerve and betrayed his colleagues by shifting the blame onto them.",
+        "glosses": [
+          {
+            "expression": "bottled it",
+            "gloss": "lost his nerve and failed to do what he was supposed to do"
+          },
+          {
+            "expression": "threw his colleagues under the bus",
+            "gloss": "betrayed his colleagues by putting the blame on them to protect himself"
+          }
+        ],
+        "grammar": null,
+        "translation": "他在最后一刻临阵退缩，还把责任推给了同事。"
+      },
+      "latency_s": 1.07,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 541,
+        "completion_tokens": 138,
+        "total_tokens": 679,
+        "prompt_tokens_details": {
+          "cached_tokens": 384
+        },
+        "prompt_cache_hit_tokens": 384,
+        "prompt_cache_miss_tokens": 157
+      },
+      "attempts": 1,
+      "note": ""
+    },
+    {
+      "id": "p03",
+      "kind": "structural (inversion)",
+      "text": "Not until the auditors had gone did the manager admit that the figures had been doctored.",
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "prompt": "v5-cautious-understatement",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\n  \"comprehensible\": \"The manager only admitted that the numbers had been changed dishonestly after the auditors had left.\",\n  \"glosses\": [\n    {\n      \"expression\": \"Not until\",\n      \"gloss\": \"only after; used at the start of a sentence to say that something happens only after a certain point\"\n    },\n    {\n      \"expression\": \"doctored\",\n      \"gloss\": \"changed dishonestly to deceive people\"\n    }\n  ],\n  \"grammar\": \"The sentence begins with 'Not until', which forces the auxiliary verb 'did' to come before the subject 'the manager' (inversion). The main clause is 'did the manager admit...', and the 'that' clause is what he admitted. The meaning is: the manager admitted only after the auditors had gone.\",\n  \"translation\": \"直到审计员离开之后，经理才承认那些数字被篡改了。\"\n}",
+      "artifact": {
+        "comprehensible": "The manager only admitted that the numbers had been changed dishonestly after the auditors had left.",
+        "glosses": [
+          {
+            "expression": "Not until",
+            "gloss": "only after; used at the start of a sentence to say that something happens only after a certain point"
+          },
+          {
+            "expression": "doctored",
+            "gloss": "changed dishonestly to deceive people"
+          }
+        ],
+        "grammar": "The sentence begins with 'Not until', which forces the auxiliary verb 'did' to come before the subject 'the manager' (inversion). The main clause is 'did the manager admit...', and the 'that' clause is what he admitted. The meaning is: the manager admitted only after the auditors had gone.",
+        "translation": "直到审计员离开之后，经理才承认那些数字被篡改了。"
+      },
+      "latency_s": 1.44,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 544,
+        "completion_tokens": 194,
+        "total_tokens": 738,
+        "prompt_tokens_details": {
+          "cached_tokens": 384
+        },
+        "prompt_cache_hit_tokens": 384,
+        "prompt_cache_miss_tokens": 160
+      },
+      "attempts": 1,
+      "note": ""
+    },
+    {
+      "id": "p04",
+      "kind": "literary / formal register",
+      "text": "The house stood in a state of genteel decay, its occupants having long since repaired to the Continent.",
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "prompt": "v5-cautious-understatement",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\n  \"comprehensible\": \"The house was in a condition of dignified but shabby decline, because the people who lived there had moved away to mainland Europe a long time ago.\",\n  \"glosses\": [\n    {\n      \"expression\": \"genteel decay\",\n      \"gloss\": \"a state of being run-down but still showing signs of former upper-class taste; shabby but not poor\"\n    },\n    {\n      \"expression\": \"having long since repaired to\",\n      \"gloss\": \"having moved to (a place) a long time ago; 'repaired to' is an old-fashioned way of saying 'went to'\"\n    },\n    {\n      \"expression\": \"the Continent\",\n      \"gloss\": \"mainland Europe (used especially by British speakers)\"\n    }\n  ],\n  \"grammar\": \"The phrase 'its occupants having long since repaired to the Continent' is an absolute construction: it has its own subject ('its occupants') and a participle ('having repaired'), and it gives the reason or accompanying circumstance for the main clause. It is not a separate sentence, and 'having' shows the moving happened before the house's present state.\",\n  \"translation\": \"这座房子处于一种体面而破败的状态，因为它的住户早已迁往欧洲大陆。\"\n}",
+      "artifact": {
+        "comprehensible": "The house was in a condition of dignified but shabby decline, because the people who lived there had moved away to mainland Europe a long time ago.",
+        "glosses": [
+          {
+            "expression": "genteel decay",
+            "gloss": "a state of being run-down but still showing signs of former upper-class taste; shabby but not poor"
+          },
+          {
+            "expression": "having long since repaired to",
+            "gloss": "having moved to (a place) a long time ago; 'repaired to' is an old-fashioned way of saying 'went to'"
+          },
+          {
+            "expression": "the Continent",
+            "gloss": "mainland Europe (used especially by British speakers)"
+          }
+        ],
+        "grammar": "The phrase 'its occupants having long since repaired to the Continent' is an absolute construction: it has its own subject ('its occupants') and a participle ('having repaired'), and it gives the reason or accompanying circumstance for the main clause. It is not a separate sentence, and 'having' shows the moving happened before the house's present state.",
+        "translation": "这座房子处于一种体面而破败的状态，因为它的住户早已迁往欧洲大陆。"
+      },
+      "latency_s": 2.15,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 547,
+        "completion_tokens": 270,
+        "total_tokens": 817,
+        "prompt_tokens_details": {
+          "cached_tokens": 384
+        },
+        "prompt_cache_hit_tokens": 384,
+        "prompt_cache_miss_tokens": 163
+      },
+      "attempts": 1,
+      "note": ""
+    },
+    {
+      "id": "p05",
+      "kind": "academic / hedging",
+      "text": "The findings are suggestive rather than conclusive, and ought not to be over-read.",
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "prompt": "v5-cautious-understatement",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\n  \"comprehensible\": \"What the study found hints at something; it does not prove it. People should not read more into the results than they actually support.\",\n  \"glosses\": [\n    {\n      \"expression\": \"suggestive rather than conclusive\",\n      \"gloss\": \"hinting at a possible answer, not proving it\"\n    },\n    {\n      \"expression\": \"ought not to be over-read\",\n      \"gloss\": \"should not be given more meaning than they really have\"\n    }\n  ],\n  \"grammar\": null,\n  \"translation\": \"这些发现只是提示性的，并非定论，不应被过度解读。\"\n}",
+      "artifact": {
+        "comprehensible": "What the study found hints at something; it does not prove it. People should not read more into the results than they actually support.",
+        "glosses": [
+          {
+            "expression": "suggestive rather than conclusive",
+            "gloss": "hinting at a possible answer, not proving it"
+          },
+          {
+            "expression": "ought not to be over-read",
+            "gloss": "should not be given more meaning than they really have"
+          }
+        ],
+        "grammar": null,
+        "translation": "这些发现只是提示性的，并非定论，不应被过度解读。"
+      },
+      "latency_s": 1.64,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 542,
+        "completion_tokens": 140,
+        "total_tokens": 682,
+        "prompt_tokens_details": {
+          "cached_tokens": 384
+        },
+        "prompt_cache_hit_tokens": 384,
+        "prompt_cache_miss_tokens": 158
+      },
+      "attempts": 1,
+      "note": ""
+    },
+    {
+      "id": "p06",
+      "kind": "legal register",
+      "text": "The lessee shall indemnify the lessor against all claims arising from any breach of the covenants herein.",
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "prompt": "v5-cautious-understatement",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\n  \"comprehensible\": \"The person renting the property must protect the owner from any claims that come from breaking any of the promises made in this agreement.\",\n  \"glosses\": [\n    {\n      \"expression\": \"indemnify\",\n      \"gloss\": \"to protect someone from loss or damage by paying for it\"\n    },\n    {\n      \"expression\": \"lessee\",\n      \"gloss\": \"the person who rents the property\"\n    },\n    {\n      \"expression\": \"lessor\",\n      \"gloss\": \"the person who owns the property and rents it out\"\n    },\n    {\n      \"expression\": \"covenants herein\",\n      \"gloss\": \"the promises stated in this agreement\"\n    }\n  ],\n  \"grammar\": null,\n  \"translation\": \"承租人应就因违反本协议中的任何约定而引起的所有索赔，向出租人作出赔偿。\"\n}",
+      "artifact": {
+        "comprehensible": "The person renting the property must protect the owner from any claims that come from breaking any of the promises made in this agreement.",
+        "glosses": [
+          {
+            "expression": "indemnify",
+            "gloss": "to protect someone from loss or damage by paying for it"
+          },
+          {
+            "expression": "lessee",
+            "gloss": "the person who rents the property"
+          },
+          {
+            "expression": "lessor",
+            "gloss": "the person who owns the property and rents it out"
+          },
+          {
+            "expression": "covenants herein",
+            "gloss": "the promises stated in this agreement"
+          }
+        ],
+        "grammar": null,
+        "translation": "承租人应就因违反本协议中的任何约定而引起的所有索赔，向出租人作出赔偿。"
+      },
+      "latency_s": 1.11,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 547,
+        "completion_tokens": 189,
+        "total_tokens": 736,
+        "prompt_tokens_details": {
+          "cached_tokens": 384
+        },
+        "prompt_cache_hit_tokens": 384,
+        "prompt_cache_miss_tokens": 163
+      },
+      "attempts": 1,
+      "note": ""
+    },
+    {
+      "id": "p07",
+      "kind": "collocation",
+      "text": "The report stops short of apportioning blame, but the implications are hard to miss.",
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "prompt": "v5-cautious-understatement",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\n  \"comprehensible\": \"The report does not go as far as to say who is to blame, but the things it suggests are very clear.\",\n  \"glosses\": [\n    {\n      \"expression\": \"stops short of\",\n      \"gloss\": \"does not go as far as; deliberately does not do something\"\n    },\n    {\n      \"expression\": \"apportioning blame\",\n      \"gloss\": \"saying who is responsible for something bad\"\n    },\n    {\n      \"expression\": \"hard to miss\",\n      \"gloss\": \"very easy to notice; impossible not to see\"\n    }\n  ],\n  \"grammar\": null,\n  \"translation\": \"报告没有走到归咎于人的那一步，但其中的暗示很难被忽略。\"\n}",
+      "artifact": {
+        "comprehensible": "The report does not go as far as to say who is to blame, but the things it suggests are very clear.",
+        "glosses": [
+          {
+            "expression": "stops short of",
+            "gloss": "does not go as far as; deliberately does not do something"
+          },
+          {
+            "expression": "apportioning blame",
+            "gloss": "saying who is responsible for something bad"
+          },
+          {
+            "expression": "hard to miss",
+            "gloss": "very easy to notice; impossible not to see"
+          }
+        ],
+        "grammar": null,
+        "translation": "报告没有走到归咎于人的那一步，但其中的暗示很难被忽略。"
+      },
+      "latency_s": 1.45,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 544,
+        "completion_tokens": 164,
+        "total_tokens": 708,
+        "prompt_tokens_details": {
+          "cached_tokens": 384
+        },
+        "prompt_cache_hit_tokens": 384,
+        "prompt_cache_miss_tokens": 160
+      },
+      "attempts": 1,
+      "note": ""
+    },
+    {
+      "id": "p08",
+      "kind": "understatement / irony",
+      "text": "He was, to put it mildly, not best pleased with the outcome.",
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "prompt": "v5-cautious-understatement",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\n  \"comprehensible\": \"He was, to say the least, quite unhappy with the result.\",\n  \"glosses\": [\n    {\n      \"expression\": \"to put it mildly\",\n      \"gloss\": \"used to say that you are describing something in a gentler way than it really is\"\n    },\n    {\n      \"expression\": \"not best pleased\",\n      \"gloss\": \"very annoyed or unhappy\"\n    }\n  ],\n  \"grammar\": null,\n  \"translation\": \"说得客气一点，他对这个结果相当不满。\"\n}",
+      "artifact": {
+        "comprehensible": "He was, to say the least, quite unhappy with the result.",
+        "glosses": [
+          {
+            "expression": "to put it mildly",
+            "gloss": "used to say that you are describing something in a gentler way than it really is"
+          },
+          {
+            "expression": "not best pleased",
+            "gloss": "very annoyed or unhappy"
+          }
+        ],
+        "grammar": null,
+        "translation": "说得客气一点，他对这个结果相当不满。"
+      },
+      "latency_s": 1.28,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 541,
+        "completion_tokens": 118,
+        "total_tokens": 659,
+        "prompt_tokens_details": {
+          "cached_tokens": 384
+        },
+        "prompt_cache_hit_tokens": 384,
+        "prompt_cache_miss_tokens": 157
+      },
+      "attempts": 1,
+      "note": ""
+    },
+    {
+      "id": "p09",
+      "kind": "long complex sentence",
+      "text": "What the committee had taken for a routine oversight was in fact a deliberate omission, designed to spare the minister an awkward question.",
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "prompt": "v5-cautious-understatement",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\n  \"comprehensible\": \"The committee thought it was just an ordinary mistake, but it was actually done on purpose: someone left it out so that the minister would not have to face a difficult question.\",\n  \"glosses\": [\n    {\n      \"expression\": \"taken for\",\n      \"gloss\": \"thought to be; believed to be\"\n    },\n    {\n      \"expression\": \"routine oversight\",\n      \"gloss\": \"a normal, everyday mistake of forgetting or missing something\"\n    },\n    {\n      \"expression\": \"deliberate omission\",\n      \"gloss\": \"something left out on purpose, not by accident\"\n    },\n    {\n      \"expression\": \"spare the minister an awkward question\",\n      \"gloss\": \"save the minister from having to deal with an embarrassing or difficult question\"\n    }\n  ],\n  \"grammar\": null,\n  \"translation\": \"委员会以为那只是一次普通的疏忽，但实际上那是故意省略的，目的是让部长免于面对一个尴尬的问题。\"\n}",
+      "artifact": {
+        "comprehensible": "The committee thought it was just an ordinary mistake, but it was actually done on purpose: someone left it out so that the minister would not have to face a difficult question.",
+        "glosses": [
+          {
+            "expression": "taken for",
+            "gloss": "thought to be; believed to be"
+          },
+          {
+            "expression": "routine oversight",
+            "gloss": "a normal, everyday mistake of forgetting or missing something"
+          },
+          {
+            "expression": "deliberate omission",
+            "gloss": "something left out on purpose, not by accident"
+          },
+          {
+            "expression": "spare the minister an awkward question",
+            "gloss": "save the minister from having to deal with an embarrassing or difficult question"
+          }
+        ],
+        "grammar": null,
+        "translation": "委员会以为那只是一次普通的疏忽，但实际上那是故意省略的，目的是让部长免于面对一个尴尬的问题。"
+      },
+      "latency_s": 1.26,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 551,
+        "completion_tokens": 214,
+        "total_tokens": 765,
+        "prompt_tokens_details": {
+          "cached_tokens": 384
+        },
+        "prompt_cache_hit_tokens": 384,
+        "prompt_cache_miss_tokens": 167
+      },
+      "attempts": 1,
+      "note": ""
+    },
+    {
+      "id": "p10",
+      "kind": "idiom + financial",
+      "text": "The company was on the hook for a sum it could ill afford.",
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "prompt": "v5-cautious-understatement",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\n  \"comprehensible\": \"The company was responsible for paying an amount of money that it could not easily afford.\",\n  \"glosses\": [\n    {\n      \"expression\": \"on the hook for\",\n      \"gloss\": \"responsible for paying (money) or for dealing with something\"\n    },\n    {\n      \"expression\": \"could ill afford\",\n      \"gloss\": \"could not easily afford; could barely afford\"\n    }\n  ],\n  \"grammar\": null,\n  \"translation\": \"这家公司需要为一笔它几乎负担不起的款项负责。\"\n}",
+      "artifact": {
+        "comprehensible": "The company was responsible for paying an amount of money that it could not easily afford.",
+        "glosses": [
+          {
+            "expression": "on the hook for",
+            "gloss": "responsible for paying (money) or for dealing with something"
+          },
+          {
+            "expression": "could ill afford",
+            "gloss": "could not easily afford; could barely afford"
+          }
+        ],
+        "grammar": null,
+        "translation": "这家公司需要为一笔它几乎负担不起的款项负责。"
+      },
+      "latency_s": 0.85,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 540,
+        "completion_tokens": 122,
+        "total_tokens": 662,
+        "prompt_tokens_details": {
+          "cached_tokens": 384
+        },
+        "prompt_cache_hit_tokens": 384,
+        "prompt_cache_miss_tokens": 156
+      },
+      "attempts": 1,
+      "note": ""
+    },
+    {
+      "id": "p11",
+      "kind": "technical / scientific",
+      "text": "The reaction proceeds only in the presence of a catalyst, without which the activation energy is prohibitively high.",
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "prompt": "v5-cautious-understatement",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\n  \"comprehensible\": \"The reaction happens only when a catalyst is there. If there is no catalyst, the activation energy is so high that the reaction cannot take place.\",\n  \"glosses\": [\n    {\n      \"expression\": \"proceeds\",\n      \"gloss\": \"happens or goes forward\"\n    },\n    {\n      \"expression\": \"in the presence of\",\n      \"gloss\": \"when something is there\"\n    },\n    {\n      \"expression\": \"without which\",\n      \"gloss\": \"if it (the catalyst) is not there\"\n    },\n    {\n      \"expression\": \"prohibitively high\",\n      \"gloss\": \"so high that it prevents something from happening\"\n    }\n  ],\n  \"grammar\": \"The phrase 'without which' refers back to 'a catalyst'. It means 'if the catalyst is not present'. The clause 'without which the activation energy is prohibitively high' explains the result of not having a catalyst.\",\n  \"translation\": \"该反应只有在催化剂存在时才能进行；如果没有催化剂，活化能会高得使反应无法发生。\"\n}",
+      "artifact": {
+        "comprehensible": "The reaction happens only when a catalyst is there. If there is no catalyst, the activation energy is so high that the reaction cannot take place.",
+        "glosses": [
+          {
+            "expression": "proceeds",
+            "gloss": "happens or goes forward"
+          },
+          {
+            "expression": "in the presence of",
+            "gloss": "when something is there"
+          },
+          {
+            "expression": "without which",
+            "gloss": "if it (the catalyst) is not there"
+          },
+          {
+            "expression": "prohibitively high",
+            "gloss": "so high that it prevents something from happening"
+          }
+        ],
+        "grammar": "The phrase 'without which' refers back to 'a catalyst'. It means 'if the catalyst is not present'. The clause 'without which the activation energy is prohibitively high' explains the result of not having a catalyst.",
+        "translation": "该反应只有在催化剂存在时才能进行；如果没有催化剂，活化能会高得使反应无法发生。"
+      },
+      "latency_s": 1.48,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 547,
+        "completion_tokens": 234,
+        "total_tokens": 781,
+        "prompt_tokens_details": {
+          "cached_tokens": 384
+        },
+        "prompt_cache_hit_tokens": 384,
+        "prompt_cache_miss_tokens": 163
+      },
+      "attempts": 1,
+      "note": ""
+    },
+    {
+      "id": "p12",
+      "kind": "archaic / formal",
+      "text": "It behoves us to consider whether such a course of action is consonant with our obligations.",
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "prompt": "v5-cautious-understatement",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\n  \"comprehensible\": \"It is proper for us to think about whether acting in this way fits with what we are obliged to do.\",\n  \"glosses\": [\n    {\n      \"expression\": \"behoves us\",\n      \"gloss\": \"it is right or necessary for us\"\n    },\n    {\n      \"expression\": \"such a course of action\",\n      \"gloss\": \"acting in this way\"\n    },\n    {\n      \"expression\": \"consonant with\",\n      \"gloss\": \"in agreement with; consistent with\"\n    }\n  ],\n  \"grammar\": null,\n  \"translation\": \"我们应当考虑，这样的行动方针是否符合我们的义务。\"\n}",
+      "artifact": {
+        "comprehensible": "It is proper for us to think about whether acting in this way fits with what we are obliged to do.",
+        "glosses": [
+          {
+            "expression": "behoves us",
+            "gloss": "it is right or necessary for us"
+          },
+          {
+            "expression": "such a course of action",
+            "gloss": "acting in this way"
+          },
+          {
+            "expression": "consonant with",
+            "gloss": "in agreement with; consistent with"
+          }
+        ],
+        "grammar": null,
+        "translation": "我们应当考虑，这样的行动方针是否符合我们的义务。"
+      },
+      "latency_s": 1.49,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 544,
+        "completion_tokens": 146,
+        "total_tokens": 690,
+        "prompt_tokens_details": {
+          "cached_tokens": 384
+        },
+        "prompt_cache_hit_tokens": 384,
+        "prompt_cache_miss_tokens": 160
+      },
+      "attempts": 1,
+      "note": ""
+    }
+  ]
+}

@@ -26,3 +26,8 @@ Status: open
   - **DeepSeek**：无 schema 强制，归入"提示词 + 校验 + 重试"档，且要处理空 content。
 - 必读：`../research/structured-output-support.md`。
 - 这条结论直接支撑"哪些 provider 敢承诺契约、哪些只是尽力而为"的对外说法。
+- **来自票据 14 的三条实测约束**：
+  - **重试只救随机畸形，救不了系统性漂移。** DeepSeek 上 v3 的错字段名（`paraphrase` 而非 `comprehensible`）**3 次全复现**，白跑 24 次调用——而且当时 `temperature` 在思考模式下被静默忽略，即那不是采样噪声。所以重试策略要能区分"输出畸形"（重试可能有用）与"契约系统性漂移"（重试无用，要么改提示词要么靠 schema 强制）。
+  - **推理模型的 token 预算**：`deepseek-flash` 思考态下一个单句就能烧 1304 个 `reasoning_tokens`（completion 的 90%+）。`max_tokens` 必须按思考预算给足，否则长句会被截断成畸形输出——然后被上面的重试逻辑误判成"畸形"。
+  - **思考开关与它的一串坑**：规范写法 `{"thinking":{"type":"disabled"}}`（或 `{"reasoning_effort":"none"}`）；`{"thinking":false}` 是 **422**；`{"enable_thinking":false}` **静默接受但无效**。另外**思考态下 `temperature`/`presence_penalty`/`frequency_penalty` 全部静默失效**（官方文档）——探测 provider 能力时不能只看 HTTP 200。
+- **默认取"云端 + 关闭思考"**（票据 14）：1.3 秒、~175 输出 token，详尽度下降而正确性不降。

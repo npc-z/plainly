@@ -1,0 +1,621 @@
+{
+  "provider": "deepseek",
+  "model": "deepseek-flash",
+  "base": "https://api.deepseek.com/v1",
+  "prompt": "v5-cautious-understatement",
+  "level": "B2",
+  "native_language": "Chinese",
+  "temperature": 0,
+  "n": 12,
+  "valid": 12,
+  "contract_pass_rate": 1.0,
+  "latency_s": {
+    "first": 19.48,
+    "min": 2.87,
+    "max": 20.99,
+    "mean": 9.85
+  },
+  "attempts_total": 12,
+  "records": [
+    {
+      "id": "p01",
+      "kind": "idiom + business",
+      "text": "The board gave the proposal short shrift, and the CFO was left to carry the can.",
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "prompt": "v5-cautious-understatement",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\"comprehensible\":\"The board gave the proposal very little attention and treated it as not important, and the CFO was left to take the blame.\",\"glosses\":[{\"expression\":\"gave the proposal short shrift\",\"gloss\":\"gave the proposal very little attention and treated it as not important.\"},{\"expression\":\"carry the can\",\"gloss\":\"be the person who has to take the blame for something bad.\"},{\"expression\":\"the board\",\"gloss\":\"the group of directors in charge of a company.\"},{\"expression\":\"CFO\",\"gloss\":\"the chief financial officer; the top financial manager in a company.\"}],\"grammar\":\"The phrase 'was left to carry the can' is passive: the CFO did not choose this; the board (or others) put him in the position of having to do it. The subject of 'carry' is the CFO, not the board.\",\"translation\":\"董事会草草打发了这个提案，首席财务官则不得不背锅。\"}",
+      "artifact": {
+        "comprehensible": "The board gave the proposal very little attention and treated it as not important, and the CFO was left to take the blame.",
+        "glosses": [
+          {
+            "expression": "gave the proposal short shrift",
+            "gloss": "gave the proposal very little attention and treated it as not important."
+          },
+          {
+            "expression": "carry the can",
+            "gloss": "be the person who has to take the blame for something bad."
+          },
+          {
+            "expression": "the board",
+            "gloss": "the group of directors in charge of a company."
+          },
+          {
+            "expression": "CFO",
+            "gloss": "the chief financial officer; the top financial manager in a company."
+          }
+        ],
+        "grammar": "The phrase 'was left to carry the can' is passive: the CFO did not choose this; the board (or others) put him in the position of having to do it. The subject of 'carry' is the CFO, not the board.",
+        "translation": "董事会草草打发了这个提案，首席财务官则不得不背锅。"
+      },
+      "latency_s": 19.48,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 570,
+        "completion_tokens": 4001,
+        "total_tokens": 4571,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 3796
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 570
+      },
+      "attempts": 1,
+      "note": ""
+    },
+    {
+      "id": "p02",
+      "kind": "phrasal verb + colloquial",
+      "text": "He bottled it at the last minute and threw his colleagues under the bus.",
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "prompt": "v5-cautious-understatement",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\"comprehensible\":\"He lost his nerve at the last minute and betrayed his colleagues to protect himself.\",\"glosses\":[{\"expression\":\"bottled it\",\"gloss\":\"lost his nerve and failed to act at the final moment because he was afraid\"},{\"expression\":\"threw his colleagues under the bus\",\"gloss\":\"betrayed or sacrificed his colleagues, usually to protect himself or avoid blame\"}],\"grammar\":null,\"translation\":\"他在最后一刻临阵退缩，还出卖同事以自保。\"}",
+      "artifact": {
+        "comprehensible": "He lost his nerve at the last minute and betrayed his colleagues to protect himself.",
+        "glosses": [
+          {
+            "expression": "bottled it",
+            "gloss": "lost his nerve and failed to act at the final moment because he was afraid"
+          },
+          {
+            "expression": "threw his colleagues under the bus",
+            "gloss": "betrayed or sacrificed his colleagues, usually to protect himself or avoid blame"
+          }
+        ],
+        "grammar": null,
+        "translation": "他在最后一刻临阵退缩，还出卖同事以自保。"
+      },
+      "latency_s": 11.78,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 566,
+        "completion_tokens": 2386,
+        "total_tokens": 2952,
+        "prompt_tokens_details": {
+          "cached_tokens": 384
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 2278
+        },
+        "prompt_cache_hit_tokens": 384,
+        "prompt_cache_miss_tokens": 182
+      },
+      "attempts": 1,
+      "note": ""
+    },
+    {
+      "id": "p03",
+      "kind": "structural (inversion)",
+      "text": "Not until the auditors had gone did the manager admit that the figures had been doctored.",
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "prompt": "v5-cautious-understatement",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\n  \"comprehensible\": \"The manager didn't admit that the numbers had been changed in a dishonest way until the people who check the accounts had left.\",\n  \"glosses\": [\n    {\n      \"expression\": \"doctored\",\n      \"gloss\": \"changed in a dishonest way, especially to deceive people\"\n    },\n    {\n      \"expression\": \"auditors\",\n      \"gloss\": \"people whose job is to check financial records officially\"\n    },\n    {\n      \"expression\": \"figures\",\n      \"gloss\": \"numbers, especially numbers in financial records\"\n    }\n  ],\n  \"grammar\": \"The sentence begins with 'Not until ...', so the main clause uses question word order: 'did the manager admit' means 'the manager admitted'. The 'Not until' part means the admission did not happen before the auditors left; it happened only after they had left.\",\n  \"translation\": \"直到审计人员离开之后，经理才承认那些数字被人做了手脚。\"\n}",
+      "artifact": {
+        "comprehensible": "The manager didn't admit that the numbers had been changed in a dishonest way until the people who check the accounts had left.",
+        "glosses": [
+          {
+            "expression": "doctored",
+            "gloss": "changed in a dishonest way, especially to deceive people"
+          },
+          {
+            "expression": "auditors",
+            "gloss": "people whose job is to check financial records officially"
+          },
+          {
+            "expression": "figures",
+            "gloss": "numbers, especially numbers in financial records"
+          }
+        ],
+        "grammar": "The sentence begins with 'Not until ...', so the main clause uses question word order: 'did the manager admit' means 'the manager admitted'. The 'Not until' part means the admission did not happen before the auditors left; it happened only after they had left.",
+        "translation": "直到审计人员离开之后，经理才承认那些数字被人做了手脚。"
+      },
+      "latency_s": 20.99,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 569,
+        "completion_tokens": 4286,
+        "total_tokens": 4855,
+        "prompt_tokens_details": {
+          "cached_tokens": 384
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 4075
+        },
+        "prompt_cache_hit_tokens": 384,
+        "prompt_cache_miss_tokens": 185
+      },
+      "attempts": 1,
+      "note": ""
+    },
+    {
+      "id": "p04",
+      "kind": "literary / formal register",
+      "text": "The house stood in a state of genteel decay, its occupants having long since repaired to the Continent.",
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "prompt": "v5-cautious-understatement",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\"comprehensible\": \"The house was in a state of refined decay: it was slowly falling apart, yet it still kept its dignified, upper-class air. The people who lived in it had moved to the Continent a long time before.\", \"glosses\": [{\"expression\": \"stood in a state of\", \"gloss\": \"was in a certain condition (\\\"stood\\\" here does not mean standing on your feet)\"}, {\"expression\": \"genteel decay\", \"gloss\": \"slow decline and disrepair that still keeps a refined, upper-class appearance — \\\"genteel\\\" means respectable and typical of a polished, upper-class way of life\"}, {\"expression\": \"its occupants\", \"gloss\": \"the people living in it\"}, {\"expression\": \"long since\", \"gloss\": \"a long time ago, and it has stayed that way since\"}, {\"expression\": \"repaired to\", \"gloss\": \"a formal, old-fashioned way of saying \\\"went to\\\" or \\\"moved to\\\"; it has nothing to do with fixing anything\"}, {\"expression\": \"the Continent\", \"gloss\": \"mainland Europe — the term British people traditionally use for it\"}], \"grammar\": \"The second half, \\\"its occupants having long since repaired to the Continent\\\", is not a full second sentence and has no verb of its own in the normal way. It is a participle phrase (a nominative absolute) hung onto the main clause. \\\"Its occupants\\\" is its own subject, and \\\"having ... repaired\\\" means their move happened before, and explains, the house's present state.\", \"translation\": \"这幢宅子处于一种不失体面的衰败之中：它在慢慢破败，却仍保留着上流人家的气派。而住在里面的人，早已迁往欧洲大陆去了。\"}",
+      "artifact": {
+        "comprehensible": "The house was in a state of refined decay: it was slowly falling apart, yet it still kept its dignified, upper-class air. The people who lived in it had moved to the Continent a long time before.",
+        "glosses": [
+          {
+            "expression": "stood in a state of",
+            "gloss": "was in a certain condition (\"stood\" here does not mean standing on your feet)"
+          },
+          {
+            "expression": "genteel decay",
+            "gloss": "slow decline and disrepair that still keeps a refined, upper-class appearance — \"genteel\" means respectable and typical of a polished, upper-class way of life"
+          },
+          {
+            "expression": "its occupants",
+            "gloss": "the people living in it"
+          },
+          {
+            "expression": "long since",
+            "gloss": "a long time ago, and it has stayed that way since"
+          },
+          {
+            "expression": "repaired to",
+            "gloss": "a formal, old-fashioned way of saying \"went to\" or \"moved to\"; it has nothing to do with fixing anything"
+          },
+          {
+            "expression": "the Continent",
+            "gloss": "mainland Europe — the term British people traditionally use for it"
+          }
+        ],
+        "grammar": "The second half, \"its occupants having long since repaired to the Continent\", is not a full second sentence and has no verb of its own in the normal way. It is a participle phrase (a nominative absolute) hung onto the main clause. \"Its occupants\" is its own subject, and \"having ... repaired\" means their move happened before, and explains, the house's present state.",
+        "translation": "这幢宅子处于一种不失体面的衰败之中：它在慢慢破败，却仍保留着上流人家的气派。而住在里面的人，早已迁往欧洲大陆去了。"
+      },
+      "latency_s": 8.91,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 572,
+        "completion_tokens": 1661,
+        "total_tokens": 2233,
+        "prompt_tokens_details": {
+          "cached_tokens": 384
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 1281
+        },
+        "prompt_cache_hit_tokens": 384,
+        "prompt_cache_miss_tokens": 188
+      },
+      "attempts": 1,
+      "note": ""
+    },
+    {
+      "id": "p05",
+      "kind": "academic / hedging",
+      "text": "The findings are suggestive rather than conclusive, and ought not to be over-read.",
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "prompt": "v5-cautious-understatement",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\"comprehensible\": \"The results hint at something, but they do not prove it, and they should not be read as if they show more than they really do.\", \"glosses\": [{\"expression\": \"suggestive rather than conclusive\", \"gloss\": \"they point towards something and make it seem likely, but they do not prove it for certain\"}, {\"expression\": \"over-read\", \"gloss\": \"read as meaning more than they actually support; treated as stronger evidence than they are\"}], \"grammar\": \"\\\"ought not to be over-read\\\" is a passive form with the modal \\\"ought to\\\". The findings are not doing the reading — someone would read them — but the sentence never says who that is. The pattern \\\"ought not to be + past participle\\\" means \\\"no one should do this to them\\\".\", \"translation\": \"这些结果只是提示性的，并非定论，因此不应被过度解读。\"}",
+      "artifact": {
+        "comprehensible": "The results hint at something, but they do not prove it, and they should not be read as if they show more than they really do.",
+        "glosses": [
+          {
+            "expression": "suggestive rather than conclusive",
+            "gloss": "they point towards something and make it seem likely, but they do not prove it for certain"
+          },
+          {
+            "expression": "over-read",
+            "gloss": "read as meaning more than they actually support; treated as stronger evidence than they are"
+          }
+        ],
+        "grammar": "\"ought not to be over-read\" is a passive form with the modal \"ought to\". The findings are not doing the reading — someone would read them — but the sentence never says who that is. The pattern \"ought not to be + past participle\" means \"no one should do this to them\".",
+        "translation": "这些结果只是提示性的，并非定论，因此不应被过度解读。"
+      },
+      "latency_s": 5.8,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 567,
+        "completion_tokens": 972,
+        "total_tokens": 1539,
+        "prompt_tokens_details": {
+          "cached_tokens": 384
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 773
+        },
+        "prompt_cache_hit_tokens": 384,
+        "prompt_cache_miss_tokens": 183
+      },
+      "attempts": 1,
+      "note": ""
+    },
+    {
+      "id": "p06",
+      "kind": "legal register",
+      "text": "The lessee shall indemnify the lessor against all claims arising from any breach of the covenants herein.",
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "prompt": "v5-cautious-understatement",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\"comprehensible\": \"The tenant must protect the landlord from all claims, and must cover the landlord for any loss, where those claims result from any breaking of the promises set out in this agreement.\", \"glosses\": [{\"expression\": \"lessee\", \"gloss\": \"the person who rents property from someone else — here, the tenant.\"}, {\"expression\": \"lessor\", \"gloss\": \"the owner who rents property out — here, the landlord.\"}, {\"expression\": \"indemnify the lessor against\", \"gloss\": \"protect the landlord by paying for any loss or cost they may suffer (here, because of claims).\"}, {\"expression\": \"shall\", \"gloss\": \"in legal writing, this does not mean the future; it states a duty — 'must'.\"}, {\"expression\": \"claims\", \"gloss\": \"demands for money, or legal demands, made by someone against a person.\"}, {\"expression\": \"arising from\", \"gloss\": \"coming from; resulting from.\"}, {\"expression\": \"breach\", \"gloss\": \"a failure to keep a promise or a rule — here, breaking the agreement.\"}, {\"expression\": \"covenants herein\", \"gloss\": \"the promises written in this contract ('herein' means 'in this document').\"}], \"grammar\": \"The hard part is the pattern 'indemnify someone against something'. Here 'against' does not mean 'opposed to'; it belongs to the legal verb 'indemnify' and means 'protect someone from'. Also, 'covenants herein' puts the adverb 'herein' after the noun instead of saying 'in this agreement', which is a common habit in legal texts.\", \"translation\": \"对于因违反本协议所载任何承诺而引起的所有索赔，承租人应向出租人作出赔偿，使出租人免受损失。\"}",
+      "artifact": {
+        "comprehensible": "The tenant must protect the landlord from all claims, and must cover the landlord for any loss, where those claims result from any breaking of the promises set out in this agreement.",
+        "glosses": [
+          {
+            "expression": "lessee",
+            "gloss": "the person who rents property from someone else — here, the tenant."
+          },
+          {
+            "expression": "lessor",
+            "gloss": "the owner who rents property out — here, the landlord."
+          },
+          {
+            "expression": "indemnify the lessor against",
+            "gloss": "protect the landlord by paying for any loss or cost they may suffer (here, because of claims)."
+          },
+          {
+            "expression": "shall",
+            "gloss": "in legal writing, this does not mean the future; it states a duty — 'must'."
+          },
+          {
+            "expression": "claims",
+            "gloss": "demands for money, or legal demands, made by someone against a person."
+          },
+          {
+            "expression": "arising from",
+            "gloss": "coming from; resulting from."
+          },
+          {
+            "expression": "breach",
+            "gloss": "a failure to keep a promise or a rule — here, breaking the agreement."
+          },
+          {
+            "expression": "covenants herein",
+            "gloss": "the promises written in this contract ('herein' means 'in this document')."
+          }
+        ],
+        "grammar": "The hard part is the pattern 'indemnify someone against something'. Here 'against' does not mean 'opposed to'; it belongs to the legal verb 'indemnify' and means 'protect someone from'. Also, 'covenants herein' puts the adverb 'herein' after the noun instead of saying 'in this agreement', which is a common habit in legal texts.",
+        "translation": "对于因违反本协议所载任何承诺而引起的所有索赔，承租人应向出租人作出赔偿，使出租人免受损失。"
+      },
+      "latency_s": 6.07,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 572,
+        "completion_tokens": 1195,
+        "total_tokens": 1767,
+        "prompt_tokens_details": {
+          "cached_tokens": 384
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 798
+        },
+        "prompt_cache_hit_tokens": 384,
+        "prompt_cache_miss_tokens": 188
+      },
+      "attempts": 1,
+      "note": ""
+    },
+    {
+      "id": "p07",
+      "kind": "collocation",
+      "text": "The report stops short of apportioning blame, but the implications are hard to miss.",
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "prompt": "v5-cautious-understatement",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\"comprehensible\": \"The report does not go so far as to say who is to blame, but what it suggests is very easy to notice.\", \"glosses\": [{\"expression\": \"stops short of\", \"gloss\": \"does not go as far as; comes close to doing something but does not actually do it\"}, {\"expression\": \"apportioning blame\", \"gloss\": \"saying which people or groups are at fault, and how much each of them is\"}, {\"expression\": \"hard to miss\", \"gloss\": \"so clear that you cannot fail to notice it\"}], \"grammar\": null, \"translation\": \"报告没有走到指明谁该负责的那一步，但其中的言外之意很难不让人看出来。\"}",
+      "artifact": {
+        "comprehensible": "The report does not go so far as to say who is to blame, but what it suggests is very easy to notice.",
+        "glosses": [
+          {
+            "expression": "stops short of",
+            "gloss": "does not go as far as; comes close to doing something but does not actually do it"
+          },
+          {
+            "expression": "apportioning blame",
+            "gloss": "saying which people or groups are at fault, and how much each of them is"
+          },
+          {
+            "expression": "hard to miss",
+            "gloss": "so clear that you cannot fail to notice it"
+          }
+        ],
+        "grammar": null,
+        "translation": "报告没有走到指明谁该负责的那一步，但其中的言外之意很难不让人看出来。"
+      },
+      "latency_s": 2.87,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 569,
+        "completion_tokens": 428,
+        "total_tokens": 997,
+        "prompt_tokens_details": {
+          "cached_tokens": 384
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 269
+        },
+        "prompt_cache_hit_tokens": 384,
+        "prompt_cache_miss_tokens": 185
+      },
+      "attempts": 1,
+      "note": ""
+    },
+    {
+      "id": "p08",
+      "kind": "understatement / irony",
+      "text": "He was, to put it mildly, not best pleased with the outcome.",
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "prompt": "v5-cautious-understatement",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\"comprehensible\": \"He was very displeased with the result — and saying only that he was 'displeased' puts it too gently.\", \"glosses\": [{\"expression\": \"to put it mildly\", \"gloss\": \"used to say that the words chosen are gentler than the truth; the real feeling or situation is stronger than what is being said\"}, {\"expression\": \"not best pleased\", \"gloss\": \"a deliberately calm, British-sounding way of saying someone was very annoyed or very unhappy. The words look mild, but the meaning is strong.\"}], \"grammar\": \"The phrase 'to put it mildly' is pushed in between 'was' and 'not best pleased', splitting the verb phrase. Read the two ends together as one unit: 'He was ... not best pleased' — the inserted phrase only comments on how the statement is being made.\", \"translation\": \"说得客气一点，他对这个结果可是相当不满。\"}",
+      "artifact": {
+        "comprehensible": "He was very displeased with the result — and saying only that he was 'displeased' puts it too gently.",
+        "glosses": [
+          {
+            "expression": "to put it mildly",
+            "gloss": "used to say that the words chosen are gentler than the truth; the real feeling or situation is stronger than what is being said"
+          },
+          {
+            "expression": "not best pleased",
+            "gloss": "a deliberately calm, British-sounding way of saying someone was very annoyed or very unhappy. The words look mild, but the meaning is strong."
+          }
+        ],
+        "grammar": "The phrase 'to put it mildly' is pushed in between 'was' and 'not best pleased', splitting the verb phrase. Read the two ends together as one unit: 'He was ... not best pleased' — the inserted phrase only comments on how the statement is being made.",
+        "translation": "说得客气一点，他对这个结果可是相当不满。"
+      },
+      "latency_s": 4.9,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 566,
+        "completion_tokens": 911,
+        "total_tokens": 1477,
+        "prompt_tokens_details": {
+          "cached_tokens": 384
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 709
+        },
+        "prompt_cache_hit_tokens": 384,
+        "prompt_cache_miss_tokens": 182
+      },
+      "attempts": 1,
+      "note": ""
+    },
+    {
+      "id": "p09",
+      "kind": "long complex sentence",
+      "text": "What the committee had taken for a routine oversight was in fact a deliberate omission, designed to spare the minister an awkward question.",
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "prompt": "v5-cautious-understatement",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\"comprehensible\":\"The committee had thought that it was just an ordinary mistake. In fact, it was something left out on purpose, meant to save the minister from having to deal with an awkward question.\",\"glosses\":[{\"expression\":\"had taken for\",\"gloss\":\"had believed to be; had thought was\"},{\"expression\":\"routine oversight\",\"gloss\":\"an ordinary mistake caused by not noticing something, not something done on purpose\"},{\"expression\":\"deliberate omission\",\"gloss\":\"something left out on purpose\"},{\"expression\":\"spare the minister an awkward question\",\"gloss\":\"save the minister from having to face a difficult question\"}],\"grammar\":\"The sentence begins with 'What the committee had taken for a routine oversight,' a clause that works as the subject of 'was.' It means 'the thing that the committee had thought was a routine oversight.' Also, 'designed to...' is a passive phrase describing 'omission': the omission was intended to...\",\"translation\":\"委员会本以为那只是寻常的疏忽，但实际上那是一次刻意的省略，目的是让部长免于面对一个尴尬的问题。\"}",
+      "artifact": {
+        "comprehensible": "The committee had thought that it was just an ordinary mistake. In fact, it was something left out on purpose, meant to save the minister from having to deal with an awkward question.",
+        "glosses": [
+          {
+            "expression": "had taken for",
+            "gloss": "had believed to be; had thought was"
+          },
+          {
+            "expression": "routine oversight",
+            "gloss": "an ordinary mistake caused by not noticing something, not something done on purpose"
+          },
+          {
+            "expression": "deliberate omission",
+            "gloss": "something left out on purpose"
+          },
+          {
+            "expression": "spare the minister an awkward question",
+            "gloss": "save the minister from having to face a difficult question"
+          }
+        ],
+        "grammar": "The sentence begins with 'What the committee had taken for a routine oversight,' a clause that works as the subject of 'was.' It means 'the thing that the committee had thought was a routine oversight.' Also, 'designed to...' is a passive phrase describing 'omission': the omission was intended to...",
+        "translation": "委员会本以为那只是寻常的疏忽，但实际上那是一次刻意的省略，目的是让部长免于面对一个尴尬的问题。"
+      },
+      "latency_s": 13.81,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 576,
+        "completion_tokens": 2890,
+        "total_tokens": 3466,
+        "prompt_tokens_details": {
+          "cached_tokens": 384
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 2659
+        },
+        "prompt_cache_hit_tokens": 384,
+        "prompt_cache_miss_tokens": 192
+      },
+      "attempts": 1,
+      "note": ""
+    },
+    {
+      "id": "p10",
+      "kind": "idiom + financial",
+      "text": "The company was on the hook for a sum it could ill afford.",
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "prompt": "v5-cautious-understatement",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\"comprehensible\": \"The company was responsible for paying an amount of money that it could hardly afford.\", \"glosses\": [{\"expression\": \"on the hook for\", \"gloss\": \"responsible for paying or liable for\"}, {\"expression\": \"ill afford\", \"gloss\": \"be unable to afford easily; can hardly afford\"}], \"grammar\": \"\\\"A sum it could ill afford\\\" is a relative clause: it means \\\"a sum that the company could hardly afford.\\\" The pronoun \\\"it\\\" refers back to \\\"the company,\\\" and the connecting word \\\"that\\\" is left out.\", \"translation\": \"公司当时要对一笔它几乎负担不起的款项负责。\"}",
+      "artifact": {
+        "comprehensible": "The company was responsible for paying an amount of money that it could hardly afford.",
+        "glosses": [
+          {
+            "expression": "on the hook for",
+            "gloss": "responsible for paying or liable for"
+          },
+          {
+            "expression": "ill afford",
+            "gloss": "be unable to afford easily; can hardly afford"
+          }
+        ],
+        "grammar": "\"A sum it could ill afford\" is a relative clause: it means \"a sum that the company could hardly afford.\" The pronoun \"it\" refers back to \"the company,\" and the connecting word \"that\" is left out.",
+        "translation": "公司当时要对一笔它几乎负担不起的款项负责。"
+      },
+      "latency_s": 10.36,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 565,
+        "completion_tokens": 2071,
+        "total_tokens": 2636,
+        "prompt_tokens_details": {
+          "cached_tokens": 384
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 1925
+        },
+        "prompt_cache_hit_tokens": 384,
+        "prompt_cache_miss_tokens": 181
+      },
+      "attempts": 1,
+      "note": ""
+    },
+    {
+      "id": "p11",
+      "kind": "technical / scientific",
+      "text": "The reaction proceeds only in the presence of a catalyst, without which the activation energy is prohibitively high.",
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "prompt": "v5-cautious-understatement",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\"comprehensible\": \"The reaction goes forward only when a catalyst is present. If there is no catalyst, the activation energy is so high that it stops the reaction from happening.\", \"glosses\": [{\"expression\": \"proceeds\", \"gloss\": \"goes forward; happens or continues\"}, {\"expression\": \"the presence of a catalyst\", \"gloss\": \"having a catalyst there\"}, {\"expression\": \"without which\", \"gloss\": \"and if that catalyst is not there\"}, {\"expression\": \"activation energy\", \"gloss\": \"the energy that has to be supplied to get a reaction started\"}, {\"expression\": \"prohibitively high\", \"gloss\": \"so high that it prevents the thing from happening\"}], \"grammar\": \"\\\"without which\\\" is a relative clause with the preposition moved to the front: \\\"which\\\" refers back to \\\"a catalyst\\\", and the whole phrase means \\\"if the catalyst were not there\\\".\", \"translation\": \"该反应只有在有催化剂存在时才能进行；若没有催化剂，活化能会高得使反应无法发生。\"}",
+      "artifact": {
+        "comprehensible": "The reaction goes forward only when a catalyst is present. If there is no catalyst, the activation energy is so high that it stops the reaction from happening.",
+        "glosses": [
+          {
+            "expression": "proceeds",
+            "gloss": "goes forward; happens or continues"
+          },
+          {
+            "expression": "the presence of a catalyst",
+            "gloss": "having a catalyst there"
+          },
+          {
+            "expression": "without which",
+            "gloss": "and if that catalyst is not there"
+          },
+          {
+            "expression": "activation energy",
+            "gloss": "the energy that has to be supplied to get a reaction started"
+          },
+          {
+            "expression": "prohibitively high",
+            "gloss": "so high that it prevents the thing from happening"
+          }
+        ],
+        "grammar": "\"without which\" is a relative clause with the preposition moved to the front: \"which\" refers back to \"a catalyst\", and the whole phrase means \"if the catalyst were not there\".",
+        "translation": "该反应只有在有催化剂存在时才能进行；若没有催化剂，活化能会高得使反应无法发生。"
+      },
+      "latency_s": 4.51,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 572,
+        "completion_tokens": 818,
+        "total_tokens": 1390,
+        "prompt_tokens_details": {
+          "cached_tokens": 384
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 588
+        },
+        "prompt_cache_hit_tokens": 384,
+        "prompt_cache_miss_tokens": 188
+      },
+      "attempts": 1,
+      "note": ""
+    },
+    {
+      "id": "p12",
+      "kind": "archaic / formal",
+      "text": "It behoves us to consider whether such a course of action is consonant with our obligations.",
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "prompt": "v5-cautious-understatement",
+      "valid": true,
+      "errors": [],
+      "raw_content": "{\"comprehensible\":\"It is right for us to consider whether such a way of acting is consistent with what we are required to do.\",\"glosses\":[{\"expression\":\"It behoves us\",\"gloss\":\"It is right for us; it is what we should do.\"},{\"expression\":\"course of action\",\"gloss\":\"a way of acting or a plan of what to do.\"},{\"expression\":\"consonant with\",\"gloss\":\"in agreement with; matching; consistent with.\"},{\"expression\":\"obligations\",\"gloss\":\"things we are required to do; duties.\"}],\"grammar\":\"The word \\\"It\\\" at the start does not refer to anything. It is a placeholder subject. The real action comes in \\\"to consider...\\\". The \\\"whether\\\" clause is the question we are told to consider.\",\"translation\":\"我们应当考虑，这样的做法是否符合我们的义务。\"}",
+      "artifact": {
+        "comprehensible": "It is right for us to consider whether such a way of acting is consistent with what we are required to do.",
+        "glosses": [
+          {
+            "expression": "It behoves us",
+            "gloss": "It is right for us; it is what we should do."
+          },
+          {
+            "expression": "course of action",
+            "gloss": "a way of acting or a plan of what to do."
+          },
+          {
+            "expression": "consonant with",
+            "gloss": "in agreement with; matching; consistent with."
+          },
+          {
+            "expression": "obligations",
+            "gloss": "things we are required to do; duties."
+          }
+        ],
+        "grammar": "The word \"It\" at the start does not refer to anything. It is a placeholder subject. The real action comes in \"to consider...\". The \"whether\" clause is the question we are told to consider.",
+        "translation": "我们应当考虑，这样的做法是否符合我们的义务。"
+      },
+      "latency_s": 8.7,
+      "finish_reason": "stop",
+      "usage": {
+        "prompt_tokens": 569,
+        "completion_tokens": 1693,
+        "total_tokens": 2262,
+        "prompt_tokens_details": {
+          "cached_tokens": 384
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 1509
+        },
+        "prompt_cache_hit_tokens": 384,
+        "prompt_cache_miss_tokens": 185
+      },
+      "attempts": 1,
+      "note": ""
+    }
+  ]
+}

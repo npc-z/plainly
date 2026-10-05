@@ -1,0 +1,4 @@
+# Prototype/harness scratch. Everything here is regenerable except the run
+# records under results/, which cost API calls to reproduce.
+__pycache__/
+*.pyc
