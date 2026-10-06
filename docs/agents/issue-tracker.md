@@ -6,17 +6,19 @@ Issues and specs for this repo live as markdown files in `.scratch/`.
 
 - One feature per directory: `.scratch/<feature-slug>/`
 - The spec is `.scratch/<feature-slug>/spec.md`
-- Implementation issues are one file per ticket at `.scratch/<feature-slug>/issues/<NN>-<slug>.md`, numbered from `01`, never a single combined tickets file
+- **Planning tickets** are the map's children: one file per ticket at `.scratch/<feature-slug>/issues/<NN>-<slug>.md`
+- **Implementation tickets** live beside them at `.scratch/<feature-slug>/tickets/<NN>-<slug>.md`, numbered from `01` in dependency order (blockers first). One file per ticket, never a single combined tickets file. Each declares a `Blocked by:` line.
+- The two directories do not mix: `issues/` holds wayfinding children, `tickets/` holds `/to-tickets` output.
 - Triage state is recorded as a `Status:` line near the top of each issue file (see `triage-labels.md` for the role strings)
 - Comments and conversation history append to the bottom of the file under a `## Comments` heading
 
 ## When a skill says "publish to the issue tracker"
 
-Create a new file under `.scratch/<feature-slug>/` (creating the directory if needed).
+Create a new file under `.scratch/<feature-slug>/` (creating the directory if needed): `/wayfinder` children under `issues/`, `/to-tickets` output under `tickets/`.
 
 ## When a skill says "fetch the relevant ticket"
 
-Read the file at the referenced path. The user will normally pass the path or the issue number directly.
+Read the file at the referenced path. The user will normally pass the path or the issue number directly. A bare number is ambiguous between `issues/` and `tickets/` — ask which, or check both.
 
 ## Wayfinding operations
 
