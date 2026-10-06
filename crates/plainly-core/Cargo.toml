@@ -1,0 +1,13 @@
+[package]
+name = "plainly-core"
+description = "Domain logic for Plainly: Paths, config, secrets, and (later) the Explanation contract."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+keyring.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+toml_edit.workspace = true

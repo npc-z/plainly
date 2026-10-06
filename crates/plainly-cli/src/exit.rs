@@ -1,0 +1,32 @@
+//! Exit codes, fixed by the CLI contract. Scripts branch on these, so the
+//! numbers are part of the interface, not an implementation detail.
+
+/// The command did what was asked.
+pub const SUCCESS: u8 = 0;
+/// The provider or the generation failed.
+pub const FAILURE: u8 = 1;
+/// The command line was wrong; nothing was attempted.
+pub const USAGE: u8 = 2;
+/// Plainly is not configured: no key, or no usable provider.
+// Its first use is `explain` in ticket 03; the number is fixed now because it
+// is part of the published contract.
+#[allow(dead_code)]
+pub const NOT_CONFIGURED: u8 = 3;
+/// Plainly refused the input on purpose (sensitive clipboard content).
+// Its first use is the clipboard path in ticket 12.
+#[allow(dead_code)]
+pub const REFUSED: u8 = 4;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The numbers are the contract scripts branch on; pin them.
+    #[test]
+    fn the_exit_codes_are_the_documented_ones() {
+        assert_eq!(
+            [SUCCESS, FAILURE, USAGE, NOT_CONFIGURED, REFUSED],
+            [0, 1, 2, 3, 4]
+        );
+    }
+}

@@ -1,0 +1,16 @@
+[package]
+name = "plainly-panel"
+description = "The layer-shell panel. A separate process: Tauri can create a layer surface but cannot draw into one."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "plainly-panel"
+path = "src/main.rs"
+
+# No plainly-core dependency yet: the binary is a placeholder until its own
+# ticket gives it something to do. The edge is added when the code needs it,
+# rather than sitting here unused.
+[dependencies]

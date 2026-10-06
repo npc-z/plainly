@@ -1,0 +1,16 @@
+[package]
+name = "plainly-cli"
+description = "The thin `plainly` command line: it depends on plainly-core and nothing graphical."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "plainly"
+path = "src/main.rs"
+
+[dependencies]
+plainly-core.workspace = true
+
+clap.workspace = true

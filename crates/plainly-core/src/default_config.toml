@@ -1,0 +1,67 @@
+# Plainly configuration.
+#
+# Hand-editable on purpose: keep it in your dotfiles, diff it, comment it.
+# `plainly config set <key> <value>` edits this file in place and keeps your
+# comments; `plainly config show` prints the effective values.
+
+[app]
+# Which provider Plainly talks to. Presets ship for deepseek, openai,
+# llamacpp, ollama and lmstudio; anything you add lives under [providers.*].
+provider = "deepseek"
+
+# Reading level for the comprehensible restatement: A1, A2, B2 or C1.
+level = "B2"
+
+# Target language of the translation. A setting, never inferred at runtime.
+native_language = "Chinese"
+
+# Default shape for `plainly history export`: markdown, anki or raw.
+export_format = "markdown"
+
+# Language of the interface itself. The Explanation's sections stay English.
+ui_language = "zh-CN"
+
+# Which sections the panel shows. Display only: the prompt always asks for all
+# four fields, so toggling these never changes the prompt version and never
+# invalidates a cached answer.
+show_original = true
+show_comprehensible = true
+show_glosses = true
+show_grammar = true
+show_translation = true
+
+# Where the panel appears. `panel_corner` is one of top-left, top-right,
+# bottom-left, bottom-right; `panel_display` is "current" or an output name.
+panel_corner = "top-left"
+panel_display = "current"
+
+# Auto-dismiss is two independent keys on purpose. Never express "off" as a
+# duration of 0: "off" already has a switch, and two spellings drift apart.
+panel_autohide = false
+panel_autohide_seconds = 20
+
+# Pop the panel when the clipboard changes. Off by default; needs a compositor
+# that speaks the data-control protocol.
+copy_auto_popup = false
+
+# One table per provider you configure. Anything you leave out falls back to
+# the shipped preset for that name.
+#
+#   [providers.deepseek]
+#   endpoint = "https://api.deepseek.com/v1"
+#   model = "deepseek-flash"
+#   thinking = "off"      # "off" is the default, and roughly 10x faster
+
+[providers]
+
+[prompts]
+# Appended to the shipped system prompt. Append-only: your rules come after the
+# factory rules and cannot delete them -- the factory rules are what keep two
+# people's histories comparable.
+appendix = ""
+
+# Per-level wording handed to the model next to the level label. Empty means
+# "use the shipped descriptors". This is prompt data, not a setting: changing a
+# descriptor changes the prompt version, so it cannot silently reuse an answer
+# that was generated under the old wording.
+[prompts.level_descriptors]
