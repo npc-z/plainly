@@ -223,11 +223,16 @@ impl Default for App {
     }
 }
 
-/// One `[providers.<name>]` table. Anything left out falls back to the shipped
-/// preset for that name.
+/// One `[providers.<name>]` table: how Plainly talks to one provider. Anything
+/// left out falls back to the shipped preset for that name.
+///
+/// It is a *profile* rather than a `Provider` because `Provider` is the runtime
+/// seam ([`crate::provider::Provider`]). Together with the table's name it is the
+/// provider profile the Lookup Key is made of (spec §9): which provider, which
+/// model and thinking on or off are what make two answers interchangeable.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(default)]
-pub struct Provider {
+pub struct ProviderProfile {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub endpoint: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -251,7 +256,7 @@ pub struct Prompts {
 #[serde(default)]
 pub struct Config {
     pub app: App,
-    pub providers: BTreeMap<String, Provider>,
+    pub providers: BTreeMap<String, ProviderProfile>,
     pub prompts: Prompts,
 }
 
