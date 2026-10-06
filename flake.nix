@@ -37,7 +37,11 @@
           rustfmt
         ];
 
-        nativeBuildTools = with pkgs; [
+        # Tools for whoever is working on the code: the frontend's package
+        # manager, a C toolchain for linking, and the odds and ends the tickets
+        # reach for. None of this is needed to *run* plainly — this is a mkShell,
+        # so the list is simply what ends up on PATH.
+        devTools = with pkgs; [
           pnpm
           nodejs_24
           clang
@@ -45,6 +49,16 @@
           xdg-utils
           patchelf
         ];
+
+        # The editor's view of the code. Not needed to build or run anything,
+        # but the alternative is every developer pointing their editor at a
+        # rust-analyzer of their own, which may disagree with the toolchain above
+        # and report errors the compiler does not have. Taken from fenix, not
+        # nixpkgs, so both speak the same nightly — which also makes it a separate
+        # few hundred megabytes. So it is never implied: a shell that wants it
+        # says `editors = true` (see `mkPlainlyShell` below), and no future shell
+        # inherits the download by accident.
+        rustAnalyzer = fenix.packages.${system}.rust-analyzer;
 
         libraries = with pkgs; [
           gtk3
@@ -55,28 +69,45 @@
           openssl
         ];
 
-        mkPlainlyShell = { name, extraTools ? [ ], extraEnv ? { } }: pkgs.mkShell rec {
-          inherit name;
+        mkPlainlyShell =
+          { name
+          , editors ? false
+          , extraTools ? [ ]
+          , extraEnv ? { }
+          }:
+          pkgs.mkShell rec {
+            inherit name;
 
-          nativeBuildInputs =
-            nativeBuildTools ++ extraTools ++ [ (pkgs.fenix.combine toolchain) ];
-          buildInputs = libraries;
+            nativeBuildInputs = devTools
+              ++ lib.optionals editors [ rustAnalyzer ]
+              ++ extraTools
+              ++ [ (pkgs.fenix.combine toolchain) ];
+            buildInputs = libraries;
 
-          env = {
-            # readest sets `x11` here; plainly must not. layer-shell does not
-            # exist on XWayland, and GTK picks X11 whenever DISPLAY is set.
-            GDK_BACKEND = "wayland";
-            LD_LIBRARY_PATH = lib.makeLibraryPath buildInputs;
-          } // extraEnv;
-        };
+            env = {
+              # readest sets `x11` here; plainly must not. layer-shell does not
+              # exist on XWayland, and GTK picks X11 whenever DISPLAY is set.
+              GDK_BACKEND = "wayland";
+              LD_LIBRARY_PATH = lib.makeLibraryPath buildInputs;
+            } // extraEnv;
+          };
       in
       {
-        devShells.default = mkPlainlyShell { name = "plainly-dev"; };
+        # The shell for working on the code, so the one that asks for the editor
+        # tooling. Nothing else does, which is the point.
+        devShells.default = mkPlainlyShell {
+          name = "plainly-dev";
+          editors = true;
+        };
 
         # `sqlite3` is not needed to build or run plainly — `rusqlite`'s
-        # `bundled` feature compiles SQLite in — but it is the tool you reach
-        # for when inspecting the history store by hand. The attribute is
-        # `sqlite` (which ships the `sqlite3` binary).
+        # `bundled` feature compiles SQLite in — but it is the tool you reach for
+        # when inspecting the history store by hand. The attribute is `sqlite`
+        # (which ships the `sqlite3` binary).
+        #
+        # This is the shell you enter to look at the store rather than to write
+        # Rust, so it does not ask for the editor tools and stays lean. Anyone
+        # editing Rust wants `devShells.default`.
         devShells.inspect = mkPlainlyShell {
           name = "plainly-inspect";
           extraTools = [ pkgs.sqlite ];
