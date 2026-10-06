@@ -16,6 +16,6 @@ pub use config::{
 };
 pub use paths::{CONFIG_FILE, IDENTIFIER, PathError, PathInputs, Paths};
 pub use secrets::{
-    Cleared, EnvSecrets, KeySource, MemorySecrets, ResolvedKey, SecretError, SecretStore, Secrets,
-    Stored, env_var_name,
+    Cleared, EnvSecrets, KeySource, KeyringSecrets, MemorySecrets, ResolvedKey, SecretError,
+    SecretStore, Secrets, Stored, env_var_name,
 };

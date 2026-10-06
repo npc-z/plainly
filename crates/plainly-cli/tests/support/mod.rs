@@ -41,12 +41,12 @@ impl TempDir {
         self.plainly_with_stdin(args, "")
     }
 
-    pub fn plainly_with_stdin(&self, args: &[&str], stdin: &str) -> std::process::Output {
-        use std::io::Write;
+    /// The same environment, as a command a test can add to before running it.
+    pub fn command(&self) -> std::process::Command {
         use std::process::{Command, Stdio};
 
-        let mut child = Command::new(env!("CARGO_BIN_EXE_plainly"))
-            .args(args)
+        let mut command = Command::new(env!("CARGO_BIN_EXE_plainly"));
+        command
             .env("HOME", self.path())
             .env("XDG_CONFIG_HOME", self.join("config"))
             .env("XDG_DATA_HOME", self.join("data"))
@@ -56,7 +56,16 @@ impl TempDir {
             .env_remove("PLAINLY_OPENAI_API_KEY")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stderr(Stdio::piped());
+        command
+    }
+
+    pub fn plainly_with_stdin(&self, args: &[&str], stdin: &str) -> std::process::Output {
+        use std::io::Write;
+
+        let mut child = self
+            .command()
+            .args(args)
             .spawn()
             .expect("the plainly binary is built alongside its tests");
 

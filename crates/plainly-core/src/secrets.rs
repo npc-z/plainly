@@ -11,6 +11,7 @@
 //! the precedence and the fallback are testable without a D-Bus session.
 
 use std::collections::BTreeMap;
+use std::ffi::{OsStr, OsString};
 use std::sync::Mutex;
 
 /// The keyring *service* name; the provider name is the keyring *user*.
@@ -41,16 +42,6 @@ pub enum KeySource {
     Environment,
     Keyring,
     Session,
-}
-
-impl KeySource {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            KeySource::Environment => "environment",
-            KeySource::Keyring => "keyring",
-            KeySource::Session => "this session only",
-        }
-    }
 }
 
 /// A key that was found, and where it was found.
@@ -85,6 +76,8 @@ pub enum SecretError {
     Unavailable(String),
     #[error("the OS keyring failed: {0}")]
     Backend(String),
+    #[error("{variable} is not valid UTF-8; a secret must be a UTF-8 string")]
+    NotUtf8 { variable: String },
 }
 
 /// Somewhere a secret can live. Implementations: the environment (read-only),
@@ -96,9 +89,14 @@ pub trait SecretStore: Send + Sync {
 }
 
 /// Keys supplied in the environment, captured as data.
+///
+/// Values are kept as the OS handed them over. Converting lossily here would
+/// rewrite a stray byte as U+FFFD and hand the keyring a *different* secret than
+/// the one that was exported — a silent authentication failure with nothing to
+/// see. A value that is not valid UTF-8 is reported instead.
 #[derive(Debug, Clone, Default)]
 pub struct EnvSecrets {
-    vars: BTreeMap<String, String>,
+    vars: BTreeMap<String, OsString>,
 }
 
 impl EnvSecrets {
@@ -112,7 +110,7 @@ impl EnvSecrets {
     where
         I: IntoIterator<Item = (K, V)>,
         K: Into<String>,
-        V: Into<String>,
+        V: Into<OsString>,
     {
         Self {
             vars: pairs
@@ -122,17 +120,43 @@ impl EnvSecrets {
         }
     }
 
-    /// The real process environment.
+    /// The real process environment, raw.
+    ///
+    /// `std::env::vars_os` rather than `vars`: the latter panics on a variable
+    /// that is not valid UTF-8, and one stray byte somewhere in the environment
+    /// is not a reason to bring down the command. Validity is judged later, and
+    /// only for the variable actually being asked for.
     pub fn from_process_env() -> Self {
         Self {
-            vars: std::env::vars().collect(),
+            vars: std::env::vars_os()
+                // Only the name is converted lossily, and only because an
+                // environment variable's name has to be a `String` to be looked
+                // up. A name that is not UTF-8 cannot be `PLAINLY_*_API_KEY`,
+                // so it can never be mistaken for one of ours.
+                .map(|(name, value)| (name.to_string_lossy().into_owned(), value))
+                .collect(),
         }
+    }
+
+    /// The raw value of a provider's variable, if it is set and not empty.
+    fn raw(&self, provider: &str) -> Option<&OsStr> {
+        self.vars
+            .get(&env_var_name(provider))
+            .map(OsString::as_os_str)
+            .filter(|value| !value.is_empty())
+    }
+
+    /// Whether this environment supplies a key for a provider, without
+    /// interpreting the value.
+    pub fn provides(&self, provider: &str) -> bool {
+        self.raw(provider).is_some()
     }
 
     /// Whether the keyring has been switched off for this environment.
     pub fn keyring_disabled(&self) -> bool {
         self.vars
             .get(DISABLE_KEYRING_VAR)
+            .and_then(|value| value.to_str())
             .map(|value| {
                 matches!(
                     value.trim().to_ascii_lowercase().as_str(),
@@ -145,11 +169,15 @@ impl EnvSecrets {
 
 impl SecretStore for EnvSecrets {
     fn get(&self, provider: &str) -> Result<Option<String>, SecretError> {
-        Ok(self
-            .vars
-            .get(&env_var_name(provider))
-            .filter(|value| !value.is_empty())
-            .cloned())
+        let Some(raw) = self.raw(provider) else {
+            return Ok(None);
+        };
+        match raw.to_str() {
+            Some(value) => Ok(Some(value.to_string())),
+            None => Err(SecretError::NotUtf8 {
+                variable: env_var_name(provider),
+            }),
+        }
     }
 
     fn set(&self, _provider: &str, _secret: &str) -> Result<(), SecretError> {
@@ -172,14 +200,6 @@ pub struct MemorySecrets {
 impl MemorySecrets {
     pub fn new() -> Self {
         Self::default()
-    }
-
-    /// Whether anything is held for this provider.
-    pub fn holds(&self, provider: &str) -> bool {
-        self.entries
-            .lock()
-            .expect("the session store is never poisoned")
-            .contains_key(provider)
     }
 }
 
@@ -307,51 +327,82 @@ impl Secrets {
     }
 
     /// The key for a provider, and where it came from: environment, then
-    /// keyring, then this session. A keyring that is present but broken falls
-    /// through rather than blocking the other tiers.
-    pub fn resolve(&self, provider: &str) -> Option<ResolvedKey> {
-        if let Some(secret) = self.env.get(provider).ok().flatten() {
-            return Some(ResolvedKey {
+    /// keyring, then this session.
+    ///
+    /// Every tier is asked in turn, and the first one with an answer wins.
+    ///
+    /// A tier that fails to answer is an **error**, not a skip: "nowhere has a
+    /// key for this provider" and "the keyring would not open" call for
+    /// different things from the user, and a caller cannot tell them apart if
+    /// failures are swallowed here. The error says which store failed —
+    /// [`SecretError::NotUtf8`] for an exported value we cannot use,
+    /// [`SecretError::Unavailable`] or [`SecretError::Backend`] for the keyring.
+    ///
+    /// Note the consequence: a locked keyring stops the search rather than
+    /// falling through to a key held in memory. Using a different credential
+    /// than the stored one, without saying so, is the worse failure.
+    pub fn resolve(&self, provider: &str) -> Result<Option<ResolvedKey>, SecretError> {
+        if let Some(secret) = self.env.get(provider)? {
+            return Ok(Some(ResolvedKey {
                 secret,
                 source: KeySource::Environment,
-            });
+            }));
         }
         if let Some(keyring) = &self.keyring
-            && let Some(secret) = keyring.get(provider).ok().flatten()
+            && let Some(secret) = keyring.get(provider)?
         {
-            return Some(ResolvedKey {
+            return Ok(Some(ResolvedKey {
                 secret,
                 source: KeySource::Keyring,
-            });
+            }));
         }
-        if let Some(secret) = self.session.get(provider).ok().flatten() {
-            return Some(ResolvedKey {
+        if let Some(secret) = self.session.get(provider)? {
+            return Ok(Some(ResolvedKey {
                 secret,
                 source: KeySource::Session,
-            });
+            }));
         }
-        None
+        Ok(None)
     }
 
-    /// Where the key for this provider would come from, without reading it.
-    pub fn key_source(&self, provider: &str) -> Option<KeySource> {
-        self.resolve(provider).map(|key| key.source)
+    /// Where the key for this provider would come from.
+    ///
+    /// This asks the stores, keyring included, but never returns the secret
+    /// itself. Prefer [`Secrets::environment_provides`] when all you need is
+    /// the precedence note: that one stays off the D-Bus.
+    pub fn key_source(&self, provider: &str) -> Result<Option<KeySource>, SecretError> {
+        Ok(self.resolve(provider)?.map(|key| key.source))
+    }
+
+    /// Whether the environment supplies a key for this provider.
+    ///
+    /// Checks only the environment tier, and only whether it is set, so callers
+    /// that merely want to warn "your exported key outranks anything I store" do
+    /// not pay for a keyring round trip or trip over an unreadable value.
+    pub fn environment_provides(&self, provider: &str) -> bool {
+        self.env.provides(provider)
     }
 
     /// Store a key as durably as this machine allows.
     pub fn store(&self, provider: &str, secret: &str) -> Stored {
-        if let Some(keyring) = &self.keyring
-            && keyring.set(provider, secret).is_ok()
-        {
-            return Stored::Keyring;
-        }
+        // A keyring that is present but broken is worth distinguishing from no
+        // keyring at all: "locked collection" and "no session bus" send the
+        // user to different places. Both end up in the same fallback, but the
+        // reason travels with it.
+        let reason = match &self.keyring {
+            Some(keyring) => match keyring.set(provider, secret) {
+                Ok(()) => return Stored::Keyring,
+                Err(error) => error.to_string(),
+            },
+            None => "no OS keyring is in use".to_string(),
+        };
 
-        // Session memory it is. Say so plainly: on a one-shot CLI run this
-        // means the key was not persisted at all.
+        // Session memory it is. On a one-shot CLI run that means the key dies
+        // with the process, so the warning has to say so outright.
         let _ = self.session.set(provider, secret);
         Stored::Session {
             warning: format!(
-                "no usable OS keyring: the key was NOT saved. \
+                "{reason}: the key was NOT saved and lives only in this process. \
                  Export {} for this machine instead.",
                 env_var_name(provider)
             ),

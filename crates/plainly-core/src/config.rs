@@ -83,6 +83,17 @@ pub enum ExportFormat {
     Raw,
 }
 
+impl ExportFormat {
+    /// The label as it is written in configuration.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ExportFormat::Markdown => "markdown",
+            ExportFormat::Anki => "anki",
+            ExportFormat::Raw => "raw",
+        }
+    }
+}
+
 impl FromStr for ExportFormat {
     type Err = String;
 
@@ -106,6 +117,18 @@ pub enum PanelCorner {
     TopRight,
     BottomLeft,
     BottomRight,
+}
+
+impl PanelCorner {
+    /// The label as it is written in configuration.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PanelCorner::TopLeft => "top-left",
+            PanelCorner::TopRight => "top-right",
+            PanelCorner::BottomLeft => "bottom-left",
+            PanelCorner::BottomRight => "bottom-right",
+        }
+    }
 }
 
 impl FromStr for PanelCorner {
@@ -133,6 +156,16 @@ pub enum Thinking {
     On,
     #[default]
     Off,
+}
+
+impl Thinking {
+    /// The label as it is written in configuration.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Thinking::On => "on",
+            Thinking::Off => "off",
+        }
+    }
 }
 
 impl FromStr for Thinking {
@@ -377,6 +410,11 @@ impl ConfigFile {
     }
 
     /// Write the document back, atomically, unless someone else got there first.
+    ///
+    /// The check compares the file's bytes with the ones this handle read,
+    /// rather than comparing modification times as the spec words it. It is the
+    /// same guarantee made strictly stronger: an edit that lands inside the same
+    /// filesystem timestamp tick is still caught.
     pub fn save(&mut self) -> Result<(), ConfigError> {
         match fs::read(&self.path) {
             Ok(current) if Some(&current) != self.loaded.as_ref() => {
@@ -431,54 +469,62 @@ impl KeySpec {
         let unknown = || ConfigError::UnknownKey {
             key: key.to_string(),
         };
-        let path = |parts: &[&str]| parts.iter().map(|p| p.to_string()).collect::<Vec<_>>();
 
-        let (path, kind) = match key {
-            "app.provider" => (path(&["app", "provider"]), Kind::Str),
-            "app.level" => (path(&["app", "level"]), Kind::Level),
-            "app.native_language" => (path(&["app", "native_language"]), Kind::Str),
-            "app.export_format" => (path(&["app", "export_format"]), Kind::ExportFormat),
-            "app.ui_language" => (path(&["app", "ui_language"]), Kind::Str),
-            "app.show_original" => (path(&["app", "show_original"]), Kind::Bool),
-            "app.show_comprehensible" => (path(&["app", "show_comprehensible"]), Kind::Bool),
-            "app.show_glosses" => (path(&["app", "show_glosses"]), Kind::Bool),
-            "app.show_grammar" => (path(&["app", "show_grammar"]), Kind::Bool),
-            "app.show_translation" => (path(&["app", "show_translation"]), Kind::Bool),
-            "app.panel_corner" => (path(&["app", "panel_corner"]), Kind::PanelCorner),
-            "app.panel_display" => (path(&["app", "panel_display"]), Kind::Str),
-            "app.panel_autohide" => (path(&["app", "panel_autohide"]), Kind::Bool),
-            "app.panel_autohide_seconds" => {
-                (path(&["app", "panel_autohide_seconds"]), Kind::Seconds)
-            }
-            "app.copy_auto_popup" => (path(&["app", "copy_auto_popup"]), Kind::Bool),
-            "prompts.appendix" => (path(&["prompts", "appendix"]), Kind::Str),
+        let kind = match key {
+            "app.provider"
+            | "app.native_language"
+            | "app.ui_language"
+            | "app.panel_display"
+            | "prompts.appendix" => Kind::Str,
+            "app.level" => Kind::Level,
+            "app.export_format" => Kind::ExportFormat,
+            "app.panel_corner" => Kind::PanelCorner,
+            "app.panel_autohide_seconds" => Kind::Seconds,
+            "app.show_original"
+            | "app.show_comprehensible"
+            | "app.show_glosses"
+            | "app.show_grammar"
+            | "app.show_translation"
+            | "app.panel_autohide"
+            | "app.copy_auto_popup" => Kind::Bool,
             other => {
-                if let Some(name) = other.strip_prefix("providers.") {
-                    let (name, field) = name.split_once('.').ok_or_else(unknown)?;
+                if let Some((name, field)) = other
+                    .strip_prefix("providers.")
+                    .and_then(|rest| rest.split_once('.'))
+                {
                     if name.is_empty() {
                         return Err(unknown());
                     }
                     match field {
-                        "endpoint" => (path(&["providers", name, "endpoint"]), Kind::Str),
-                        "model" => (path(&["providers", name, "model"]), Kind::Str),
-                        "thinking" => (path(&["providers", name, "thinking"]), Kind::Thinking),
+                        "endpoint" | "model" => Kind::Str,
+                        "thinking" => Kind::Thinking,
                         _ => return Err(unknown()),
                     }
                 } else if let Some(level) = other.strip_prefix("prompts.level_descriptors.") {
+                    // `...A2.extra` is a key nobody wrote, not an invalid level:
+                    // say so, instead of quoting "A2.extra" back as a bad value.
+                    if level.contains('.') {
+                        return Err(unknown());
+                    }
                     level
                         .parse::<Level>()
                         .map_err(|message| ConfigError::Value {
                             key: key.to_string(),
                             message,
                         })?;
-                    (path(&["prompts", "level_descriptors", level]), Kind::Str)
+                    Kind::Str
                 } else {
                     return Err(unknown());
                 }
             }
         };
 
-        Ok(Self { path, kind })
+        Ok(Self {
+            // The dotted key is the document path: `providers.deepseek.endpoint`
+            // lives at `[providers.deepseek]` under `endpoint`.
+            path: key.split('.').map(str::to_string).collect(),
+            kind,
+        })
     }
 
     /// Turn the command-line string into a TOML value of the right type. Values
@@ -510,24 +556,10 @@ impl KeySpec {
             }
             Kind::Level => Value::from(raw.parse::<Level>().map_err(invalid)?.as_str()),
             Kind::ExportFormat => {
-                Value::from(match raw.parse::<ExportFormat>().map_err(invalid)? {
-                    ExportFormat::Markdown => "markdown",
-                    ExportFormat::Anki => "anki",
-                    ExportFormat::Raw => "raw",
-                })
+                Value::from(raw.parse::<ExportFormat>().map_err(invalid)?.as_str())
             }
-            Kind::PanelCorner => {
-                Value::from(match raw.parse::<PanelCorner>().map_err(invalid)? {
-                    PanelCorner::TopLeft => "top-left",
-                    PanelCorner::TopRight => "top-right",
-                    PanelCorner::BottomLeft => "bottom-left",
-                    PanelCorner::BottomRight => "bottom-right",
-                })
-            }
-            Kind::Thinking => Value::from(match raw.parse::<Thinking>().map_err(invalid)? {
-                Thinking::On => "on",
-                Thinking::Off => "off",
-            }),
+            Kind::PanelCorner => Value::from(raw.parse::<PanelCorner>().map_err(invalid)?.as_str()),
+            Kind::Thinking => Value::from(raw.parse::<Thinking>().map_err(invalid)?.as_str()),
         })
     }
 }

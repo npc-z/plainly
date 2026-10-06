@@ -351,3 +351,18 @@ fn a_key_lands_in_its_own_table_even_when_a_sub_table_comes_last() {
     assert_eq!(config.app.native_language, "Japanese");
     assert_eq!(config.prompts.appendix, "Prefer British spellings.");
 }
+
+/// `prompts.level_descriptors.A2.extra` is a key nobody wrote. Reporting it as
+/// an invalid *level* would quote "A2.extra" back at the user and send them
+/// looking for a level they never typed.
+#[test]
+fn a_dotted_level_descriptor_key_is_an_unknown_key() {
+    let dir = TempDir::new("config-level-dotted");
+    let mut file = ConfigFile::open(dir.join("config.toml")).expect("a missing file opens");
+
+    let error = file
+        .set("prompts.level_descriptors.A2.extra", "x")
+        .expect_err("that is not a key");
+
+    assert!(matches!(error, ConfigError::UnknownKey { .. }), "{error}");
+}

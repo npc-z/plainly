@@ -9,10 +9,11 @@
 # llamacpp, ollama and lmstudio; anything you add lives under [providers.*].
 provider = "deepseek"
 
-# Reading level for the comprehensible restatement: A1, A2, B2 or C1.
+# The level for the Comprehensible English section: A1, A2, B2 or C1.
 level = "B2"
 
-# Target language of the translation. A setting, never inferred at runtime.
+# The learner's first language, and the target of the Translation section.
+# A setting, never inferred at runtime.
 native_language = "Chinese"
 
 # Default shape for `plainly history export`: markdown, anki or raw.
@@ -23,7 +24,7 @@ ui_language = "zh-CN"
 
 # Which sections the panel shows. Display only: the prompt always asks for all
 # four fields, so toggling these never changes the prompt version and never
-# invalidates a cached answer.
+# invalidates a stored Explanation.
 show_original = true
 show_comprehensible = true
 show_glosses = true
@@ -62,6 +63,6 @@ appendix = ""
 
 # Per-level wording handed to the model next to the level label. Empty means
 # "use the shipped descriptors". This is prompt data, not a setting: changing a
-# descriptor changes the prompt version, so it cannot silently reuse an answer
-# that was generated under the old wording.
+# descriptor changes the prompt version, so it cannot silently reuse a stored
+# Explanation that was generated under the old wording.
 [prompts.level_descriptors]

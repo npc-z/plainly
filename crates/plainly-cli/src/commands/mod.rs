@@ -26,6 +26,12 @@ impl CommandError {
     }
 }
 
+/// Configuration failures land on `FAILURE`, which the contract otherwise
+/// reserves for provider failures: the five documented codes have no slot for
+/// "local state could not be written". A script cannot currently tell a refused
+/// save apart from a generation failure — recorded as a contract gap in the
+/// ticket, to be settled by a spec amendment rather than by inventing a sixth
+/// code here.
 impl From<plainly_core::ConfigError> for CommandError {
     fn from(error: plainly_core::ConfigError) -> Self {
         use plainly_core::ConfigError;

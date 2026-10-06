@@ -14,3 +14,7 @@ path = "src/main.rs"
 plainly-core.workspace = true
 
 clap.workspace = true
+
+[dev-dependencies]
+# Parses the built binary to read its DT_NEEDED list; test-only.
+object.workspace = true

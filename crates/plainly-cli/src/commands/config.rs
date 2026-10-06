@@ -20,6 +20,12 @@ pub fn run(command: ConfigCommand) -> Result<u8, CommandError> {
             Ok(exit::SUCCESS)
         }
         ConfigCommand::Show => {
+            if !file.exists() {
+                eprintln!(
+                    "no configuration file yet at {}; showing the shipped defaults",
+                    file.path().display()
+                );
+            }
             print!("{}", file.effective_toml()?);
             Ok(exit::SUCCESS)
         }

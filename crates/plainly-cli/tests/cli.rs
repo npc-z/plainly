@@ -68,7 +68,7 @@ fn config_set_writes_a_value_that_a_later_process_reads_back() {
 
     // And it is a real file, with the shipped comments still in it.
     let written = std::fs::read_to_string(dir.config_file()).expect("the file exists");
-    assert!(written.contains("Reading level"));
+    assert!(written.contains("Comprehensible English section"));
     assert!(written.contains("level = \"A2\""));
 }
 
@@ -160,7 +160,11 @@ fn clearing_a_key_without_a_keyring_is_quietly_idempotent() {
 
     assert_eq!(code(&output), SUCCESS);
     assert_eq!(stdout(&output), "");
-    assert!(stderr(&output).contains("nothing to clear"));
+    assert!(
+        stderr(&output).contains("nothing was stored persistently"),
+        "{}",
+        stderr(&output)
+    );
 }
 
 #[test]
@@ -202,4 +206,84 @@ fn help_and_version_go_to_stdout_and_exit_zero() {
     let version = dir.plainly(&["--version"]);
     assert_eq!(code(&version), SUCCESS);
     assert!(stdout(&version).starts_with("plainly "));
+}
+
+/// The environment is not guaranteed to be valid UTF-8, and a command that
+/// panics on someone's locale variable is a command that does not run.
+#[cfg(unix)]
+#[test]
+fn a_non_utf8_environment_variable_does_not_bring_the_command_down() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+
+    let dir = TempDir::new("non-utf8-env");
+    let output = dir
+        .command()
+        .args(["config", "path"])
+        .env("PLAINLY_SOMETHING_WEIRD", OsStr::from_bytes(b"\xff\xfe"))
+        .output()
+        .expect("the process runs");
+
+    assert_eq!(code(&output), SUCCESS);
+    assert!(stdout(&output).contains("config.toml"));
+}
+
+/// The CLI is the one surface that has to work with no graphics stack, so what
+/// the binary actually asks the loader for is checked, rather than what the
+/// manifest says. This reads the ELF's `DT_NEEDED` entries — the same list `ldd`
+/// prints — instead of shelling out to `ldd`, which not every libc ships, and
+/// instead of grepping the file's bytes, which would trip over the same names
+/// appearing in a string literal.
+#[cfg(target_os = "linux")]
+#[test]
+fn the_cli_binary_needs_no_graphics_library() {
+    use object::Object as _;
+
+    let binary = env!("CARGO_BIN_EXE_plainly");
+    let bytes = std::fs::read(binary).expect("the CLI binary is readable");
+    let file = object::File::parse(&*bytes).expect("the CLI is an object file");
+
+    let needed: Vec<String> = file
+        .import_libraries()
+        .expect("the dynamic table is readable")
+        .map(|library| {
+            let library = library.expect("each needed library is readable");
+            String::from_utf8_lossy(library.name()).into_owned()
+        })
+        .collect();
+
+    // A binary that asks for nothing at all would make this check vacuous.
+    assert!(
+        !needed.is_empty(),
+        "expected at least libc among the needed libraries"
+    );
+    for library in ["libgtk", "libwebkit", "libgdk", "libwayland", "libsoup"] {
+        assert!(
+            !needed
+                .iter()
+                .any(|name| name.to_lowercase().contains(library)),
+            "the CLI needs {library} at run time: {needed:?}"
+        );
+    }
+}
+
+/// An API key is one line. Storage must not silently keep the first line of a
+/// multi-line secret: the failure would only show up later, as a bare 401, with
+/// nothing left to point at.
+#[test]
+fn a_multi_line_secret_is_refused_rather_than_truncated() {
+    let dir = TempDir::new("key-multiline");
+
+    let output = dir.plainly_with_stdin(
+        &["providers", "key", "set", "openai"],
+        "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkq\n-----END PRIVATE KEY-----\n",
+    );
+
+    assert_eq!(code(&output), USAGE);
+    assert_eq!(stdout(&output), "");
+    assert!(
+        stderr(&output).contains("single line"),
+        "{}",
+        stderr(&output)
+    );
 }
