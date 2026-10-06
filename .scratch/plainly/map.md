@@ -8,6 +8,8 @@ Labels: wayfinder:map
 
 本 effort **只产出决策，不做实现，也不自己写规格**——规格由 `/to-spec` 从本图的决策坍缩而来。
 
+**➡️ 2026-10-05：已交给 `/to-spec`——规格落在 [spec.md](spec.md)（`Status: ready-for-agent`）。** 下一步 `/to-tickets`。
+
 **✅ 2026-10-05：目的地已到达。** 18 张票据全部结清（其中 [11](issues/11-v0-spec-assembly.md) 明确出界），**Not yet specified 为空**。本图可以整体交给 `/to-spec`。后续：`/to-spec` → `/to-tickets` → `/implement`。
 
 ## Notes
