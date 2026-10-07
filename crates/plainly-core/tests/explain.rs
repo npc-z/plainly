@@ -86,7 +86,7 @@ fn a_wrong_field_name_comes_back_as_a_schema_failure() {
 
 #[test]
 fn a_provider_failure_is_told_apart_from_a_contract_failure() {
-    let provider = FakeProvider::scripted([Err(ProviderError::new("connection refused"))]);
+    let provider = FakeProvider::scripted([Err(ProviderError::unavailable("connection refused"))]);
     let request = support::request(support::PASSAGE);
 
     let error = explain(&provider, &request, now()).unwrap_err();

@@ -16,11 +16,12 @@ pub mod presets;
 pub mod prompt;
 pub mod provider;
 pub mod render;
+pub mod retry;
 pub mod secrets;
 pub mod setup;
 
 pub use artifact::{ARTIFACT_VERSION, Artifact, Timestamp};
-pub use chat::{ChatCompletions, MAX_TOKENS};
+pub use chat::{ChatCompletions, MAX_TOKENS, MAX_TOKENS_THINKING};
 pub use config::{
     App, Config, ConfigError, ConfigFile, DEFAULT_CONFIG, ExportFormat, Level, PanelCorner,
     Prompts, ProviderProfile, Thinking,
@@ -30,8 +31,9 @@ pub use explanation::{ContractError, Explanation, Gloss, wire_schema};
 pub use paths::{CONFIG_FILE, IDENTIFIER, PathError, PathInputs, Paths};
 pub use presets::{KeyRequirement, PRESETS, Preset, SchemaSupport, ThinkingSwitch};
 pub use prompt::{FACTORY_PROMPT, PROMPT_LABEL};
-pub use provider::{ExplainRequest, Provider, ProviderError};
+pub use provider::{ExplainRequest, Provider, ProviderError, ProviderErrorKind};
 pub use render::{Section, SectionKind};
+pub use retry::{Failure, FailureKind, Stopped};
 pub use secrets::{
     Cleared, EnvSecrets, KeySource, KeyringSecrets, MemorySecrets, ResolvedKey, SecretError,
     SecretStore, Secrets, Stored, env_var_name,

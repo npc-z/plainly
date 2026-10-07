@@ -2,8 +2,10 @@
 //!
 //! Everything provider-specific lives behind [`Provider`]: which request shape a
 //! runtime wants, whether a schema can be enforced at all, what its empty answer
-//! looks like. The explain path above it knows only that a provider either hands
-//! back content or fails.
+//! looks like, and — through [`ProviderError`] — which *class* of failure it hit,
+//! because "the model answered with nothing usable" and "the endpoint is
+//! rate-limiting us" call for different things from the retry policy
+//! ([`crate::retry`], tickets/04).
 //!
 //! Presets, capability probing and local discovery — tickets/03 through
 //! tickets/06 — build on this seam rather than widening it: [`crate::presets`]
@@ -54,23 +56,83 @@ pub trait Provider {
     fn generate(&self, request: &ExplainRequest) -> Result<String, ProviderError>;
 }
 
+/// Why a provider could not produce content, as a class the policy can branch on.
+///
+/// A provider failing is still a different outcome from a provider answering
+/// with something unusable (tickets/02): the first is this type, the second
+/// arrives as a [`ContractError`](crate::ContractError) from the explain path.
+/// The adapter does its half of the classifying on its own side of the seam —
+/// the HTTP status, the transport error, the shape of what came back — and
+/// [`crate::retry`] reads both halves, because the class is what decides whether
+/// asking again is worth anything. Anything not listed here is a bug in the
+/// adapter rather than a case to handle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProviderErrorKind {
+    /// The endpoint rejected the request's shape: HTTP 400 or 422 that names it.
+    /// The assumed capability is wrong, so asking again is pointless and the
+    /// capability is re-probed instead.
+    UnsupportedParameter,
+    /// 429, 5xx, a timeout, or a connection that dropped. Transient: the same
+    /// request may work later.
+    Unavailable,
+    /// Asking again cannot help: a bad URL, an unknown host, a model the
+    /// endpoint does not have, a credential it rejected.
+    Misconfigured,
+    /// The model answered with nothing usable.
+    Empty,
+    /// The model declined to answer.
+    Refused,
+    /// The answer was cut off by the token budget.
+    Truncated,
+}
+
 /// Why a provider could not produce content.
 ///
-/// One classification, deliberately. The provider layer's own taxonomy —
-/// unsupported parameters, rate limits, refusals, timeouts — is the retry
-/// policy's business and arrives with it in tickets/04. What matters at this seam
-/// is that a provider failing is a different outcome from a provider answering
-/// with something unusable: the first is nobody's fault, the second is a model
-/// that will be asked again.
+/// The kind is the machine-readable part — the retry policy branches on it and
+/// tickets/05 downgrades a capability on [`ProviderErrorKind::UnsupportedParameter`]
+/// — while the message is the part a person reads.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{message}")]
 pub struct ProviderError {
+    kind: ProviderErrorKind,
     message: String,
 }
 
+/// One constructor per class. What each class means is on
+/// [`ProviderErrorKind`]; the message is what a person reads.
 impl ProviderError {
-    pub fn new(message: impl Into<String>) -> Self {
+    pub fn unsupported_parameter(message: impl Into<String>) -> Self {
+        Self::new(ProviderErrorKind::UnsupportedParameter, message)
+    }
+
+    pub fn unavailable(message: impl Into<String>) -> Self {
+        Self::new(ProviderErrorKind::Unavailable, message)
+    }
+
+    pub fn misconfigured(message: impl Into<String>) -> Self {
+        Self::new(ProviderErrorKind::Misconfigured, message)
+    }
+
+    pub fn empty(message: impl Into<String>) -> Self {
+        Self::new(ProviderErrorKind::Empty, message)
+    }
+
+    pub fn refused(message: impl Into<String>) -> Self {
+        Self::new(ProviderErrorKind::Refused, message)
+    }
+
+    pub fn truncated(message: impl Into<String>) -> Self {
+        Self::new(ProviderErrorKind::Truncated, message)
+    }
+
+    /// Which class of failure this is.
+    pub fn kind(&self) -> ProviderErrorKind {
+        self.kind
+    }
+
+    fn new(kind: ProviderErrorKind, message: impl Into<String>) -> Self {
         Self {
+            kind,
             message: message.into(),
         }
     }

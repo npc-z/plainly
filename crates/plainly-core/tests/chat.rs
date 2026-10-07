@@ -6,7 +6,8 @@ mod support;
 use serde_json::{Value, json};
 
 use plainly_core::{
-    ChatCompletions, Config, ExplainRequest, MAX_TOKENS, ProviderSetup, wire_schema,
+    ChatCompletions, Config, ExplainRequest, MAX_TOKENS, MAX_TOKENS_THINKING, ProviderErrorKind,
+    ProviderSetup, wire_schema,
 };
 
 /// A client for `name`, with `model` overriding the preset's when given.
@@ -28,12 +29,23 @@ fn body(name: &str, model: Option<&str>) -> Value {
     client(name, model, "sk-test").request_body(&support::request(support::PASSAGE))
 }
 
-/// The same, with the user's thinking choice set to `on`.
-fn body_with_thinking_on(name: &str) -> Value {
+/// A client for `name` whose thinking choice is `on`.
+fn thinking_client(name: &str) -> ChatCompletions {
     let config = Config::parse(&format!("[providers.{name}]\nthinking = \"on\"\n"))
         .expect("the fixture is valid TOML");
     let setup = ProviderSetup::resolve(name, &config).expect("the fixture provider resolves");
-    ChatCompletions::new(setup, "sk-test").request_body(&support::request(support::PASSAGE))
+    ChatCompletions::new(setup, "sk-test")
+}
+
+/// The same, with the user's thinking choice set to `on`.
+fn body_with_thinking_on(name: &str) -> Value {
+    thinking_client(name).request_body(&support::request(support::PASSAGE))
+}
+
+/// A client to read answers with. Which provider it is does not matter to
+/// `answer_from` beyond the budget it carries.
+fn reader() -> ChatCompletions {
+    client("deepseek", None, "sk-test")
 }
 
 /// The request as the standard fixture builds it, for assertions that need it.
@@ -118,13 +130,26 @@ fn the_request_carries_the_budget_and_the_prompt() {
 }
 
 #[test]
+fn the_detailed_mode_is_given_a_bigger_budget() {
+    // A reasoning model spends most of its completion before the answer exists,
+    // so the ordinary budget would truncate exactly the Passages the detailed
+    // mode is for (spec §7). That the detailed budget is the larger of the two
+    // is a const assertion in `chat`, next to the two numbers.
+    assert_eq!(body("deepseek", None)["max_tokens"], MAX_TOKENS);
+    assert_eq!(
+        body_with_thinking_on("deepseek")["max_tokens"],
+        MAX_TOKENS_THINKING
+    );
+}
+
+#[test]
 fn the_answer_is_the_content_of_the_first_choice() {
     let body = json!({
         "choices": [{ "message": { "role": "assistant", "content": "{\"ok\":true}" } }]
     });
 
     assert_eq!(
-        ChatCompletions::answer_from(&body).expect("the answer is there"),
+        reader().answer_from(&body).expect("the answer is there"),
         "{\"ok\":true}"
     );
 }
@@ -141,7 +166,7 @@ fn an_empty_content_falls_back_to_the_reasoning_field() {
     });
 
     assert_eq!(
-        ChatCompletions::answer_from(&body).expect("the fallback finds it"),
+        reader().answer_from(&body).expect("the fallback finds it"),
         "{\"ok\":true}"
     );
 }
@@ -156,13 +181,14 @@ fn a_chain_of_thought_is_not_mistaken_for_an_answer() {
         "choices": [{
             "message": {
                 "content": "",
-                "reasoning_content": "The user wants a paraphrase. First I should find the blockers…"
+                "reasoning_content": "The user wants a paraphrase. First I should find the blockers..."
             },
             "finish_reason": "stop"
         }]
     });
 
-    let error = ChatCompletions::answer_from(&body).unwrap_err();
+    let error = reader().answer_from(&body).unwrap_err();
+    assert_eq!(error.kind(), ProviderErrorKind::Empty);
     assert!(error.to_string().contains("reasoning"), "{error}");
 }
 
@@ -177,8 +203,8 @@ fn a_refusal_is_a_failure_and_not_an_answer_to_parse() {
         }]
     });
 
-    let error = ChatCompletions::answer_from(&body).unwrap_err();
-    assert!(error.to_string().contains("refused"), "{error}");
+    let error = reader().answer_from(&body).unwrap_err();
+    assert_eq!(error.kind(), ProviderErrorKind::Refused);
     assert!(error.to_string().contains("I can't help"), "{error}");
 }
 
@@ -190,14 +216,97 @@ fn a_refusal_in_the_array_form_of_content_is_a_failure_too() {
         }]
     });
 
-    let error = ChatCompletions::answer_from(&body).unwrap_err();
-    assert!(error.to_string().contains("refused"), "{error}");
+    let error = reader().answer_from(&body).unwrap_err();
+    assert_eq!(error.kind(), ProviderErrorKind::Refused);
 }
 
 #[test]
-fn a_cut_off_answer_says_it_was_cut_off() {
+fn an_unlabelled_cut_off_answer_is_still_a_truncation() {
+    // Ollama's OpenAI-compatible layer reports a length cut-off as a null
+    // finish_reason, and what is left is a JSON prefix. Left to the contract
+    // check it would look like a badly answered question, and the policy would
+    // spend its retries on the same exhausted budget (spec §7).
+    let body = json!({
+        "choices": [{
+            "message": { "content": "{\"comprehensible\": \"the commit" },
+            "finish_reason": null
+        }]
+    });
+
+    let error = reader().answer_from(&body).unwrap_err();
+    assert_eq!(error.kind(), ProviderErrorKind::Truncated);
+    assert!(error.to_string().contains("max_tokens = 2048"), "{error}");
+}
+
+#[test]
+fn a_null_finish_reason_on_a_whole_answer_is_not_a_truncation() {
+    let body = json!({
+        "choices": [{
+            "message": { "content": "{\"ok\":true}" },
+            "finish_reason": null
+        }]
+    });
+
+    assert_eq!(
+        reader().answer_from(&body).expect("the answer is whole"),
+        "{\"ok\":true}"
+    );
+}
+
+#[test]
+fn a_transport_failure_is_classified_by_whether_resending_could_work() {
+    use std::io::{Error as IoError, ErrorKind};
+
+    let client = reader();
+    let io = |kind| ureq::Error::Io(IoError::new(kind, "socket trouble"));
+
+    for kind in [
+        // A local runtime that is not listening yet is the reason a refusal is
+        // on this list rather than with the permanent failures.
+        ErrorKind::ConnectionRefused,
+        ErrorKind::ConnectionReset,
+        ErrorKind::ConnectionAborted,
+        ErrorKind::TimedOut,
+        ErrorKind::Interrupted,
+        // The stream ended before the response did.
+        ErrorKind::UnexpectedEof,
+    ] {
+        assert_eq!(
+            client.transport_error(io(kind)).kind(),
+            ProviderErrorKind::Unavailable,
+            "{kind:?} is worth one more ask"
+        );
+    }
+
+    // A name that does not resolve arrives as an `Io` error from ureq's
+    // resolver (`to_socket_addrs`), not as `HostNotFound` — so it is the io
+    // kind that has to catch it, or a typo in the endpoint costs the whole
+    // backoff schedule and then says "try again later".
+    assert_eq!(
+        client.transport_error(io(ErrorKind::Other)).kind(),
+        ProviderErrorKind::Misconfigured
+    );
+    assert_eq!(
+        client.transport_error(ureq::Error::HostNotFound).kind(),
+        ProviderErrorKind::Misconfigured
+    );
+    assert_eq!(
+        client
+            .transport_error(ureq::Error::BadUri("not a url".to_string()))
+            .kind(),
+        ProviderErrorKind::Misconfigured
+    );
+    assert_eq!(
+        client.transport_error(ureq::Error::ConnectionFailed).kind(),
+        ProviderErrorKind::Unavailable
+    );
+}
+
+#[test]
+fn a_cut_off_answer_names_the_budget_that_cut_it_off() {
     // Truncation is a budget problem, not a model one: reporting it as
-    // malformed JSON would send the retry policy after the wrong thing.
+    // malformed JSON would send the retry policy after the wrong thing. The
+    // budget is named because the two modes do not share one.
     let body = json!({
         "choices": [{
             "message": { "content": "{\"comprehensible\": \"the commit" },
@@ -205,9 +314,9 @@ fn a_cut_off_answer_says_it_was_cut_off() {
         }]
     });
 
-    let error = ChatCompletions::answer_from(&body).unwrap_err();
-    assert!(error.to_string().contains("cut off"), "{error}");
-    assert!(error.to_string().contains("max_tokens"), "{error}");
+    let error = thinking_client("deepseek").answer_from(&body).unwrap_err();
+    assert_eq!(error.kind(), ProviderErrorKind::Truncated);
+    assert!(error.to_string().contains("max_tokens = 8192"), "{error}");
 }
 
 #[test]
@@ -218,7 +327,8 @@ fn an_answer_with_nothing_in_it_is_a_failure() {
         "choices": [{ "message": { "content": "   " }, "finish_reason": "stop" }]
     });
 
-    let error = ChatCompletions::answer_from(&body).unwrap_err();
+    let error = reader().answer_from(&body).unwrap_err();
+    assert_eq!(error.kind(), ProviderErrorKind::Empty);
     assert!(error.to_string().contains("no content"), "{error}");
 }
 
@@ -233,7 +343,59 @@ fn an_incomplete_response_says_so_instead_of_being_parsed_as_a_prefix() {
         "choices": []
     });
 
-    let error = ChatCompletions::answer_from(&body).unwrap_err();
+    let error = reader().answer_from(&body).unwrap_err();
+    assert_eq!(error.kind(), ProviderErrorKind::Truncated);
     assert!(error.to_string().contains("incomplete"), "{error}");
     assert!(error.to_string().contains("max_output_tokens"), "{error}");
+}
+
+#[test]
+fn a_status_the_endpoint_refused_is_classified_for_the_policy() {
+    let client = reader();
+
+    // 400/422 on a request whose shape we chose: the shape is the problem, so
+    // the answer is a downgrade and a fresh probe rather than another call.
+    assert_eq!(
+        client
+            .http_error(400, "This response_format type is unavailable now")
+            .kind(),
+        ProviderErrorKind::UnsupportedParameter
+    );
+    assert_eq!(
+        client
+            .http_error(422, "thinking.type must be an object")
+            .kind(),
+        ProviderErrorKind::UnsupportedParameter
+    );
+
+    // Transient: the backoff exists for these.
+    for status in [408, 429, 500, 502, 503] {
+        assert_eq!(
+            client.http_error(status, "later").kind(),
+            ProviderErrorKind::Unavailable,
+            "HTTP {status}"
+        );
+    }
+
+    // Asking again cannot help: the configuration is what has to change.
+    for status in [401, 403, 404, 413] {
+        assert_eq!(
+            client.http_error(status, "no").kind(),
+            ProviderErrorKind::Misconfigured,
+            "HTTP {status}"
+        );
+    }
+}
+
+#[test]
+fn a_failed_response_body_is_quoted_with_its_key_removed() {
+    // Not `reader()`: the key this test asserts about is the fixture.
+    let client = client("deepseek", None, "sk-secret-0123456789abcdef");
+
+    let error = client.http_error(401, "Your api key: sk-secret-0123456789abcdef is invalid");
+
+    let message = error.to_string();
+    assert!(!message.contains("sk-secret-0123456789abcdef"), "{message}");
+    assert!(message.contains("<redacted>"), "{message}");
+    assert!(message.contains("401"), "{message}");
 }

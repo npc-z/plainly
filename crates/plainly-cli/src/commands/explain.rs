@@ -7,12 +7,12 @@
 
 use std::io::{IsTerminal, Read};
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use plainly_core::{
-    ChatCompletions, ConfigFile, ExplainRequest, KeyRequirement, Paths, ProviderSetup,
-    SOURCE_LANGUAGE, Secrets, Thinking, ThinkingSwitch, Timestamp, env_var_name, explain, prompt,
-    render,
+    ChatCompletions, ConfigFile, ExplainRequest, Failure, KeyRequirement, Paths, ProviderSetup,
+    SOURCE_LANGUAGE, Secrets, Stopped, Thinking, ThinkingSwitch, Timestamp, env_var_name, prompt,
+    render, retry,
 };
 
 use crate::cli::{ExplainArgs, OutputFormat};
@@ -91,8 +91,8 @@ pub fn run(args: ExplainArgs) -> Result<u8, CommandError> {
         );
     }
 
-    let artifact = explain(&provider, &request, now()?)
-        .map_err(|error| CommandError::Failed(error.to_string()))?;
+    let artifact = retry::explain(&provider, &request, now()?, &pause)
+        .map_err(|failure| CommandError::Failed(describe(&failure)))?;
 
     let format = args.format.unwrap_or_default();
     match format {
@@ -109,6 +109,41 @@ pub fn run(args: ExplainArgs) -> Result<u8, CommandError> {
     }
 
     Ok(exit::SUCCESS)
+}
+
+/// Wait as the policy asks, and say so while waiting.
+///
+/// This is where a person learns that the run is retrying rather than hanging;
+/// the immediate retries are silent because there is nothing to wait through.
+fn pause(wait: Duration) {
+    if wait > Duration::ZERO {
+        eprintln!("plainly: asking again in {}s", wait.as_secs());
+    }
+    std::thread::sleep(wait);
+}
+
+/// What a person is told when the policy gives up.
+///
+/// The class is not named — the reason already says what happened — but whether
+/// anything was retried, and why the attempts stopped there, are part of the
+/// answer. So is the fact that a failed run leaves nothing behind: there is no
+/// Explanation, so there is nothing to store, and the input was only ever read.
+fn describe(failure: &Failure) -> String {
+    let stopped = match failure.stopped {
+        Stopped::Repeated => "the same answer came back twice",
+        Stopped::NotRetryable => "another attempt would fail the same way",
+        Stopped::Exhausted => "the attempts this class allows are used up",
+    };
+    let attempts = if failure.retried() {
+        format!("tried {} times; {stopped}", failure.attempts)
+    } else {
+        format!("not retried: {stopped}")
+    };
+
+    format!(
+        "{} ({attempts}). Nothing was stored and the input was not changed.",
+        failure.reason
+    )
 }
 
 /// The key to send, if there is one.

@@ -26,7 +26,12 @@ pub enum ExplainError {
     Provider(#[from] ProviderError),
 }
 
-/// Produce one Explanation for one Passage.
+/// Produce the Artifact for one Passage, in one attempt.
+///
+/// A surface does not call this directly: [`crate::retry::explain`] drives it,
+/// decides whether a failure is worth asking about again, and reports what
+/// happened. This is the attempt itself — ask, hold the answer to the contract,
+/// attach everything the model is not trusted with.
 ///
 /// `now` is a value rather than a call to the system clock: the only use this
 /// path has for the time is stamping the Artifact, so a caller — and a test —

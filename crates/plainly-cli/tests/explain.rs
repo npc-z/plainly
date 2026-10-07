@@ -298,12 +298,15 @@ fn a_bare_file_path_is_the_same_run_as_the_explain_subcommand() {
     assert_eq!(server.requests()[0].body["messages"][1]["content"], passage);
 }
 
+/// A failure asking again cannot fix. The status is 401 on purpose: a 5xx would
+/// be retried, which would make this a slow test (five seconds of real backoff)
+/// and would change what it asserts about how many calls were made.
 #[test]
 fn a_provider_failure_exits_one_and_leaves_stdout_empty() {
     let dir = TempDir::new("explain-http-error");
     let server = FakeProvider::start([Reply::Status {
-        code: 500,
-        body: "upstream exploded".to_string(),
+        code: 401,
+        body: "invalid key".to_string(),
     }]);
     dir.write_config(&custom_provider(&server.base_url()));
 
@@ -312,25 +315,91 @@ fn a_provider_failure_exits_one_and_leaves_stdout_empty() {
     assert_eq!(code(&output), FAILURE);
     assert_eq!(stdout(&output), "", "a failure produces no product");
     let message = stderr(&output);
-    assert!(message.contains("500"), "{message}");
-    assert!(message.contains("upstream exploded"), "{message}");
+    assert!(message.contains("401"), "{message}");
+    assert!(message.contains("invalid key"), "{message}");
+    assert_eq!(server.requests().len(), 1, "a 401 is not worth retrying");
 }
 
+/// A transient failure is asked again, and the run carries on: the caller sees
+/// one Explanation and the backoff, never the first 429.
+#[test]
+fn a_transient_failure_is_asked_again_and_succeeds() {
+    let dir = TempDir::new("explain-retry-success");
+    let server = FakeProvider::start([
+        Reply::Status {
+            code: 429,
+            body: "slow down".to_string(),
+        },
+        Reply::content(ANSWER),
+    ]);
+    dir.write_config(&custom_provider(&server.base_url()));
+
+    let output = dir.plainly_with(&[], PASSAGE, &[("PLAINLY_STUB_API_KEY", "test-key")]);
+
+    assert_eq!(code(&output), SUCCESS, "{}", stderr(&output));
+    assert!(stdout(&output).contains("### Original"));
+    assert_eq!(server.requests().len(), 2);
+    assert!(
+        stderr(&output).contains("asking again in 1s"),
+        "the wait is reported rather than looking like a hang: {}",
+        stderr(&output)
+    );
+}
+
+/// The same unusable answer twice is systematic drift, so the run stops there
+/// and says what it did rather than spending a third call.
 #[test]
 fn an_answer_that_is_not_the_contract_exits_one() {
     let dir = TempDir::new("explain-malformed");
-    let server = FakeProvider::start([Reply::content("I'd rather not, sorry.")]);
+    let server = FakeProvider::start([
+        Reply::content("I'd rather not, sorry."),
+        Reply::content("I'd rather not, sorry."),
+    ]);
     dir.write_config(&custom_provider(&server.base_url()));
 
     let output = dir.plainly_with(&[], PASSAGE, &[("PLAINLY_STUB_API_KEY", "test-key")]);
 
     assert_eq!(code(&output), FAILURE);
     assert_eq!(stdout(&output), "");
+    let message = stderr(&output);
     assert!(
-        stderr(&output).contains("JSON"),
-        "the failure names what went wrong: {}",
-        stderr(&output)
+        message.contains("JSON"),
+        "the failure names what went wrong: {message}"
     );
+    assert!(
+        message.contains("tried 2 times"),
+        "how many attempts it took is part of the answer: {message}"
+    );
+    assert!(
+        message.contains("Nothing was stored and the input was not changed"),
+        "{message}"
+    );
+    assert_eq!(
+        server.requests().len(),
+        2,
+        "the same answer twice is enough"
+    );
+}
+
+/// A 4xx that rejects the request's shape is not retried: asking again would be
+/// asking the same question, and tickets/05 downgrades the capability instead.
+#[test]
+fn a_rejected_request_shape_is_not_asked_again() {
+    let dir = TempDir::new("explain-unsupported");
+    let server = FakeProvider::start([Reply::Status {
+        code: 400,
+        body: "This response_format type is unavailable now".to_string(),
+    }]);
+    dir.write_config(&custom_provider(&server.base_url()));
+
+    let output = dir.plainly_with(&[], PASSAGE, &[("PLAINLY_STUB_API_KEY", "test-key")]);
+
+    assert_eq!(code(&output), FAILURE);
+    assert_eq!(stdout(&output), "");
+    let message = stderr(&output);
+    assert!(message.contains("response_format"), "{message}");
+    assert!(message.contains("not retried"), "{message}");
+    assert_eq!(server.requests().len(), 1);
 }
 
 #[test]
@@ -408,6 +477,8 @@ fn a_configuration_file_that_cannot_be_parsed_is_not_configured() {
 }
 
 /// Providers do echo keys back in a 401, and stderr is where a CI log keeps it.
+/// The status is 401, not 500, so the run stops at the first attempt: a 5xx
+/// would be retried, and the test would assert about the wrong call.
 #[test]
 fn a_provider_error_does_not_repeat_a_key_back() {
     let dir = TempDir::new("explain-redacted-error");
