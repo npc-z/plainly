@@ -2,7 +2,8 @@
 //! preset merged with the user's configuration.
 
 use plainly_core::{
-    Config, KeyRequirement, ProviderSetup, SchemaSupport, SetupError, Thinking, ThinkingSwitch,
+    Config, KeyRequirement, ProviderSetup, SchemaSupport, SetupError, Surface, Thinking,
+    ThinkingSwitch,
 };
 
 fn config(text: &str) -> Config {
@@ -205,4 +206,63 @@ fn a_custom_provider_without_an_endpoint_says_there_is_nowhere_to_send_to() {
         "got {error:?}"
     );
     assert!(error.to_string().contains("[providers.mine]"), "{error}");
+}
+
+#[test]
+fn ollama_is_resolved_to_its_own_route_and_everyone_else_to_the_shared_one() {
+    let ollama = ProviderSetup::resolve(
+        "ollama",
+        &config("[providers.ollama]\nmodel = \"qwen3.5:4b\"\n"),
+    )
+    .expect("the fixture resolves");
+    assert_eq!(ollama.surface, Surface::Ollama);
+
+    let deepseek =
+        ProviderSetup::resolve("deepseek", &Config::default()).expect("the preset resolves");
+    assert_eq!(deepseek.surface, Surface::OpenAi);
+}
+
+#[test]
+fn the_surface_follows_the_provider_name_rather_than_the_endpoint() {
+    // The surface is how Plainly talks to this provider, not a claim about what
+    // the endpoint accepts: someone running Ollama on another host still wants
+    // `/api/chat`, and an endpoint that does not serve it is caught by the
+    // compatibility fallback in `chat` rather than by guessing from a host name.
+    let setup = ProviderSetup::resolve(
+        "ollama",
+        &config("[providers.ollama]\nmodel = \"m\"\nendpoint = \"http://127.0.0.1:9999/v1\"\n"),
+    )
+    .expect("the fixture resolves");
+
+    assert_eq!(setup.surface, Surface::Ollama);
+    // What the preset knew about the *call surface* is still withdrawn: the
+    // schema and the switch are properties of the vendor's own endpoint.
+    assert_eq!(
+        ProviderSetup::resolve(
+            "deepseek",
+            &config("[providers.deepseek]\nendpoint = \"http://127.0.0.1:9999/v1\"\n"),
+        )
+        .expect("the fixture resolves")
+        .thinking_switch,
+        ThinkingSwitch::Unsupported
+    );
+}
+
+#[test]
+fn a_capability_replaces_only_what_a_probe_can_know() {
+    let setup =
+        ProviderSetup::resolve("deepseek", &Config::default()).expect("the preset resolves");
+
+    let probed = setup.with_capability(SchemaSupport::Enforced, ThinkingSwitch::Unsupported);
+
+    assert_eq!(probed.schema, SchemaSupport::Enforced);
+    assert_eq!(probed.thinking_switch, ThinkingSwitch::Unsupported);
+    // Everything a probe has no say in is carried over untouched: the model and
+    // the endpoint are the user's, and the profile still names the vendor.
+    assert_eq!(probed.name, setup.name);
+    assert_eq!(probed.label, setup.label);
+    assert_eq!(probed.endpoint, setup.endpoint);
+    assert_eq!(probed.model, setup.model);
+    assert_eq!(probed.thinking, setup.thinking);
+    assert_eq!(probed.key, setup.key);
 }

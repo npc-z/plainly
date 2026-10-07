@@ -2,21 +2,27 @@
 //!
 //! stdout carries the product and nothing else — the five sections or the
 //! Artifact as JSON — because this command exists to be piped. Everything a
-//! person needs to read (which provider answered, why it did not) goes to
-//! stderr, and the exit code says which kind of outcome it was.
+//! person needs to read (which provider answered, what its endpoint takes, why
+//! it did not) goes to stderr, and the exit code says which kind of outcome it
+//! was.
+//!
+//! The run itself is [`plainly_core::explain::run`]: probing the endpoint's
+//! capability, the retry policy, and the one downgrade-and-ask-again cycle when
+//! the endpoint rejects the shape. What is left here is where the Passage comes
+//! from, what a person is told, and which exit code that is.
 
 use std::io::{IsTerminal, Read};
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use plainly_core::{
-    ChatCompletions, ConfigFile, ExplainRequest, Failure, KeyRequirement, Paths, ProviderSetup,
-    SOURCE_LANGUAGE, Secrets, Stopped, Thinking, ThinkingSwitch, Timestamp, env_var_name, prompt,
-    render, retry,
+    Artifact, ChatCompletions, ConfigFile, Downgrade, Endpoint, ExplainRequest, Failure,
+    KeyRequirement, Paths, ProviderSetup, Resolution, SOURCE_LANGUAGE, Secrets, Stopped, Thinking,
+    ThinkingSwitch, env_var_name, explain, prompt, render,
 };
 
 use crate::cli::{ExplainArgs, OutputFormat};
-use crate::commands::CommandError;
+use crate::commands::{CommandError, cache, now, resolve_key, tier};
 use crate::exit;
 
 /// What to say when there is nothing to explain. One wording, used both when a
@@ -74,15 +80,102 @@ pub fn run(args: ExplainArgs) -> Result<u8, CommandError> {
         prompt_label: prompt::PROMPT_LABEL.to_string(),
     };
 
-    let provider = ChatCompletions::new(setup.clone(), key.unwrap_or_default());
-
     eprintln!(
         "plainly: explaining with {} ({}, thinking {})",
         setup.label,
         setup.model,
         setup.thinking.as_str()
     );
-    if setup.thinking == Thinking::On && setup.thinking_switch == ThinkingSwitch::Unsupported {
+
+    // The transport for a capability-resolved setup. The key is the surface's
+    // business and lives here; everything the run decides is the same for the
+    // panel, which is why none of it is in this file.
+    let transport = |setup: &ProviderSetup| -> Box<dyn Endpoint> {
+        Box::new(ChatCompletions::new(
+            setup.clone(),
+            key.clone().unwrap_or_default(),
+        ))
+    };
+
+    match explain::run(&setup, &request, &transport, &cache(&paths), now()?, &pause) {
+        Ok(run) => {
+            report(&setup, &run.resolution, None, run.downgrade.as_ref());
+            print(&run.artifact, args.format.unwrap_or_default())?;
+            Ok(exit::SUCCESS)
+        }
+        Err(failure) => {
+            report(
+                &setup,
+                &failure.resolution,
+                failure.reprobe.as_ref(),
+                failure.downgrade.as_ref(),
+            );
+            Err(CommandError::Failed(describe(&failure.failure)))
+        }
+    }
+}
+
+/// What a person is told about the endpoint, whatever the run's outcome.
+///
+/// Every fact here is one the run established rather than a guess: the tier the
+/// request was actually held to, a correction the endpoint forced, and — when
+/// there is one — the reason nothing could be probed at all. The tier is the one
+/// thing said every time, because it is the promise the answer comes with and
+/// the user cannot otherwise tell the two tiers apart (spec §7).
+///
+/// `resolution` is the one behind the request being reported on, which on a
+/// failed run is the *rejected* attempt rather than whatever a later probe
+/// concluded; `reprobe` carries that later probe when it did not change what the
+/// run could send.
+fn report(
+    setup: &ProviderSetup,
+    resolution: &Resolution,
+    reprobe: Option<&Resolution>,
+    downgrade: Option<&Downgrade>,
+) {
+    if let Some(downgrade) = downgrade {
+        eprintln!(
+            "plainly: {} rejected the shape Plainly assumed ({}); probed again",
+            setup.label,
+            one_line(&downgrade.reason),
+        );
+    }
+    if let Some(reason) = &resolution.unanswered {
+        eprintln!("plainly: could not probe {} ({reason})", setup.label);
+    }
+
+    // Always, and before anything else a person has to weigh: which tier this
+    // Passage was held to. "The endpoint enforces the contract" and "we check
+    // the answer ourselves and ask again" are not the same promise, and a run
+    // that says nothing leaves the user unable to tell them apart (spec §7).
+    eprintln!("plainly: contract: {}", tier(resolution.capability.schema));
+
+    if let Some(reprobe) = reprobe {
+        match &reprobe.unanswered {
+            // A correction needs the endpoint to answer; a probe that could not
+            // be answered leaves nothing to ask with, and saying so is what
+            // stops the report from looking like a silent give-up.
+            Some(reason) => {
+                eprintln!("plainly: probed again and could not settle it ({reason})");
+            }
+            None => eprintln!(
+                "plainly: probed again: {} — the rejected request would not change, \
+                 so it was not re-sent",
+                tier(reprobe.capability.schema),
+            ),
+        }
+    }
+
+    // The latest probe is the one whose cache outcome still matters: an earlier
+    // failure is answered by the conclusion it could not keep, which a later
+    // probe either replaced or failed to reach in turn.
+    if let Some(reason) = reprobe.unwrap_or(resolution).unwritten.as_ref() {
+        eprintln!("plainly: note: the probe result could not be cached: {reason}");
+    }
+
+    if setup.thinking == Thinking::On
+        && resolution.capability.thinking == ThinkingSwitch::Unsupported
+    {
         // The switch is a capability, and this endpoint has none we know of:
         // saying nothing would let a setting look like it worked (spec §7).
         eprintln!(
@@ -90,25 +183,29 @@ pub fn run(args: ExplainArgs) -> Result<u8, CommandError> {
             setup.label
         );
     }
+}
 
-    let artifact = retry::explain(&provider, &request, now()?, &pause)
-        .map_err(|failure| CommandError::Failed(describe(&failure)))?;
+/// An endpoint's own complaint is quoted back inside a sentence of ours, so it
+/// is flattened onto one line first.
+fn one_line(reason: &str) -> String {
+    reason.split_whitespace().collect::<Vec<_>>().join(" ")
+}
 
-    let format = args.format.unwrap_or_default();
+/// The product, on stdout and nothing else.
+fn print(artifact: &Artifact, format: OutputFormat) -> Result<(), CommandError> {
     match format {
         OutputFormat::Markdown => print!(
             "{}",
             render::markdown(&artifact.passage, &artifact.explanation)
         ),
         OutputFormat::Json => {
-            let document = serde_json::to_string_pretty(&artifact).map_err(|error| {
+            let document = serde_json::to_string_pretty(artifact).map_err(|error| {
                 CommandError::Failed(format!("cannot write the Artifact as JSON: {error}"))
             })?;
             println!("{document}");
         }
     }
-
-    Ok(exit::SUCCESS)
+    Ok(())
 }
 
 /// Wait as the policy asks, and say so while waiting.
@@ -144,28 +241,6 @@ fn describe(failure: &Failure) -> String {
         "{} ({attempts}). Nothing was stored and the input was not changed.",
         failure.reason
     )
-}
-
-/// The key to send, if there is one.
-///
-/// A tier that fails to answer is normally an error rather than a skip, because
-/// quietly using a different credential is worse than saying so ([`Secrets`]).
-/// An endpoint that may authenticate nothing is the exception: a local runtime
-/// is exactly what a headless box points at, there is no key to protect, and
-/// the endpoint still gets to answer 401 if it wanted one. A provider that
-/// needs a key keeps the failure, because there the fix is the keyring.
-fn resolve_key(setup: &ProviderSetup, secrets: &Secrets) -> Result<Option<String>, CommandError> {
-    match secrets.resolve(&setup.name) {
-        Ok(key) => Ok(key.map(|key| key.secret)),
-        Err(error) if setup.key == KeyRequirement::Optional => {
-            eprintln!(
-                "plainly: {error}; sending no key, since {} may not need one",
-                setup.label
-            );
-            Ok(None)
-        }
-        Err(error) => Err(CommandError::Failed(error.to_string())),
-    }
 }
 
 /// The Passage, from the named file or from stdin.
@@ -208,23 +283,6 @@ fn source(file: Option<&Path>, stdin_is_terminal: bool) -> Result<Source, Comman
         None if stdin_is_terminal => Err(CommandError::Usage(NO_PASSAGE.to_string())),
         None => Ok(Source::Stdin),
     }
-}
-
-/// The current instant, for stamping the Artifact.
-fn now() -> Result<Timestamp, CommandError> {
-    let seconds = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|error| CommandError::Failed(format!("the system clock is before 1970: {error}")))?
-        .as_secs();
-
-    i64::try_from(seconds)
-        .ok()
-        .and_then(Timestamp::from_unix_seconds)
-        .ok_or_else(|| {
-            CommandError::Failed(
-                "the system clock is outside the range Plainly can stamp".to_string(),
-            )
-        })
 }
 
 #[cfg(test)]

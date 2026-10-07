@@ -1,4 +1,5 @@
-//! The HTTP adapter: an OpenAI-compatible `/chat/completions` call.
+//! The HTTP adapter: an OpenAI-compatible `/chat/completions` call, and Ollama's
+//! own `/api/chat` where the vendor serves it.
 //!
 //! One adapter covers the cloud and the local runtimes, because all five speak
 //! this endpoint. What differs between them is the request's *shape*, and that
@@ -6,11 +7,14 @@
 //! a JSON Schema can be enforced at all (nested under
 //! `response_format.json_schema.schema`, never the flat form), whether the
 //! canonical thinking switch applies, and where the answer actually sits.
+//! Ollama is the one vendor with a surface of its own, so it gets its own route
+//! here rather than a special case at every call site (spec §7).
 //!
-//! It is deliberately the whole transport and no policy: one request, one
-//! answer, no retry (tickets/04) and no probing (tickets/05). The retry policy
-//! will sit above [`Provider::generate`], where it can see the transport
-//! failure and the contract failure alike.
+//! It is deliberately the transport and the two experiments of ticket 05, and no
+//! policy: one request, one answer, no retry (tickets/04). [`ProbeEndpoint::probe`]
+//! and [`ProbeEndpoint::models`] report what an endpoint accepts; concluding
+//! anything from that, caching it and deciding whether to run again is
+//! [`crate::probe`].
 
 use std::time::Duration;
 
@@ -18,7 +22,8 @@ use serde_json::{Value, json};
 
 use crate::Thinking;
 use crate::explanation::wire_schema;
-use crate::presets::{SchemaSupport, ThinkingSwitch};
+use crate::presets::{SchemaSupport, Surface, ThinkingSwitch};
+use crate::probe::{EndpointModel, PROBE_PASSAGE, PROBE_SYSTEM, ProbeEndpoint, ProbeRequest};
 use crate::provider::{ExplainRequest, Provider, ProviderError};
 use crate::setup::ProviderSetup;
 
@@ -69,6 +74,28 @@ pub struct ChatCompletions {
     agent: ureq::Agent,
 }
 
+/// One place a request can be sent. A vendor with a surface of its own has two,
+/// and the OpenAI-compatible one is the fallback when the vendor's route is not
+/// there.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Route {
+    /// `POST {endpoint}/chat/completions`.
+    OpenAi,
+    /// `POST {host}/api/chat`, Ollama's own route.
+    OllamaNative,
+}
+
+/// What one attempt on one route produced.
+///
+/// `Missing` is not a failure to report: an endpoint that does not serve a route
+/// has not answered the question, so the next route is the same question asked
+/// on the surface it does serve.
+enum RouteOutcome<T> {
+    Answer(T),
+    Missing(ProviderError),
+    Failed(ProviderError),
+}
+
 /// The API key, wrapped so that a `Debug` on anything holding one — this client
 /// today, some future error type — prints that there is a key and not the key.
 #[derive(Clone)]
@@ -117,11 +144,123 @@ impl ChatCompletions {
         }
     }
 
+    /// The routes to try, in order.
+    ///
+    /// Ollama's native route comes first where the vendor has one, because
+    /// `format` is where its structured output lives; the compatibility layer is
+    /// the fallback for an endpoint that speaks the vendor's protocol without
+    /// serving the vendor's route (spec §7).
+    fn routes(&self) -> &'static [Route] {
+        match self.setup.surface {
+            Surface::OpenAi => &[Route::OpenAi],
+            Surface::Ollama => &[Route::OllamaNative, Route::OpenAi],
+        }
+    }
+
+    /// The URL one route is sent to.
+    fn url(&self, route: Route) -> String {
+        match route {
+            Route::OpenAi => format!("{}/chat/completions", self.setup.endpoint),
+            // The endpoint is the OpenAI-compatible base (`…:11434/v1`); the
+            // native API hangs off the authority it sits on.
+            Route::OllamaNative => format!("{}/api/chat", ollama_root(&self.setup.endpoint)),
+        }
+    }
+
+    /// Ask each route in turn and return the first one that answers.
+    fn first_route<T>(
+        &self,
+        attempt: &dyn Fn(Route) -> RouteOutcome<T>,
+    ) -> Result<T, ProviderError> {
+        let routes = self.routes();
+
+        for (index, route) in routes.iter().enumerate() {
+            match attempt(*route) {
+                RouteOutcome::Answer(answer) => return Ok(answer),
+                RouteOutcome::Missing(_) if index + 1 < routes.len() => continue,
+                RouteOutcome::Missing(error) | RouteOutcome::Failed(error) => return Err(error),
+            }
+        }
+
+        // Unreachable while `routes` is non-empty, which it is by construction.
+        Err(ProviderError::misconfigured(format!(
+            "{} has no route to send a request to",
+            self.setup.label
+        )))
+    }
+
+    /// POST one body and return the status and the response text.
+    ///
+    /// The status is not an error: a 400 or a 500 still has a body, and that
+    /// body is the most useful part of the message.
+    fn post(&self, url: &str, body: Value) -> Result<(u16, String), ProviderError> {
+        let mut call = self
+            .agent
+            .post(url)
+            .header("Content-Type", "application/json");
+        if !self.api_key.is_empty() {
+            call = call.header("Authorization", self.api_key.bearer());
+        }
+
+        let mut response = call
+            .send_json(body)
+            .map_err(|error| self.transport_error(error))?;
+        let status = response.status();
+        let text = response
+            .body_mut()
+            .read_to_string()
+            .map_err(|error| self.transport_error(error))?;
+
+        Ok((status.as_u16(), text))
+    }
+
+    /// One attempt at one route: send the shape that route wants, read the
+    /// answer back out of the envelope that route uses.
+    fn attempt(&self, route: Route, request: &ExplainRequest) -> RouteOutcome<String> {
+        let body = match route {
+            Route::OpenAi => self.request_body(request),
+            Route::OllamaNative => self.native_request_body(request),
+        };
+
+        let (status, text) = match self.post(&self.url(route), body) {
+            Ok(response) => response,
+            Err(error) => return RouteOutcome::Failed(error),
+        };
+
+        // A route the endpoint does not have. Kept as its own outcome: quoting
+        // it as a provider failure would make the fallback look like a retry of
+        // the same question.
+        if status == 404 {
+            return RouteOutcome::Missing(self.http_error(status, &text));
+        }
+        if !(200..300).contains(&status) {
+            return RouteOutcome::Failed(self.http_error(status, &text));
+        }
+
+        let body: Value = match serde_json::from_str(&text) {
+            Ok(body) => body,
+            Err(error) => return RouteOutcome::Failed(self.not_json(status, &error)),
+        };
+
+        match route {
+            Route::OpenAi => match self.answer_from(&body) {
+                Ok(answer) => RouteOutcome::Answer(answer),
+                Err(error) => RouteOutcome::Failed(error),
+            },
+            Route::OllamaNative => match self.native_answer(&body) {
+                Ok(answer) => RouteOutcome::Answer(answer),
+                Err(error) => RouteOutcome::Failed(error),
+            },
+        }
+    }
+
     /// The JSON body one request sends.
     ///
     /// Public because the shape is a contract with the endpoint rather than an
     /// implementation detail: the nesting of `response_format`, the thinking
-    /// spelling and the token budget are exactly what a provider notices.
+    /// spelling and the token budget are exactly what a provider notices. This
+    /// is the OpenAI-compatible route's body; Ollama's own route is
+    /// [`ChatCompletions::native_request_body`].
     pub fn request_body(&self, request: &ExplainRequest) -> Value {
         let mut body = json!({
             "model": self.setup.model,
@@ -178,6 +317,151 @@ impl ChatCompletions {
             // which the shipped prompt has.
             SchemaSupport::BestEffort => json!({ "type": "json_object" }),
         }
+    }
+
+    /// The body Ollama's own route takes.
+    ///
+    /// `format` is where its structured output lives, and it takes the same two
+    /// tiers as the OpenAI surface: a JSON Schema object constrains decoding,
+    /// the string `"json"` only asks for JSON (spec §7). `stream` is off because
+    /// v0 does not stream, and the budget and temperature travel in `options`
+    /// rather than at the top level.
+    ///
+    /// Thinking is deliberately not switched here. Below Ollama 0.31.2 a
+    /// `think` field silently disables `format` as well, and that version floor
+    /// belongs to the local discovery path (tickets/06) — guessing here would
+    /// trade a verified schema for an unverifiable switch.
+    pub fn native_request_body(&self, request: &ExplainRequest) -> Value {
+        json!({
+            "model": self.setup.model,
+            "messages": [
+                { "role": "system", "content": request.system_prompt },
+                { "role": "user", "content": request.passage },
+            ],
+            "stream": false,
+            "format": self.native_format(),
+            "options": {
+                "temperature": 0,
+                "num_predict": self.max_tokens(),
+            },
+        })
+    }
+
+    /// The `format` Ollama's route gets, under the same two tiers as
+    /// `response_format`.
+    fn native_format(&self) -> Value {
+        match self.setup.schema {
+            SchemaSupport::Enforced => wire_schema(),
+            SchemaSupport::BestEffort => json!("json"),
+        }
+    }
+
+    /// The assistant's content out of a decoded Ollama native body.
+    ///
+    /// A different envelope, not a different provider: `{"message":{"content":
+    /// …, "thinking": …}, "done": true, "done_reason": "stop"}`. The cut-off
+    /// reason is named here rather than left to the contract check, for the same
+    /// reason the OpenAI route names it: a prefix of JSON reported as a malformed
+    /// answer sends the retry policy after the model when the budget is what ran
+    /// out (spec §6).
+    pub fn native_answer(&self, body: &Value) -> Result<String, ProviderError> {
+        let max_tokens = self.max_tokens();
+
+        if body.get("done_reason").and_then(Value::as_str) == Some("length") {
+            return Err(ProviderError::truncated(format!(
+                "the answer was cut off at num_predict = {max_tokens}; \
+                 the Passage may be too long for one request"
+            )));
+        }
+
+        // Thinking models put their chain of thought in a sibling field and the
+        // answer in `content`; a message with only `thinking` produced no answer
+        // at all, which is an empty answer rather than a malformed one.
+        let message = body
+            .get("message")
+            .ok_or_else(|| ProviderError::empty("the answer carried no message"))?;
+        let content = non_blank(message.get("content").and_then(Value::as_str))
+            .ok_or_else(|| ProviderError::empty("the model answered with no content"))?;
+
+        if stops_mid_json(content) {
+            return Err(ProviderError::truncated(format!(
+                "the answer stops in the middle of its JSON \
+                 (num_predict = {max_tokens}); the model's budget may have run out"
+            )));
+        }
+
+        Ok(content.to_string())
+    }
+
+    /// The tiny body a probe sends on the OpenAI-compatible route.
+    ///
+    /// Public for the same reason [`ChatCompletions::request_body`] is: what a
+    /// probe puts on the wire *is* the experiment (tickets/05), so it is pinned
+    /// by a test rather than inferred from behaviour.
+    pub fn probe_request_body(&self, probe: &ProbeRequest) -> Value {
+        let mut body = json!({
+            "model": self.setup.model,
+            "messages": [
+                { "role": "system", "content": PROBE_SYSTEM },
+                { "role": "user", "content": PROBE_PASSAGE },
+            ],
+            "temperature": 0,
+            "max_tokens": PROBE_MAX_TOKENS,
+            "response_format": match probe.schema {
+                SchemaSupport::Enforced => json!({
+                    "type": "json_schema",
+                    "json_schema": { "name": SCHEMA_NAME, "strict": true, "schema": wire_schema() },
+                }),
+                SchemaSupport::BestEffort => json!({ "type": "json_object" }),
+            },
+        });
+
+        // The switch is only ever sent where it is known to be understood, and
+        // the probe is the one place a readiness to send it is tested.
+        if probe.disable_thinking {
+            body["thinking"] = json!({ "type": "disabled" });
+        }
+
+        body
+    }
+
+    /// The tiny body a probe sends on Ollama's own route.
+    ///
+    /// `probe.disable_thinking` is deliberately not sent: this route's switch is
+    /// not the canonical field, and below Ollama 0.31.2 sending it silently
+    /// disables `format` as well (tickets/06 owns that version floor). A probe
+    /// that asked here would be answered about a request nobody makes, which is
+    /// why [`crate::probe::reprobe`] does not put the switch question to a
+    /// surface whose route cannot carry the field.
+    pub fn native_probe_body(&self, probe: &ProbeRequest) -> Value {
+        let format = match probe.schema {
+            SchemaSupport::Enforced => wire_schema(),
+            SchemaSupport::BestEffort => json!("json"),
+        };
+
+        json!({
+            "model": self.setup.model,
+            "messages": [
+                { "role": "system", "content": PROBE_SYSTEM },
+                { "role": "user", "content": PROBE_PASSAGE },
+            ],
+            "stream": false,
+            "format": format,
+            "options": { "temperature": 0, "num_predict": PROBE_MAX_TOKENS },
+        })
+    }
+
+    /// The failure a 200 that is not a chat completion is.
+    ///
+    /// Not the model's doing — this is not a chat completion — but a proxy page
+    /// or a half-written response is a hiccup as often as it is a wrong
+    /// endpoint. Classified with the empty answers, which are asked for again
+    /// and stop at the second identical one.
+    fn not_json(&self, status: u16, error: &serde_json::Error) -> ProviderError {
+        ProviderError::empty(format!(
+            "{} answered HTTP {status} with something that is not JSON: {error}",
+            self.setup.label
+        ))
     }
 
     /// The assistant's content out of a decoded chat-completions body.
@@ -378,19 +662,56 @@ fn retryable_io(kind: std::io::ErrorKind) -> bool {
 
 impl Provider for ChatCompletions {
     fn generate(&self, request: &ExplainRequest) -> Result<String, ProviderError> {
-        let url = format!("{}/chat/completions", self.setup.endpoint);
-        let mut call = self
-            .agent
-            .post(&url)
-            .header("Content-Type", "application/json");
+        self.first_route(&|route| self.attempt(route, request))
+    }
+}
+
+impl ProbeEndpoint for ChatCompletions {
+    /// Ask the endpoint to take a shape, without reading the answer.
+    ///
+    /// Two failures mean different things here: a 400 or 422 is the endpoint
+    /// answering *about the shape* — the experiment — while anything else
+    /// (transport, 5xx, 401) is the endpoint not answering at all. The second
+    /// kind must not be mistaken for a capability: [`crate::probe`] downgrades on
+    /// the first and refuses to conclude anything from the second.
+    fn probe(&self, request: &ProbeRequest) -> Result<(), ProviderError> {
+        self.first_route(&|route| {
+            let body = match route {
+                Route::OpenAi => self.probe_request_body(request),
+                Route::OllamaNative => self.native_probe_body(request),
+            };
+
+            let (status, text) = match self.post(&self.url(route), body) {
+                Ok(response) => response,
+                Err(error) => return RouteOutcome::Failed(error),
+            };
+
+            if status == 404 {
+                return RouteOutcome::Missing(self.http_error(status, &text));
+            }
+            if !(200..300).contains(&status) {
+                return RouteOutcome::Failed(self.http_error(status, &text));
+            }
+            RouteOutcome::Answer(())
+        })
+    }
+
+    /// The models the endpoint lists on its OpenAI-compatible surface.
+    ///
+    /// One request, and no conclusion when it does not answer: which models a
+    /// runtime has is discovery rather than capability (tickets/06), so a failure
+    /// here is a shorter list, not a failed run. The native route is deliberately
+    /// not consulted as well — the compatibility surface is the one every runtime
+    /// in the spec serves, and two lists that can disagree would need a rule for
+    /// which one wins.
+    fn models(&self) -> Result<Vec<EndpointModel>, ProviderError> {
+        let url = format!("{}/models", self.setup.endpoint);
+        let mut call = self.agent.get(&url);
         if !self.api_key.is_empty() {
             call = call.header("Authorization", self.api_key.bearer());
         }
 
-        let mut response = call
-            .send_json(self.request_body(request))
-            .map_err(|error| self.transport_error(error))?;
-
+        let mut response = call.call().map_err(|error| self.transport_error(error))?;
         let status = response.status();
         let text = response
             .body_mut()
@@ -401,20 +722,82 @@ impl Provider for ChatCompletions {
             return Err(self.http_error(status.as_u16(), &text));
         }
 
-        let body: Value = serde_json::from_str(&text).map_err(|error| {
-            // A 200 that is not a chat completion: the endpoint is not speaking
-            // the protocol the configuration claims it does, but a proxy page
-            // or a half-written response is a hiccup as often as it is a wrong
-            // endpoint. Classified with the empty answers, which are asked for
-            // again and stop at the second identical one.
+        let body: Value =
+            serde_json::from_str(&text).map_err(|error| self.not_json(status.as_u16(), &error))?;
+
+        models_from(&body).ok_or_else(|| {
             ProviderError::empty(format!(
-                "{} answered HTTP {status} with something that is not JSON: {error}",
+                "{} answered HTTP {status} with no model list Plainly recognises",
                 self.setup.label
             ))
-        })?;
-
-        self.answer_from(&body)
+        })
     }
+}
+
+/// How much a probe is allowed to spend. A probe asks for one two-field object,
+/// so this is a ceiling rather than a budget.
+const PROBE_MAX_TOKENS: u32 = 64;
+
+/// The authority an Ollama endpoint sits on: its OpenAI-compatible base is
+/// `…/v1`, and the native API hangs off the root.
+fn ollama_root(endpoint: &str) -> &str {
+    endpoint.strip_suffix("/v1").unwrap_or(endpoint)
+}
+
+/// The models in a `/models` body, in the endpoint's own order, or `None` when
+/// the body carries no list this adapter recognises.
+///
+/// `Some(vec![])` is an endpoint that serves nothing and `None` is one that did
+/// not answer the question: the two are cached differently, and the report says
+/// "none listed" about one and "could not be listed" about the other.
+///
+/// Public because the shapes it tolerates are a fact about the endpoints rather
+/// than about this adapter, and the ones a runtime volunteers are what tickets/06
+/// selects between.
+///
+/// Tolerant on purpose, and documented rather than guessed at: the endpoints in
+/// the spec print the OpenAI shape (`{"data":[{"id":…}]}`) and the local runtimes
+/// volunteer more — llama.cpp and LM Studio name a context length, LM Studio
+/// names whether the model is loaded. An entry with no id is skipped: a model
+/// nobody can select is not a model.
+pub fn models_from(body: &Value) -> Option<Vec<EndpointModel>> {
+    body.get("data")
+        .or_else(|| body.get("models"))
+        .and_then(Value::as_array)
+        .map(|models| models.iter().filter_map(model_from).collect())
+}
+
+/// One model entry, under whichever of its names the endpoint used.
+fn model_from(entry: &Value) -> Option<EndpointModel> {
+    let id = entry
+        .get("id")
+        .or_else(|| entry.get("name"))
+        .and_then(Value::as_str)?
+        .to_string();
+
+    let loaded = entry.get("loaded").and_then(Value::as_bool).or_else(|| {
+        match entry.get("state").and_then(Value::as_str) {
+            Some("loaded") => Some(true),
+            Some("unloaded" | "not-loaded") => Some(false),
+            _ => None,
+        }
+    });
+
+    let context_length = [
+        entry.get("max_context_length"),
+        entry.get("context_length"),
+        entry.get("n_ctx"),
+        entry.get("meta").and_then(|meta| meta.get("n_ctx")),
+    ]
+    .into_iter()
+    .flatten()
+    .find_map(Value::as_u64);
+
+    Some(EndpointModel {
+        id,
+        loaded,
+        context_length,
+    })
 }
 
 /// A string that is present and not just whitespace.

@@ -4,7 +4,13 @@ mod config;
 mod explain;
 mod providers;
 
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use clap::Parser;
+
+use plainly_core::{
+    Cache, KeyRequirement, Paths, ProviderSetup, SchemaSupport, Secrets, Timestamp,
+};
 
 use crate::cli::{Cli, Command};
 use crate::exit;
@@ -70,13 +76,73 @@ pub fn dispatch() -> u8 {
         Some(Command::Config { command }) => config::run(command),
         Some(Command::Providers { command }) => providers::run(command),
     };
-
     match outcome {
         Ok(code) => code,
         Err(error) => {
             eprintln!("plainly: {error}");
             error.exit_code()
         }
+    }
+}
+
+/// How an endpoint is held to the contract, in the words a person reads.
+///
+/// One source for both surfaces that say it — `explain` while a run is in
+/// flight and `providers` when it is not — because the two tiers are what the
+/// user is being asked to tell apart, and two copies of the wording would
+/// eventually disagree.
+pub(crate) fn tier(schema: SchemaSupport) -> &'static str {
+    match schema {
+        SchemaSupport::Enforced => "enforced by the endpoint (response_format json_schema)",
+        SchemaSupport::BestEffort => "best effort (json_object, then our own validation and retry)",
+    }
+}
+
+/// Where the capability conclusions live: under `appCacheDir`, beside — never
+/// inside — the user's configuration (spec §8).
+pub(crate) fn cache(paths: &Paths) -> Cache {
+    Cache::new(paths.cache_dir().join("providers"))
+}
+
+/// The current instant, for stamping an Artifact or a probe conclusion.
+pub(crate) fn now() -> Result<Timestamp, CommandError> {
+    let seconds = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| CommandError::Failed(format!("the system clock is before 1970: {error}")))?
+        .as_secs();
+
+    i64::try_from(seconds)
+        .ok()
+        .and_then(Timestamp::from_unix_seconds)
+        .ok_or_else(|| {
+            CommandError::Failed(
+                "the system clock is outside the range Plainly can stamp".to_string(),
+            )
+        })
+}
+
+/// The key to send, if there is one.
+///
+/// A tier that fails to answer is normally an error rather than a skip, because
+/// quietly using a different credential is worse than saying so ([`Secrets`]).
+/// An endpoint that may authenticate nothing is the exception: a local runtime
+/// is exactly what a headless box points at, there is no key to protect, and the
+/// endpoint still gets to answer 401 if it wanted one. A provider that needs a
+/// key keeps the failure, because there the fix is the keyring.
+pub(crate) fn resolve_key(
+    setup: &ProviderSetup,
+    secrets: &Secrets,
+) -> Result<Option<String>, CommandError> {
+    match secrets.resolve(&setup.name) {
+        Ok(key) => Ok(key.map(|key| key.secret)),
+        Err(error) if setup.key == KeyRequirement::Optional => {
+            eprintln!(
+                "plainly: {error}; sending no key, since {} may not need one",
+                setup.label
+            );
+            Ok(None)
+        }
+        Err(error) => Err(CommandError::Failed(error.to_string())),
     }
 }
 

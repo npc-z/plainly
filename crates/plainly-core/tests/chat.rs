@@ -6,8 +6,8 @@ mod support;
 use serde_json::{Value, json};
 
 use plainly_core::{
-    ChatCompletions, Config, ExplainRequest, MAX_TOKENS, MAX_TOKENS_THINKING, ProviderErrorKind,
-    ProviderSetup, wire_schema,
+    ChatCompletions, Config, EndpointModel, ExplainRequest, MAX_TOKENS, MAX_TOKENS_THINKING,
+    ProbeRequest, ProviderErrorKind, ProviderSetup, SchemaSupport, ThinkingSwitch, wire_schema,
 };
 
 /// A client for `name`, with `model` overriding the preset's when given.
@@ -398,4 +398,213 @@ fn a_failed_response_body_is_quoted_with_its_key_removed() {
     assert!(!message.contains("sk-secret-0123456789abcdef"), "{message}");
     assert!(message.contains("<redacted>"), "{message}");
     assert!(message.contains("401"), "{message}");
+}
+
+/// A client for Ollama, whose preset serves a surface of its own. The model is
+/// the user's to name, as it is for every local runtime.
+fn ollama(model: &str) -> ChatCompletions {
+    let config = Config::parse(&format!("[providers.ollama]\nmodel = \"{model}\"\n"))
+        .expect("the fixture is valid TOML");
+    let setup = ProviderSetup::resolve("ollama", &config).expect("the fixture provider resolves");
+    ChatCompletions::new(setup, "sk-test")
+}
+
+#[test]
+fn ollama_is_asked_on_its_own_route_with_format() {
+    // The native route is where Ollama's structured output lives: `format` takes
+    // the schema itself, and `stream`/`options` replace the OpenAI top-level
+    // fields (spec §7).
+    let body = ollama("qwen3.5:4b").native_request_body(&support::request(support::PASSAGE));
+
+    assert_eq!(body["model"], "qwen3.5:4b");
+    assert_eq!(body["stream"], false);
+    assert_eq!(body["format"], wire_schema());
+    assert_eq!(body["options"]["temperature"], 0);
+    assert_eq!(body["options"]["num_predict"], MAX_TOKENS);
+    assert_eq!(body["messages"][1]["content"], support::PASSAGE);
+    assert!(
+        body.get("response_format").is_none(),
+        "the compatibility layer's field does not belong on the native route: {body}"
+    );
+    assert!(
+        body.get("thinking").is_none(),
+        "below 0.31.2 a think field silently disables format, and the version \
+         floor belongs to the local discovery path (tickets/06)"
+    );
+}
+
+#[test]
+fn ollama_without_a_schema_is_asked_for_json_by_name() {
+    let setup = client_setup("ollama", "[providers.ollama]\nmodel = \"m\"\n");
+    let downgraded = ChatCompletions::new(
+        setup.with_capability(SchemaSupport::BestEffort, ThinkingSwitch::Unsupported),
+        "sk-test",
+    );
+
+    assert_eq!(
+        downgraded.native_request_body(&support::request(support::PASSAGE))["format"],
+        json!("json"),
+        "'json' is Ollama's own spelling of the weaker tier"
+    );
+}
+
+#[test]
+fn an_ollama_native_answer_is_read_out_of_its_own_envelope() {
+    let body = json!({
+        "model": "qwen3.5:4b",
+        "message": { "role": "assistant", "content": "{\"ok\":true}" },
+        "done": true,
+        "done_reason": "stop"
+    });
+
+    assert_eq!(
+        ollama("qwen3.5:4b")
+            .native_answer(&body)
+            .expect("the answer is there"),
+        "{\"ok\":true}"
+    );
+}
+
+#[test]
+fn an_ollama_cut_off_answer_names_its_own_budget_field() {
+    let body = json!({
+        "message": { "content": "{\"comprehensible\": \"the commit" },
+        "done": true,
+        "done_reason": "length"
+    });
+
+    let error = ollama("qwen3.5:4b").native_answer(&body).unwrap_err();
+    assert_eq!(error.kind(), ProviderErrorKind::Truncated);
+    assert!(error.to_string().contains("num_predict"), "{error}");
+}
+
+#[test]
+fn an_ollama_message_with_only_a_chain_of_thought_is_an_empty_answer() {
+    let body = json!({
+        "message": { "content": "", "thinking": "The user wants a paraphrase…" },
+        "done": true,
+        "done_reason": "stop"
+    });
+
+    let error = ollama("qwen3.5:4b").native_answer(&body).unwrap_err();
+    assert_eq!(error.kind(), ProviderErrorKind::Empty);
+}
+
+#[test]
+fn a_probe_asks_only_for_the_shape_it_is_testing() {
+    let client = reader();
+
+    let schema_probe = client.probe_request_body(&ProbeRequest {
+        schema: SchemaSupport::Enforced,
+        disable_thinking: false,
+    });
+    assert_eq!(schema_probe["response_format"]["type"], "json_schema");
+    assert_eq!(
+        schema_probe["response_format"]["json_schema"]["schema"],
+        wire_schema()
+    );
+    assert!(schema_probe.get("thinking").is_none(), "{schema_probe}");
+    assert_eq!(
+        schema_probe["messages"][1]["content"],
+        plainly_core::probe::PROBE_PASSAGE
+    );
+
+    let json_probe = client.probe_request_body(&ProbeRequest {
+        schema: SchemaSupport::BestEffort,
+        disable_thinking: true,
+    });
+    assert_eq!(
+        json_probe["response_format"],
+        json!({ "type": "json_object" })
+    );
+    assert_eq!(json_probe["thinking"], json!({ "type": "disabled" }));
+}
+
+#[test]
+fn a_native_probe_uses_ollama_spellings_on_ollama_route() {
+    let client = ollama("qwen3.5:4b");
+
+    let enforced = client.native_probe_body(&ProbeRequest {
+        schema: SchemaSupport::Enforced,
+        disable_thinking: false,
+    });
+    assert_eq!(enforced["format"], wire_schema());
+
+    let best_effort = client.native_probe_body(&ProbeRequest {
+        schema: SchemaSupport::BestEffort,
+        disable_thinking: true,
+    });
+    assert_eq!(best_effort["format"], json!("json"));
+}
+
+/// A setup resolved by name, for tests that need to change its capability.
+fn client_setup(name: &str, text: &str) -> ProviderSetup {
+    let config = Config::parse(text).expect("the fixture is valid TOML");
+    ProviderSetup::resolve(name, &config).expect("the fixture provider resolves")
+}
+
+#[test]
+fn a_model_list_is_read_under_the_names_the_runtimes_use() {
+    // The OpenAI shape as LM Studio and llama.cpp print it…
+    let openai = json!({
+        "data": [
+            { "id": "qwen3.5-4b", "loaded": true, "max_context_length": 16384 },
+            { "id": "cold-model", "state": "not-loaded" }
+        ]
+    });
+    assert_eq!(
+        plainly_core::chat::models_from(&openai),
+        Some(vec![
+            EndpointModel {
+                id: "qwen3.5-4b".to_string(),
+                loaded: Some(true),
+                context_length: Some(16384),
+            },
+            EndpointModel {
+                id: "cold-model".to_string(),
+                loaded: Some(false),
+                context_length: None,
+            },
+        ])
+    );
+
+    // …and the shape a runtime that volunteers a nested `meta` uses.
+    let nested = json!({ "models": [{ "name": "m", "meta": { "n_ctx": 4096 } }] });
+    assert_eq!(
+        plainly_core::chat::models_from(&nested),
+        Some(vec![EndpointModel {
+            id: "m".to_string(),
+            loaded: None,
+            context_length: Some(4096),
+        }])
+    );
+}
+
+#[test]
+fn a_model_entry_without_an_id_is_not_a_model() {
+    let body = json!({ "data": [{ "object": "model" }, { "id": "real" }] });
+
+    assert_eq!(
+        plainly_core::chat::models_from(&body),
+        Some(vec![EndpointModel {
+            id: "real".to_string(),
+            loaded: None,
+            context_length: None,
+        }])
+    );
+}
+
+/// A body with no list in it is not an endpoint that serves nothing: the two
+/// are cached and reported differently.
+#[test]
+fn a_model_list_that_is_not_a_list_is_not_an_empty_one() {
+    assert_eq!(
+        plainly_core::chat::models_from(&json!({ "error": "nope" })),
+        None
+    );
+    assert_eq!(
+        plainly_core::chat::models_from(&json!({ "data": [] })),
+        Some(Vec::new()),
+        "an endpoint that lists nothing listed nothing"
+    );
 }

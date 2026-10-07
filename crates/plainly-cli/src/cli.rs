@@ -40,10 +40,11 @@ pub enum Command {
         #[command(subcommand)]
         command: ConfigCommand,
     },
-    /// Providers: API keys today, discovery and capability probes next
+    /// Providers: what Plainly is talking to, what that endpoint takes, and its
+    /// API keys
     Providers {
         #[command(subcommand)]
-        command: ProviderCommand,
+        command: Option<ProviderCommand>,
     },
 }
 
@@ -97,6 +98,12 @@ pub enum ConfigCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum ProviderCommand {
+    /// Ask the endpoint what it takes, ignoring the cached conclusion
+    Probe {
+        /// Provider name, matching [providers.<name>]; the configured provider
+        /// when omitted
+        name: Option<String>,
+    },
     /// Manage the API key of one provider
     Key {
         #[command(subcommand)]

@@ -13,7 +13,7 @@
 //! value instead of being reassembled at each call site.
 
 use crate::config::{Config, Thinking};
-use crate::presets::{self, KeyRequirement, SchemaSupport, ThinkingSwitch};
+use crate::presets::{self, KeyRequirement, SchemaSupport, Surface, ThinkingSwitch};
 
 /// A provider with every choice resolved: the thing one request is sent to.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,6 +28,8 @@ pub struct ProviderSetup {
     pub model: String,
     /// The user's choice of reasoning mode.
     pub thinking: Thinking,
+    /// Which call surface the endpoint is spoken to on.
+    pub surface: Surface,
     /// The shape to start from on the wire.
     pub schema: SchemaSupport,
     /// How thinking is turned off, if at all.
@@ -85,14 +87,14 @@ impl ProviderSetup {
         // applies: a `json_object` request to LM Studio is a 400, and the
         // canonical thinking field is a 400 on anything strict. The spec's probe
         // cache is invalidated by an endpoint change for the same reason
-        // (spec §7). Until tickets/05 probes the endpoint, an unknown one gets
-        // the cautious shape — ask for a schema, send nothing that might be
-        // rejected, demand no key — which is also what a provider we ship no
-        // preset for gets.
+        // (spec §7). What is left here is the shape to *start* from when the
+        // endpoint cannot be probed at all (`crate::probe` takes over the moment
+        // it can be): ask for a schema, send nothing that might be rejected,
+        // demand no key — which is also what a provider we ship no preset for
+        // gets.
         let preset = shipped.filter(|preset| {
             configured_endpoint.is_none_or(|endpoint| same_service(endpoint, preset.endpoint))
         });
-
         // Part of the Lookup Key, so an unset model is refused rather than
         // defaulted to something no one chose. The *shipped* preset names it,
         // not the endpoint-filtered one: a model id is a default the user can
@@ -120,6 +122,15 @@ impl ProviderSetup {
             endpoint: endpoint.trim_end_matches('/').to_string(),
             model: model.to_string(),
             thinking: profile.map(|profile| profile.thinking).unwrap_or_default(),
+            // The surface is *how Plainly talks to this provider*, not a claim
+            // about what the endpoint accepts, so an endpoint override does not
+            // withdraw it: someone running Ollama on another host still wants
+            // `/api/chat`, and an endpoint that turns out not to serve it is
+            // answered by the compatibility fallback in `chat`, not by guessing
+            // the route from a host name.
+            surface: shipped
+                .map(|preset| preset.surface)
+                .unwrap_or(Surface::OpenAi),
             schema: preset
                 .map(|preset| preset.schema)
                 .unwrap_or(SchemaSupport::Enforced),
@@ -135,6 +146,26 @@ impl ProviderSetup {
                 .map(|preset| preset.key)
                 .unwrap_or(KeyRequirement::Optional),
         })
+    }
+
+    /// The same setup, with the capability a probe (or its cache) concluded.
+    ///
+    /// Only the two fields a probe can answer for are replaced. Everything else
+    /// is a fact about the run rather than about the endpoint — which model, how
+    /// the user wants to think, whether a key is needed — and a probe has no say
+    /// in those. Keeping this as a method on the setup is what stops a caller
+    /// from rebuilding the whole resolution and silently dropping a field.
+    ///
+    /// The two values and not a `Capability`: a setup is what a capability is
+    /// *about*, and taking the conclusion type as an argument would make the two
+    /// modules each other's business for no gain in safety — the pair is exactly
+    /// what this method documents itself as replacing.
+    pub fn with_capability(&self, schema: SchemaSupport, thinking: ThinkingSwitch) -> Self {
+        Self {
+            schema,
+            thinking_switch: thinking,
+            ..self.clone()
+        }
     }
 }
 

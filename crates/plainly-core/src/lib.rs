@@ -13,6 +13,7 @@ pub mod explain;
 pub mod explanation;
 pub mod paths;
 pub mod presets;
+pub mod probe;
 pub mod prompt;
 pub mod provider;
 pub mod render;
@@ -21,15 +22,19 @@ pub mod secrets;
 pub mod setup;
 
 pub use artifact::{ARTIFACT_VERSION, Artifact, Timestamp};
-pub use chat::{ChatCompletions, MAX_TOKENS, MAX_TOKENS_THINKING};
+pub use chat::{ChatCompletions, MAX_TOKENS, MAX_TOKENS_THINKING, models_from};
 pub use config::{
     App, Config, ConfigError, ConfigFile, DEFAULT_CONFIG, ExportFormat, Level, PanelCorner,
     Prompts, ProviderProfile, Thinking,
 };
-pub use explain::{ExplainError, SOURCE_LANGUAGE, explain};
+pub use explain::{Downgrade, ExplainError, Run, RunFailure, SOURCE_LANGUAGE, explain};
 pub use explanation::{ContractError, Explanation, Gloss, wire_schema};
 pub use paths::{CONFIG_FILE, IDENTIFIER, PathError, PathInputs, Paths};
-pub use presets::{KeyRequirement, PRESETS, Preset, SchemaSupport, ThinkingSwitch};
+pub use presets::{KeyRequirement, PRESETS, Preset, SchemaSupport, Surface, ThinkingSwitch};
+pub use probe::{
+    Cache, CacheError, Capability, Endpoint, EndpointModel, Origin, ProbeEndpoint, ProbeRequest,
+    Resolution,
+};
 pub use prompt::{FACTORY_PROMPT, PROMPT_LABEL};
 pub use provider::{ExplainRequest, Provider, ProviderError, ProviderErrorKind};
 pub use render::{Section, SectionKind};
