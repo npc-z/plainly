@@ -30,6 +30,10 @@ use serde_json::{Value, json};
 pub struct Recorded {
     pub method: String,
     pub path: String,
+    /// The `Authorization` header, when the request carried one. Local
+    /// discovery sends a key where a name has one, and a test has to be able to
+    /// tell that it did (tickets/06).
+    pub authorization: Option<String>,
     pub body: Value,
 }
 
@@ -53,6 +57,10 @@ pub struct StubCapability {
     pub models_status: Option<u16>,
     /// The body `GET /v1/models` answers with.
     pub models: Value,
+    /// When set, every request without `Authorization: Bearer <token>` is
+    /// answered 401 — a loopback runtime started with `--api-key`, which is what
+    /// spec §7 asks of the llama.cpp sidecar.
+    pub token: Option<String>,
 }
 
 impl Default for StubCapability {
@@ -63,6 +71,7 @@ impl Default for StubCapability {
             native: true,
             models_status: None,
             models: json!({ "data": [{ "id": "stub-model" }] }),
+            token: None,
         }
     }
 }
@@ -255,6 +264,13 @@ fn answer(
         .expect("the capability is never poisoned")
         .clone();
 
+    // A keyed runtime answers 401 without its key, whatever the request was.
+    if let Some(token) = &capability.token {
+        if request.authorization.as_deref() != Some(format!("Bearer {token}").as_str()) {
+            return (401, json!({ "error": "unauthorized" }).to_string());
+        }
+    }
+
     // The model list is discovery, not part of the script.
     if request.method == "GET" {
         return match capability.models_status {
@@ -373,9 +389,19 @@ fn parse_request(raw: &str) -> Option<Recorded> {
     let mut parts = head.lines().next()?.split_whitespace();
     let method = parts.next()?.to_string();
     let path = parts.next()?.to_string();
+    let authorization = head
+        .lines()
+        .filter_map(|line| line.split_once(':'))
+        .find(|(name, _)| name.eq_ignore_ascii_case("authorization"))
+        .map(|(_, value)| value.trim().to_string());
     // A GET carries no body, and that is not a broken request.
     let body = serde_json::from_str(body).unwrap_or(Value::Null);
-    Some(Recorded { method, path, body })
+    Some(Recorded {
+        method,
+        path,
+        authorization,
+        body,
+    })
 }
 
 fn content_length(head: &str) -> usize {

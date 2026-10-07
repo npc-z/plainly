@@ -266,3 +266,42 @@ fn a_capability_replaces_only_what_a_probe_can_know() {
     assert_eq!(probed.thinking, setup.thinking);
     assert_eq!(probed.key, setup.key);
 }
+
+/// "Local" is a fact about where the request goes, not about the provider's
+/// name: `ollama` pointed at a remote host is not local, and a custom name
+/// pointed at loopback is. The surfaces use it to say which answers come from a
+/// model nobody can vouch for (spec §12, tickets/06).
+#[test]
+fn an_endpoint_on_this_machine_is_local_and_one_elsewhere_is_not() {
+    for local in [
+        "http://127.0.0.1:11434/v1",
+        "http://localhost:1234/v1",
+        "http://[::1]:8080/v1",
+        "http://127.0.0.5/v1",
+    ] {
+        assert!(plainly_core::setup::is_loopback(local), "{local}");
+    }
+
+    for remote in [
+        "https://api.deepseek.com/v1",
+        "http://192.168.1.5:11434/v1",
+        "http://0.0.0.0:8080/v1",
+        "http://example.com/v1",
+    ] {
+        assert!(!plainly_core::setup::is_loopback(remote), "{remote}");
+    }
+}
+
+#[test]
+fn a_setup_knows_whether_it_is_talking_to_this_machine() {
+    let local = ProviderSetup::resolve(
+        "mine",
+        &config("[providers.mine]\nendpoint = \"http://127.0.0.1:5353/v1\"\nmodel = \"m\"\n"),
+    )
+    .expect("the fixture resolves");
+    let remote =
+        ProviderSetup::resolve("deepseek", &Config::default()).expect("the preset resolves");
+
+    assert!(local.is_local());
+    assert!(!remote.is_local());
+}

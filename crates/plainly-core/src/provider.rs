@@ -96,6 +96,13 @@ pub enum ProviderErrorKind {
 pub struct ProviderError {
     kind: ProviderErrorKind,
     message: String,
+    /// The HTTP status the endpoint answered with, when it answered at all.
+    ///
+    /// A class does not say whether anything was listening — 401 and 404 are both
+    /// [`ProviderErrorKind::Misconfigured`] — and a surface that has to word the
+    /// difference ("it refused us" against "nothing is there") needs the status
+    /// rather than a search through the message (tickets/06).
+    status: Option<u16>,
 }
 
 /// One constructor per class. What each class means is on
@@ -130,10 +137,36 @@ impl ProviderError {
         self.kind
     }
 
+    /// The HTTP status the endpoint answered with, or `None` when it never
+    /// answered: a transport failure, a body that was not JSON, an empty answer.
+    ///
+    /// It is what tells a credential rejection (401, 403) from an endpoint that
+    /// is not a model server (404), which the class alone does not: both are
+    /// [`ProviderErrorKind::Misconfigured`], and only one of them is fixed by
+    /// setting a key.
+    pub fn status(&self) -> Option<u16> {
+        self.status
+    }
+
+    /// One failure with the status that produced it. The HTTP adapter's own
+    /// constructor: nothing else knows a status.
+    pub(crate) fn answered(
+        kind: ProviderErrorKind,
+        message: impl Into<String>,
+        status: u16,
+    ) -> Self {
+        Self {
+            kind,
+            message: message.into(),
+            status: Some(status),
+        }
+    }
+
     fn new(kind: ProviderErrorKind, message: impl Into<String>) -> Self {
         Self {
             kind,
             message: message.into(),
+            status: None,
         }
     }
 }

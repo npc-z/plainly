@@ -101,6 +101,12 @@ impl TempDir {
             .env_remove("PLAINLY_DEEPSEEK_API_KEY")
             .env_remove("PLAINLY_OPENAI_API_KEY")
             .env_remove("PLAINLY_STUB_API_KEY")
+            // Discovery resolves a key for the name of every candidate it asks,
+            // so a key exported for a local preset would otherwise travel from
+            // the developer's shell into a scan of their own machine.
+            .env_remove("PLAINLY_LLAMACPP_API_KEY")
+            .env_remove("PLAINLY_OLLAMA_API_KEY")
+            .env_remove("PLAINLY_LMSTUDIO_API_KEY")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());

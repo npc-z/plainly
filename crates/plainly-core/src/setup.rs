@@ -12,8 +12,8 @@
 //! beside everything the wire call needs, so the whole answer travels as one
 //! value instead of being reassembled at each call site.
 
-use crate::config::{Config, Thinking};
-use crate::presets::{self, KeyRequirement, SchemaSupport, Surface, ThinkingSwitch};
+use crate::config::{Config, ProviderProfile, Thinking};
+use crate::presets::{self, KeyRequirement, Preset, SchemaSupport, Surface, ThinkingSwitch};
 
 /// A provider with every choice resolved: the thing one request is sent to.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,24 +63,26 @@ pub enum SetupError {
 }
 
 impl ProviderSetup {
+    /// Where `name` would send a request, whether or not a model has been
+    /// chosen yet.
+    ///
+    /// The half of [`ProviderSetup::resolve`] that does not need a model. Local
+    /// discovery asks *where* a provider is before it can ask what that runtime
+    /// serves, and a local preset deliberately names no model until the user
+    /// picks one (tickets/06), so resolution that insisted on a model could not
+    /// describe the provider whose model is the thing being chosen.
+    pub fn endpoint_of(name: &str, config: &Config) -> Result<String, SetupError> {
+        Ok(sources(name, config)?.endpoint)
+    }
+
     /// Resolve `name` against the presets and the configuration.
     pub fn resolve(name: &str, config: &Config) -> Result<Self, SetupError> {
-        let profile = config.providers.get(name);
-        let shipped = presets::preset(name);
-
-        if profile.is_none() && shipped.is_none() {
-            return Err(SetupError::Unknown {
-                name: name.to_string(),
-            });
-        }
-
-        let configured_endpoint =
-            profile.and_then(|profile| configured(profile.endpoint.as_deref()));
-        let endpoint = configured_endpoint
-            .or_else(|| shipped.map(|preset| preset.endpoint))
-            .ok_or_else(|| SetupError::NoEndpoint {
-                name: name.to_string(),
-            })?;
+        let Sources {
+            profile,
+            shipped,
+            configured_endpoint,
+            endpoint,
+        } = sources(name, config)?;
 
         // A preset describes one *service's* call surface, not a name. Point the
         // name at a different authority and what the preset knew no longer
@@ -119,7 +121,7 @@ impl ProviderSetup {
         Ok(Self {
             name: name.to_string(),
             label: label.to_string(),
-            endpoint: endpoint.trim_end_matches('/').to_string(),
+            endpoint,
             model: model.to_string(),
             thinking: profile.map(|profile| profile.thinking).unwrap_or_default(),
             // The surface is *how Plainly talks to this provider*, not a claim
@@ -167,11 +169,103 @@ impl ProviderSetup {
             ..self.clone()
         }
     }
+
+    /// Whether this setup talks to a runtime on this machine.
+    ///
+    /// A fact about the endpoint rather than about the provider's name, for the
+    /// same reason the surface is the other way round: `ollama` pointed at a
+    /// remote host is not local, and a custom name pointed at `127.0.0.1` is.
+    /// Provenance is not only *which* model answered but whether anyone can
+    /// vouch for it: the CLI says so beside the model, and the panel's own
+    /// warning sentence hangs off the same fact (spec §12, tickets/06, 15).
+    pub fn is_local(&self) -> bool {
+        is_loopback(&self.endpoint)
+    }
+}
+
+/// Whether an endpoint names this machine.
+///
+/// `localhost`, or an IP literal in a loopback range — `127.0.0.0/8` or `::1`.
+/// Deliberately not "any private address": a LAN box is somebody else's machine,
+/// and a local model is the one whose mistakes nobody can be warned about by a
+/// vendor's reputation.
+pub fn is_loopback(endpoint: &str) -> bool {
+    let host = host(authority(endpoint));
+
+    host.eq_ignore_ascii_case("localhost")
+        || host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|address| address.is_loopback())
+}
+
+/// The host part of an authority, without its port and without IPv6 brackets.
+///
+/// `[::1]:11434` is a host and a port; a bare `::1` is a host with more than one
+/// colon and no port, which is the only case the split has to leave alone.
+fn host(authority: &str) -> &str {
+    if let Some(rest) = authority.strip_prefix('[') {
+        return rest.split(']').next().unwrap_or(rest);
+    }
+
+    match authority.split_once(':') {
+        Some((host, port)) if !port.contains(':') => host,
+        _ => authority,
+    }
 }
 
 /// A configured string, treating an empty one as "not configured".
 fn configured(value: Option<&str>) -> Option<&str> {
     value.map(str::trim).filter(|value| !value.is_empty())
+}
+
+/// What one name resolves from, looked up once.
+///
+/// [`ProviderSetup::endpoint_of`] and [`ProviderSetup::resolve`] ask the same
+/// question at different depths — where a provider is, and everything a request
+/// to it needs — so they read the same two sources here. One lookup is what stops
+/// the two from disagreeing about which endpoint a name means, and it is where
+/// the two errors about a name live: a name that is neither shipped nor
+/// configured, and one that has nowhere to send a request.
+struct Sources<'a> {
+    /// The user's table for this name, if there is one.
+    profile: Option<&'a ProviderProfile>,
+    /// The shipped preset for this name, if there is one.
+    shipped: Option<&'static Preset>,
+    /// The endpoint as the user wrote it, before the preset fills in for it.
+    /// What remains interesting about it after `endpoint` is resolved is whether
+    /// it was configured at all: a preset describes one service's call surface,
+    /// and pointing the name somewhere else withdraws what it knew.
+    configured_endpoint: Option<&'a str>,
+    /// The endpoint a request would go to, without its trailing slash.
+    endpoint: String,
+}
+
+/// Resolve a name into the sources it comes from.
+fn sources<'a>(name: &str, config: &'a Config) -> Result<Sources<'a>, SetupError> {
+    let profile = config.providers.get(name);
+    let shipped = presets::preset(name);
+
+    if profile.is_none() && shipped.is_none() {
+        return Err(SetupError::Unknown {
+            name: name.to_string(),
+        });
+    }
+
+    let configured_endpoint = profile.and_then(|profile| configured(profile.endpoint.as_deref()));
+    let endpoint = configured_endpoint
+        .or_else(|| shipped.map(|preset| preset.endpoint))
+        .ok_or_else(|| SetupError::NoEndpoint {
+            name: name.to_string(),
+        })?
+        .trim_end_matches('/')
+        .to_string();
+
+    Ok(Sources {
+        profile,
+        shipped,
+        configured_endpoint,
+        endpoint,
+    })
 }
 
 /// Whether two endpoints name the same service: same scheme-less authority
@@ -180,8 +274,12 @@ fn configured(value: Option<&str>) -> Option<&str> {
 /// `https://api.deepseek.com` and `https://api.deepseek.com/v1` are the same
 /// place, so a user who writes out the base URL differently does not lose what
 /// the preset knows. A different host or port is a different place, and is
-/// treated as unknown.
-fn same_service(one: &str, other: &str) -> bool {
+/// treated as unknown. Local discovery uses the same comparison for the questions
+/// where two spellings *are* one endpoint — which runtime a name means, and
+/// whether a discovered endpoint is somewhere the name did not already point —
+/// while its candidate list deliberately keeps two spellings of one service
+/// apart (tickets/06).
+pub fn same_service(one: &str, other: &str) -> bool {
     authority(one).eq_ignore_ascii_case(authority(other))
 }
 

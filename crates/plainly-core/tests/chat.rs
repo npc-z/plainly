@@ -7,7 +7,8 @@ use serde_json::{Value, json};
 
 use plainly_core::{
     ChatCompletions, Config, EndpointModel, ExplainRequest, MAX_TOKENS, MAX_TOKENS_THINKING,
-    ProbeRequest, ProviderErrorKind, ProviderSetup, SchemaSupport, ThinkingSwitch, wire_schema,
+    ProbeRequest, ProviderErrorKind, ProviderSetup, SchemaSupport, Thinking, ThinkingSwitch,
+    wire_schema,
 };
 
 /// A client for `name`, with `model` overriding the preset's when given.
@@ -606,5 +607,105 @@ fn a_model_list_that_is_not_a_list_is_not_an_empty_one() {
         plainly_core::chat::models_from(&json!({ "data": [] })),
         Some(Vec::new()),
         "an endpoint that lists nothing listed nothing"
+    );
+}
+
+/// The llama.cpp router's own shape, taken from what the runtime on this machine
+/// answers: the state is under `status.value`, and the context length is only in
+/// the model's launch argv. Reading it is what makes "is this model big enough"
+/// answerable without loading it (tickets/06).
+#[test]
+fn a_routers_model_reports_its_state_and_context_in_the_launch_argv() {
+    let body = json!({
+        "data": [{
+            "id": "unsloth/Qwen3-4B-Instruct-2507-GGUF:Q4_K_M",
+            "object": "model",
+            "owned_by": "llamacpp",
+            "status": {
+                "value": "unloaded",
+                "args": [
+                    "/nix/store/…/bin/llama-server",
+                    "--host", "127.0.0.1",
+                    "--port", "0",
+                    "--alias", "unsloth/Qwen3-4B-Instruct-2507-GGUF:Q4_K_M",
+                    "--ctx-size", "16384",
+                    "--n-gpu-layers", "99",
+                ],
+            },
+        }]
+    });
+
+    assert_eq!(
+        plainly_core::chat::models_from(&body),
+        Some(vec![EndpointModel {
+            id: "unsloth/Qwen3-4B-Instruct-2507-GGUF:Q4_K_M".to_string(),
+            loaded: Some(false),
+            context_length: Some(16384),
+        }])
+    );
+
+    // The same runtime once the model is up, and the `--flag=value` spelling a
+    // runtime is equally free to use.
+    let loaded = json!({
+        "data": [{
+            "id": "m",
+            "status": { "value": "loaded", "args": ["llama-server", "--ctx-size=4096"] }
+        }]
+    });
+    assert_eq!(
+        plainly_core::chat::models_from(&loaded),
+        Some(vec![EndpointModel {
+            id: "m".to_string(),
+            loaded: Some(true),
+            context_length: Some(4096),
+        }])
+    );
+}
+
+/// Reading a context length before loading the model is the point: the number
+/// alone decides whether one Passage and its answer fit — and the answer's
+/// budget is not the same in both modes (spec §7), so neither is the verdict.
+#[test]
+fn a_context_is_judged_against_the_budget_the_mode_actually_uses() {
+    let model = |context: Option<u64>| EndpointModel {
+        id: "m".to_string(),
+        loaded: None,
+        context_length: context,
+    };
+
+    // The default setting: the prompt plus MAX_TOKENS.
+    assert_eq!(
+        plainly_core::context_fits(&model(Some(16384)), Thinking::Off),
+        Some(true)
+    );
+    assert_eq!(
+        plainly_core::context_fits(&model(Some(4096)), Thinking::Off),
+        Some(true)
+    );
+    assert_eq!(
+        plainly_core::context_fits(&model(Some(2048)), Thinking::Off),
+        Some(false)
+    );
+
+    // The detailed mode reasons before it answers and is given several times the
+    // budget, so a context that fits one mode does not fit the other.
+    assert_eq!(
+        plainly_core::context_fits(&model(Some(4096)), Thinking::On),
+        Some(false)
+    );
+    assert_eq!(
+        plainly_core::context_fits(&model(Some(16384)), Thinking::On),
+        Some(true)
+    );
+    assert!(
+        plainly_core::min_context_length(Thinking::On)
+            > plainly_core::min_context_length(Thinking::Off),
+        "the detailed mode is not held to the default's number"
+    );
+
+    assert_eq!(
+        plainly_core::context_fits(&model(None), Thinking::Off),
+        None,
+        "a runtime that reports nothing has not answered the question"
     );
 }

@@ -81,10 +81,20 @@ pub fn run(args: ExplainArgs) -> Result<u8, CommandError> {
     };
 
     eprintln!(
-        "plainly: explaining with {} ({}, thinking {})",
+        "plainly: explaining with {} ({}, thinking {}){}",
         setup.label,
         setup.model,
-        setup.thinking.as_str()
+        setup.thinking.as_str(),
+        // Provenance is which provider answered, and whether it is on this
+        // machine is part of that: an answer from a local model is one nobody
+        // can vouch for. The wording of the warning itself belongs to the panel
+        // (spec §12, tickets/15); the CLI's job is to say where the answer came
+        // from, and stdout stays the product (tickets/06).
+        if setup.is_local() {
+            " — local model on this machine"
+        } else {
+            ""
+        }
     );
 
     // The transport for a capability-resolved setup. The key is the surface's

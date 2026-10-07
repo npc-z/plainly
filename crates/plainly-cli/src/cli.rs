@@ -104,6 +104,16 @@ pub enum ProviderCommand {
         /// when omitted
         name: Option<String>,
     },
+    /// Look for local runtimes on the common ports and list what they serve
+    Discover,
+    /// Select one model of a local runtime: it is written into
+    /// [providers.<name>] and becomes the provider a run uses
+    Use {
+        /// Provider name, matching [providers.<name>]
+        provider: String,
+        /// The model id to use, as the runtime lists it
+        model: String,
+    },
     /// Manage the API key of one provider
     Key {
         #[command(subcommand)]

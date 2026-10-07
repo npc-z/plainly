@@ -744,3 +744,43 @@ fn a_probe_result_that_cannot_be_cached_is_said_so() {
         stderr(&output)
     );
 }
+
+/// A local provider is named as local: the model that answered is provenance,
+/// and so is the fact that nobody can vouch for it (spec §12, tickets/06).
+#[test]
+fn a_local_provider_is_named_as_local_beside_its_model() {
+    let dir = TempDir::new("explain-local-provenance");
+    let server = FakeProvider::start([Reply::content(ANSWER)]);
+    dir.write_config(&format!(
+        "[app]\nprovider = \"ollama\"\n\n\
+         [providers.ollama]\nendpoint = \"http://{}/v1\"\nmodel = \"qwen3.5:4b\"\n",
+        server.authority().trim_start_matches("http://")
+    ));
+
+    let output = dir.plainly_with(&[], PASSAGE, &[]);
+
+    assert_eq!(code(&output), SUCCESS, "{}", stderr(&output));
+    let rendered = stdout(&output);
+    for section in [
+        "### Original",
+        "### Comprehensible English",
+        "### Key Help",
+        "### Translation",
+    ] {
+        assert!(rendered.contains(section), "missing {section}:\n{rendered}");
+    }
+
+    let message = stderr(&output);
+    assert!(
+        message.contains("qwen3.5:4b"),
+        "the model that answered: {message}"
+    );
+    assert!(
+        message.contains("local"),
+        "and that it runs on this machine: {message}"
+    );
+    assert!(
+        !rendered.contains("local"),
+        "the product stays the Explanation; the caveat is stderr: {rendered}"
+    );
+}

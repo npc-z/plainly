@@ -9,6 +9,7 @@
 pub mod artifact;
 pub mod chat;
 pub mod config;
+pub mod discover;
 pub mod explain;
 pub mod explanation;
 pub mod paths;
@@ -22,11 +23,15 @@ pub mod secrets;
 pub mod setup;
 
 pub use artifact::{ARTIFACT_VERSION, Artifact, Timestamp};
-pub use chat::{ChatCompletions, MAX_TOKENS, MAX_TOKENS_THINKING, models_from};
+pub use chat::{
+    ChatCompletions, MAX_TOKENS, MAX_TOKENS_THINKING, ModelReader, completion_budget, context_fits,
+    min_context_length, models_from,
+};
 pub use config::{
     App, Config, ConfigError, ConfigFile, DEFAULT_CONFIG, ExportFormat, Level, PanelCorner,
     Prompts, ProviderProfile, Thinking,
 };
+pub use discover::{COMMON_PORTS, Candidate, CommonPort, LocalRuntime, ModelLister};
 pub use explain::{Downgrade, ExplainError, Run, RunFailure, SOURCE_LANGUAGE, explain};
 pub use explanation::{ContractError, Explanation, Gloss, wire_schema};
 pub use paths::{CONFIG_FILE, IDENTIFIER, PathError, PathInputs, Paths};

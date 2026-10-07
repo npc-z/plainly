@@ -24,7 +24,7 @@ use crate::Thinking;
 use crate::explanation::wire_schema;
 use crate::presets::{SchemaSupport, Surface, ThinkingSwitch};
 use crate::probe::{EndpointModel, PROBE_PASSAGE, PROBE_SYSTEM, ProbeEndpoint, ProbeRequest};
-use crate::provider::{ExplainRequest, Provider, ProviderError};
+use crate::provider::{ExplainRequest, Provider, ProviderError, ProviderErrorKind};
 use crate::setup::ProviderSetup;
 
 /// The completion budget every request is given.
@@ -57,6 +57,58 @@ const _: () = assert!(
 /// How long one request may take. Covers a local model's cold start (measured at
 /// 7.2 s) with room to spare.
 pub const TIMEOUT: Duration = Duration::from_secs(60);
+
+/// How long local discovery waits for one port to answer its model list.
+///
+/// A scan asks several ports in a row, so a port that accepts a connection and
+/// then says nothing would otherwise cost the whole request timeout each time.
+/// A local runtime answers a tiny GET immediately or not at all (tickets/06).
+pub const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// The completion budget one request gets at `thinking`.
+///
+/// The detailed mode reasons before it answers, and the reasoning can be most of
+/// the completion (spec §7), so the two settings do not share a number. A caller
+/// that has no client in hand — the context check below, and the surfaces that
+/// report it — asks here rather than repeating the pair.
+pub const fn completion_budget(thinking: Thinking) -> u32 {
+    match thinking {
+        Thinking::On => MAX_TOKENS_THINKING,
+        Thinking::Off => MAX_TOKENS,
+    }
+}
+
+/// The prompt's side of the budget: the shipped system prompt plus a chunk of at
+/// most 150 words (spec §6), measured at a little over 1000 tokens and rounded
+/// up for a tokenizer that splits them differently. Being wrong this way costs a
+/// needless warning; being wrong the other way offers a model that cannot answer
+/// as one that can.
+const PROMPT_TOKENS: u64 = 2048;
+
+/// The smallest context length a model can report and still hold one Passage at
+/// `thinking`'s budget.
+///
+/// The two settings are not interchangeable here. Spec §7's reasoning budget is
+/// several times the answer's, so a model that holds a Passage with thinking off
+/// can still run out of context the moment the detailed mode is asked for — which
+/// is what this pairs: the model's own reported context against the budget the
+/// request would actually carry. Nothing refuses a smaller model: a runtime may
+/// be serving more context than its list reports, so the surfaces warn rather
+/// than block.
+pub const fn min_context_length(thinking: Thinking) -> u64 {
+    PROMPT_TOKENS + completion_budget(thinking) as u64
+}
+
+/// Whether a model's reported context can hold one Passage and its answer at
+/// `thinking`'s budget.
+///
+/// `None` when the runtime did not report a context length — which is not a
+/// verdict, and is why this is not a plain `bool`.
+pub fn context_fits(model: &EndpointModel, thinking: Thinking) -> Option<bool> {
+    model
+        .context_length
+        .map(|length| length >= min_context_length(thinking))
+}
 
 /// The name the schema is sent under. Providers echo it back; nothing branches
 /// on it.
@@ -239,7 +291,7 @@ impl ChatCompletions {
 
         let body: Value = match serde_json::from_str(&text) {
             Ok(body) => body,
-            Err(error) => return RouteOutcome::Failed(self.not_json(status, &error)),
+            Err(error) => return RouteOutcome::Failed(not_json(&self.setup.label, status, &error)),
         };
 
         match route {
@@ -290,12 +342,11 @@ impl ChatCompletions {
     }
 
     /// The budget this request gets: the detailed mode reasons before it
-    /// answers, so it is given room to.
+    /// answers, so it is given room to. The number itself is
+    /// [`completion_budget`]'s, because the context check needs it without a
+    /// client.
     pub fn max_tokens(&self) -> u32 {
-        match self.setup.thinking {
-            Thinking::On => MAX_TOKENS_THINKING,
-            Thinking::Off => MAX_TOKENS,
-        }
+        completion_budget(self.setup.thinking)
     }
 
     /// The `response_format` this endpoint gets.
@@ -451,19 +502,6 @@ impl ChatCompletions {
         })
     }
 
-    /// The failure a 200 that is not a chat completion is.
-    ///
-    /// Not the model's doing — this is not a chat completion — but a proxy page
-    /// or a half-written response is a hiccup as often as it is a wrong
-    /// endpoint. Classified with the empty answers, which are asked for again
-    /// and stop at the second identical one.
-    fn not_json(&self, status: u16, error: &serde_json::Error) -> ProviderError {
-        ProviderError::empty(format!(
-            "{} answered HTTP {status} with something that is not JSON: {error}",
-            self.setup.label
-        ))
-    }
-
     /// The assistant's content out of a decoded chat-completions body.
     ///
     /// Providers disagree about where an answer lands, and the disagreements are
@@ -585,21 +623,7 @@ impl ChatCompletions {
     /// guessing this way is one cheap probe, and the consequence of the other
     /// way is an endpoint that can never be used.
     pub fn http_error(&self, status: u16, body: &str) -> ProviderError {
-        let message = format!(
-            "{} answered HTTP {status}: {}",
-            self.setup.label,
-            excerpt(body, self.api_key.secret())
-        );
-
-        match status {
-            400 | 422 => ProviderError::unsupported_parameter(message),
-            // The transient cases the backoff exists for.
-            408 | 429 => ProviderError::unavailable(message),
-            500..=599 => ProviderError::unavailable(message),
-            // 401, 403, 404 and the rest: the configuration is what has to
-            // change, not the timing.
-            _ => ProviderError::misconfigured(message),
-        }
+        http_error(&self.setup.label, self.api_key.secret(), status, body)
     }
 
     /// The failure a transport error is, as the retry policy sees it.
@@ -613,29 +637,107 @@ impl ChatCompletions {
     /// is only the "resolved to nothing" case — so the io kind is what says
     /// whether resending the same request could work.
     pub fn transport_error(&self, error: ureq::Error) -> ProviderError {
-        let message = format!("{}: {error}", self.setup.label);
-
-        match error {
-            // ureq said so itself: the connection never came up, or the request
-            // ran out of time.
-            ureq::Error::Timeout(_) | ureq::Error::ConnectionFailed => {
-                ProviderError::unavailable(message)
-            }
-            // A connection that dropped, was refused by something that may not
-            // be listening yet, or ended in the middle of the response: the
-            // trouble is the timing, not the request.
-            ureq::Error::Io(error) if retryable_io(error.kind()) => {
-                ProviderError::unavailable(message)
-            }
-            // The server ended the exchange mid-protocol.
-            ureq::Error::Protocol(_) => ProviderError::unavailable(message),
-            // Everything else is a request that will fail the same way every
-            // time: a name that does not resolve, a URL that cannot be parsed,
-            // a redirect loop, a socket the process may not open. Classified
-            // together with the 401s: the configuration is what has to change.
-            _ => ProviderError::misconfigured(message),
-        }
+        transport_error(&self.setup.label, error)
     }
+}
+
+/// `GET {endpoint}/models`, decoded.
+///
+/// One implementation for both readers — a probe's model listing and local
+/// discovery ask the same question — with the endpoint as the name a failure is
+/// reported under. The shape tolerances are [`models_from`]'s.
+fn read_models(
+    agent: &ureq::Agent,
+    api_key: &ApiKey,
+    endpoint: &str,
+) -> Result<Vec<EndpointModel>, ProviderError> {
+    let url = format!("{}/models", endpoint.trim_end_matches('/'));
+    let mut call = agent.get(&url);
+    if !api_key.is_empty() {
+        call = call.header("Authorization", api_key.bearer());
+    }
+
+    let mut response = call
+        .call()
+        .map_err(|error| transport_error(endpoint, error))?;
+    let status = response.status();
+    let text = response
+        .body_mut()
+        .read_to_string()
+        .map_err(|error| transport_error(endpoint, error))?;
+
+    if !status.is_success() {
+        return Err(http_error(
+            endpoint,
+            api_key.secret(),
+            status.as_u16(),
+            &text,
+        ));
+    }
+
+    let body: Value =
+        serde_json::from_str(&text).map_err(|error| not_json(endpoint, status.as_u16(), &error))?;
+
+    models_from(&body).ok_or_else(|| {
+        ProviderError::empty(format!(
+            "{endpoint} answered HTTP {status} with no model list Plainly recognises"
+        ))
+    })
+}
+
+/// The failure an HTTP status is, under the name `label` reports it.
+///
+/// A free function rather than only a method because two labels exist: a
+/// provider's human-readable one for a run, and an endpoint for a model listing
+/// that has no provider name yet. What each status means is on
+/// [`ChatCompletions::http_error`].
+fn http_error(label: &str, secret: &str, status: u16, body: &str) -> ProviderError {
+    let message = format!("{label} answered HTTP {status}: {}", excerpt(body, secret));
+    let kind = match status {
+        400 | 422 => ProviderErrorKind::UnsupportedParameter,
+        // The transient cases the backoff exists for.
+        408 | 429 => ProviderErrorKind::Unavailable,
+        500..=599 => ProviderErrorKind::Unavailable,
+        // 401, 403, 404 and the rest: the configuration is what has to
+        // change, not the timing.
+        _ => ProviderErrorKind::Misconfigured,
+    };
+
+    // The status travels with the failure as well as in its message: 401 and 404
+    // are the same class, and a surface has to be able to tell them apart.
+    ProviderError::answered(kind, message, status)
+}
+
+/// The failure a transport error is, under the name `label` reports it. What
+/// each error means is on [`ChatCompletions::transport_error`].
+fn transport_error(label: &str, error: ureq::Error) -> ProviderError {
+    let message = format!("{label}: {error}");
+
+    match error {
+        // ureq said so itself: the connection never came up, or the request
+        // ran out of time.
+        ureq::Error::Timeout(_) | ureq::Error::ConnectionFailed => {
+            ProviderError::unavailable(message)
+        }
+        // A connection that dropped, was refused by something that may not
+        // be listening yet, or ended in the middle of the response: the
+        // trouble is the timing, not the request.
+        ureq::Error::Io(error) if retryable_io(error.kind()) => ProviderError::unavailable(message),
+        // The server ended the exchange mid-protocol.
+        ureq::Error::Protocol(_) => ProviderError::unavailable(message),
+        // Everything else is a request that will fail the same way every
+        // time: a name that does not resolve, a URL that cannot be parsed,
+        // a redirect loop, a socket the process may not open. Classified
+        // together with the 401s: the configuration is what has to change.
+        _ => ProviderError::misconfigured(message),
+    }
+}
+
+/// The failure a 200 that is not a chat completion is, named after `label`.
+fn not_json(label: &str, status: u16, error: &serde_json::Error) -> ProviderError {
+    ProviderError::empty(format!(
+        "{label} answered HTTP {status} with something that is not JSON: {error}"
+    ))
 }
 
 /// Whether resending the same request could work, by the socket error's own
@@ -705,32 +807,56 @@ impl ProbeEndpoint for ChatCompletions {
     /// in the spec serves, and two lists that can disagree would need a rule for
     /// which one wins.
     fn models(&self) -> Result<Vec<EndpointModel>, ProviderError> {
-        let url = format!("{}/models", self.setup.endpoint);
-        let mut call = self.agent.get(&url);
-        if !self.api_key.is_empty() {
-            call = call.header("Authorization", self.api_key.bearer());
+        read_models(&self.agent, &self.api_key, &self.setup.endpoint)
+    }
+}
+
+/// Reads the model list at a base URL, before any model has been chosen.
+///
+/// The one piece of this adapter that is useful without a [`ProviderSetup`]:
+/// local discovery asks a port what it serves and cannot name a model yet
+/// (tickets/06). The credential comes with each call rather than being held
+/// here, because it belongs to the *name* a candidate would be configured
+/// under, and that is a decision for the caller ([`crate::discover`]); the short
+/// timeout is this type's own, because a scan bounds what one silent port costs.
+pub struct ModelReader {
+    agent: ureq::Agent,
+}
+
+impl ModelReader {
+    /// A reader with the discovery timeout and no credential of its own.
+    pub fn new() -> Self {
+        let config = ureq::Agent::config_builder()
+            .timeout_global(Some(DISCOVERY_TIMEOUT))
+            .http_status_as_error(false)
+            .build();
+
+        Self {
+            agent: config.into(),
         }
+    }
 
-        let mut response = call.call().map_err(|error| self.transport_error(error))?;
-        let status = response.status();
-        let text = response
-            .body_mut()
-            .read_to_string()
-            .map_err(|error| self.transport_error(error))?;
+    /// The models at `endpoint`, authenticated with `key` when there is one.
+    ///
+    /// A loopback runtime may still authenticate: spec §7 asks the llama.cpp
+    /// sidecar to carry `--api-key`, and a probe of it without one is a 401
+    /// rather than a list.
+    pub fn models(
+        &self,
+        endpoint: &str,
+        key: Option<&str>,
+    ) -> Result<Vec<EndpointModel>, ProviderError> {
+        read_models(
+            &self.agent,
+            &ApiKey(key.unwrap_or_default().to_string()),
+            endpoint,
+        )
+    }
+}
 
-        if !status.is_success() {
-            return Err(self.http_error(status.as_u16(), &text));
-        }
-
-        let body: Value =
-            serde_json::from_str(&text).map_err(|error| self.not_json(status.as_u16(), &error))?;
-
-        models_from(&body).ok_or_else(|| {
-            ProviderError::empty(format!(
-                "{} answered HTTP {status} with no model list Plainly recognises",
-                self.setup.label
-            ))
-        })
+impl Default for ModelReader {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -775,29 +901,85 @@ fn model_from(entry: &Value) -> Option<EndpointModel> {
         .and_then(Value::as_str)?
         .to_string();
 
-    let loaded = entry.get("loaded").and_then(Value::as_bool).or_else(|| {
-        match entry.get("state").and_then(Value::as_str) {
-            Some("loaded") => Some(true),
-            Some("unloaded" | "not-loaded") => Some(false),
-            _ => None,
-        }
-    });
+    Some(EndpointModel {
+        id,
+        loaded: loaded_from(entry),
+        context_length: context_from(entry),
+    })
+}
 
-    let context_length = [
-        entry.get("max_context_length"),
-        entry.get("context_length"),
-        entry.get("n_ctx"),
-        entry.get("meta").and_then(|meta| meta.get("n_ctx")),
+/// Whether a runtime says one of its models is loaded, under whichever of the
+/// names it used.
+///
+/// `loaded` is what LM Studio answers with, `state` is a spelling in the same
+/// family, and `status.value` is what the llama.cpp router on this machine
+/// answers with — observed, not read in a document (tickets/06). A value none of
+/// them means is `None`: a runtime that says `"loading"` has not said whether the
+/// model is up.
+fn loaded_from(entry: &Value) -> Option<bool> {
+    if let Some(loaded) = entry.get("loaded").and_then(Value::as_bool) {
+        return Some(loaded);
+    }
+
+    [
+        entry.get("state"),
+        entry.get("status").and_then(|status| status.get("value")),
     ]
     .into_iter()
     .flatten()
-    .find_map(Value::as_u64);
-
-    Some(EndpointModel {
-        id,
-        loaded,
-        context_length,
+    .filter_map(Value::as_str)
+    .find_map(|state| match state {
+        "loaded" => Some(true),
+        "unloaded" | "not-loaded" => Some(false),
+        _ => None,
     })
+}
+
+/// How much context a runtime says one of its models has, where it said it.
+///
+/// A field of its own where the runtime has one, and otherwise the model's
+/// launch argv: the llama.cpp router answers `"args": [… "--ctx-size", "16384" …]`
+/// and reports nothing else, and reading it is exactly how a model's context is
+/// known while the model is still unloaded (spec §7, tickets/06). Both spellings
+/// of the flag are read, because an argv is written by whoever launched the
+/// server.
+fn context_from(entry: &Value) -> Option<u64> {
+    let field = ["max_context_length", "context_length", "n_ctx"]
+        .into_iter()
+        .find_map(|name| entry.get(name).and_then(Value::as_u64))
+        .or_else(|| {
+            entry
+                .get("meta")
+                .and_then(|meta| meta.get("n_ctx"))
+                .and_then(Value::as_u64)
+        });
+    if field.is_some() {
+        return field;
+    }
+
+    let args = entry
+        .get("args")
+        .or_else(|| entry.get("status").and_then(|status| status.get("args")))?;
+
+    context_in_args(args.as_array()?)
+}
+
+/// `--ctx-size 16384` or `--ctx-size=16384` in a runtime's launch argv.
+fn context_in_args(args: &[Value]) -> Option<u64> {
+    let arguments: Vec<&str> = args.iter().filter_map(Value::as_str).collect();
+
+    for (index, argument) in arguments.iter().enumerate() {
+        let value = match argument.split_once('=') {
+            Some(("--ctx-size", value)) => Some(value),
+            _ if *argument == "--ctx-size" => arguments.get(index + 1).copied(),
+            _ => None,
+        };
+        if let Some(length) = value.and_then(|value| value.parse().ok()) {
+            return Some(length);
+        }
+    }
+
+    None
 }
 
 /// A string that is present and not just whitespace.
