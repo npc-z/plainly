@@ -7,10 +7,7 @@ pub const SUCCESS: u8 = 0;
 pub const FAILURE: u8 = 1;
 /// The command line was wrong; nothing was attempted.
 pub const USAGE: u8 = 2;
-/// Plainly is not configured: no key, or no usable provider.
-// Its first use is `explain` in ticket 03; the number is fixed now because it
-// is part of the published contract.
-#[allow(dead_code)]
+/// Plainly is not configured: no key where one is needed, or no usable provider.
 pub const NOT_CONFIGURED: u8 = 3;
 /// Plainly refused the input on purpose (sensitive clipboard content).
 // Its first use is the clipboard path in ticket 12.

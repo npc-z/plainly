@@ -7,25 +7,33 @@
 //! `plainly` CLI can be built and run on a machine with no graphics stack at all.
 
 pub mod artifact;
+pub mod chat;
 pub mod config;
 pub mod explain;
 pub mod explanation;
 pub mod paths;
+pub mod presets;
+pub mod prompt;
 pub mod provider;
 pub mod render;
 pub mod secrets;
+pub mod setup;
 
 pub use artifact::{ARTIFACT_VERSION, Artifact, Timestamp};
+pub use chat::{ChatCompletions, MAX_TOKENS};
 pub use config::{
     App, Config, ConfigError, ConfigFile, DEFAULT_CONFIG, ExportFormat, Level, PanelCorner,
     Prompts, ProviderProfile, Thinking,
 };
-pub use explain::{ExplainError, explain};
+pub use explain::{ExplainError, SOURCE_LANGUAGE, explain};
 pub use explanation::{ContractError, Explanation, Gloss, wire_schema};
 pub use paths::{CONFIG_FILE, IDENTIFIER, PathError, PathInputs, Paths};
+pub use presets::{KeyRequirement, PRESETS, Preset, SchemaSupport, ThinkingSwitch};
+pub use prompt::{FACTORY_PROMPT, PROMPT_LABEL};
 pub use provider::{ExplainRequest, Provider, ProviderError};
 pub use render::{Section, SectionKind};
 pub use secrets::{
     Cleared, EnvSecrets, KeySource, KeyringSecrets, MemorySecrets, ResolvedKey, SecretError,
     SecretStore, Secrets, Stored, env_var_name,
 };
+pub use setup::{ProviderSetup, SetupError};

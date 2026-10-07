@@ -14,6 +14,7 @@ path = "src/main.rs"
 plainly-core.workspace = true
 
 clap.workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
 # Parses the built binary to read its DT_NEEDED list; test-only.

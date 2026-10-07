@@ -21,8 +21,13 @@ keyring = "4"
 object = { version = "0.40", default-features = false, features = ["read", "std"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
 thiserror = "2"
 toml_edit = { version = "0.22", features = ["serde"] }
+# A blocking client on purpose: v0 does not stream (spec §7), so an async stack
+# would buy nothing but weight. rustls with its own bundled roots also keeps the
+# CLI free of a runtime libssl, the way it is free of GTK.
+ureq = { version = "3.4", features = ["json"] }
 
 [profile.release]
 strip = true

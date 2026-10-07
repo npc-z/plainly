@@ -167,30 +167,62 @@ fn clearing_a_key_without_a_keyring_is_quietly_idempotent() {
     );
 }
 
+/// With no subcommand `plainly` is `explain`, so an empty stdin is a usage
+/// error: there is nothing to explain, and that is not a silent success. The
+/// provider has to be usable first — with no key at all the run stops at "not
+/// configured", which is the more actionable thing to say.
 #[test]
-fn saying_nothing_is_a_usage_error_and_leaves_stdout_clean() {
+fn a_bare_invocation_with_no_input_is_a_usage_error_and_leaves_stdout_clean() {
     let dir = TempDir::new("no-subcommand");
+    dir.write_config(
+        "[app]\nprovider = \"stub\"\n\n[providers.stub]\n\
+         endpoint = \"http://127.0.0.1:1/v1\"\nmodel = \"stub-model\"\n",
+    );
 
-    let output = dir.plainly(&[]);
+    let output = dir.plainly_with(&[], "", &[("PLAINLY_STUB_API_KEY", "test-key")]);
 
     assert_eq!(code(&output), USAGE);
     assert_eq!(
         stdout(&output),
         "",
-        "help for a usage error belongs on stderr"
+        "a usage error must leave the product stream clean"
     );
-    assert!(stderr(&output).contains("Usage"));
+    assert!(
+        stderr(&output).contains("no Passage"),
+        "{}",
+        stderr(&output)
+    );
 }
 
+/// A badly spelled command line is a usage error, and a usage error leaves the
+/// product stream clean.
 #[test]
-fn an_unknown_subcommand_is_a_usage_error() {
-    let dir = TempDir::new("unknown-subcommand");
+fn an_unknown_flag_is_a_usage_error() {
+    let dir = TempDir::new("unknown-flag");
+
+    let output = dir.plainly(&["--frobnicate"]);
+
+    assert_eq!(code(&output), USAGE);
+    assert_eq!(stdout(&output), "");
+    assert!(!stderr(&output).is_empty());
+}
+
+/// `explain` is the default command, so its positional argument is the root's:
+/// `plainly notes.md` explains `notes.md`. A word that names nothing is then a
+/// usage error about the path rather than a crash or a silent success.
+#[test]
+fn an_unknown_verb_is_taken_for_a_file_path() {
+    let dir = TempDir::new("unknown-verb");
 
     let output = dir.plainly(&["frobnicate"]);
 
     assert_eq!(code(&output), USAGE);
     assert_eq!(stdout(&output), "");
-    assert!(!stderr(&output).is_empty());
+    assert!(
+        stderr(&output).contains("frobnicate"),
+        "{}",
+        stderr(&output)
+    );
 }
 
 /// Asking for help is not an error: it goes to stdout and exits zero.

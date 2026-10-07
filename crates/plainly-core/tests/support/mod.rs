@@ -93,6 +93,7 @@ pub fn request(passage: &str) -> ExplainRequest {
         provider: "deepseek".to_string(),
         model: "deepseek-flash".to_string(),
         thinking: Thinking::Off,
+        system_prompt: plainly_core::prompt::system_prompt(Level::B2, "Chinese"),
         prompt_version: PROMPT_VERSION.to_string(),
         prompt_label: "v6-synthesis".to_string(),
     }

@@ -5,6 +5,11 @@ use crate::artifact::{ARTIFACT_VERSION, Artifact, Timestamp};
 use crate::explanation::{ContractError, Explanation};
 use crate::provider::{ExplainRequest, Provider, ProviderError};
 
+/// The Passage's language. v0 explains English and never detects it: a detector
+/// would either cost a model call or fork the cache on a guess, so the field is
+/// a constant that is still stored, for provenance and for a later v1 (spec §9).
+pub const SOURCE_LANGUAGE: &str = "en";
+
 /// Why an Explanation was not produced.
 ///
 /// This distinction is the one the whole error policy rests on: the provider

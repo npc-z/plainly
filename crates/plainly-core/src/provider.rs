@@ -5,8 +5,12 @@
 //! looks like. The explain path above it knows only that a provider either hands
 //! back content or fails.
 //!
-//! Presets, capability probing and local discovery — tickets/03 through tickets/06 — build on
-//! this seam rather than widening it.
+//! Presets, capability probing and local discovery — tickets/03 through
+//! tickets/06 — build on this seam rather than widening it: [`crate::presets`]
+//! and [`crate::setup`] decide *what* a run talks to, and
+//! [`crate::chat::ChatCompletions`] is the HTTP implementation. The one field
+//! they added to the request is the prompt itself, because the app owns the
+//! prompt and a provider should only have to send it.
 
 use crate::{Level, Thinking};
 
@@ -26,7 +30,14 @@ pub struct ExplainRequest {
     pub provider: String,
     pub model: String,
     pub thinking: Thinking,
-    /// The content hash of the Effective Prompt (tickets/07).
+    /// The system prompt to send, already filled in for this request. The app
+    /// owns the prompt — its factory text, the user's appendix, the level
+    /// descriptors — so a provider is handed the finished text rather than
+    /// assembling one of its own (tickets/07).
+    pub system_prompt: String,
+    /// The SHA-256 of the prompt data in effect — the factory prompt today,
+    /// plus the user's appendix and the level descriptors once tickets/07 folds
+    /// them in. It is what makes two runs comparable.
     pub prompt_version: String,
     /// That prompt's human-readable name.
     pub prompt_label: String,

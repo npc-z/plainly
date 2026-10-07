@@ -1,5 +1,13 @@
 //! A throwaway directory for tests that spawn the real binary against a real
 //! (temporary) set of XDG directories.
+//!
+//! Each integration test is its own crate, so a helper one test file does not
+//! use still has to compile: `cli.rs` pulls in the provider stub without ever
+//! starting one. Shared on purpose — the alternative is copying this into every
+//! test file.
+#![allow(dead_code)]
+
+pub mod provider;
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -35,10 +43,48 @@ impl TempDir {
         self.join("config/dev.plainly.app/config.toml")
     }
 
+    /// Write a configuration file, creating the directory it lives in.
+    pub fn write_config(&self, text: &str) {
+        let path = self.config_file();
+        std::fs::create_dir_all(path.parent().expect("the config file has a parent"))
+            .expect("the config directory is creatable");
+        std::fs::write(&path, text).expect("the config file is writable");
+    }
+
     /// Run `plainly` with every XDG directory pointed at this directory, and
     /// with the keyring switched off so the run never depends on a session bus.
     pub fn plainly(&self, args: &[&str]) -> std::process::Output {
-        self.plainly_with_stdin(args, "")
+        self.plainly_with(args, "", &[])
+    }
+
+    pub fn plainly_with_stdin(&self, args: &[&str], stdin: &str) -> std::process::Output {
+        self.plainly_with(args, stdin, &[])
+    }
+
+    /// The same, with environment variables the test needs — an API key for a
+    /// stub provider, say.
+    pub fn plainly_with(
+        &self,
+        args: &[&str],
+        stdin: &str,
+        env: &[(&str, &str)],
+    ) -> std::process::Output {
+        use std::io::Write;
+
+        let mut child = self
+            .command()
+            .args(args)
+            .envs(env.iter().copied())
+            .spawn()
+            .expect("the plainly binary is built alongside its tests");
+
+        child
+            .stdin
+            .as_mut()
+            .expect("stdin is piped")
+            .write_all(stdin.as_bytes())
+            .expect("stdin accepts the test's input");
+        child.wait_with_output().expect("the process is waitable")
     }
 
     /// The same environment, as a command a test can add to before running it.
@@ -54,28 +100,11 @@ impl TempDir {
             .env("PLAINLY_DISABLE_KEYRING", "1")
             .env_remove("PLAINLY_DEEPSEEK_API_KEY")
             .env_remove("PLAINLY_OPENAI_API_KEY")
+            .env_remove("PLAINLY_STUB_API_KEY")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         command
-    }
-
-    pub fn plainly_with_stdin(&self, args: &[&str], stdin: &str) -> std::process::Output {
-        use std::io::Write;
-
-        let mut child = self
-            .command()
-            .args(args)
-            .spawn()
-            .expect("the plainly binary is built alongside its tests");
-
-        child
-            .stdin
-            .as_mut()
-            .expect("stdin is piped")
-            .write_all(stdin.as_bytes())
-            .expect("stdin accepts the test's input");
-        child.wait_with_output().expect("the process is waitable")
     }
 }
 

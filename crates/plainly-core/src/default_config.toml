@@ -46,12 +46,18 @@ panel_autohide_seconds = 20
 copy_auto_popup = false
 
 # One table per provider you configure. Anything you leave out falls back to
-# the shipped preset for that name.
+# the shipped preset for that name: deepseek, openai, llamacpp, ollama, lmstudio.
 #
 #   [providers.deepseek]
 #   endpoint = "https://api.deepseek.com/v1"
 #   model = "deepseek-flash"
 #   thinking = "off"      # "off" is the default, and roughly 10x faster
+#
+# The endpoint is a base URL: Plainly appends /chat/completions to it. A name
+# that is not one of the presets needs both keys here, since there is nothing to
+# fall back to. The local runtimes (llamacpp, ollama, lmstudio) also need a model:
+# only your machine knows what it has loaded, and naming one that is not there
+# would be worse than asking.
 
 [providers]
 
