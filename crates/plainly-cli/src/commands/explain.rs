@@ -19,10 +19,10 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use plainly_core::{
-    Artifact, ChatCompletions, Config, ConfigFile, Downgrade, Endpoint, ExplainRequest, Failure,
+    Artifact, ChatCompletions, ConfigFile, Downgrade, Endpoint, ExplainRequest, Failure,
     FailureKind, KeyRequirement, Level, Lookup, LookupKey, PASSWORD_HINT, Paths, Prompt,
-    ProviderSetup, Reading, Record, Resolution, SOURCE_LANGUAGE, Secrets, Stopped, Thinking,
-    ThinkingSwitch, env_var_name, explain, render, split,
+    ProviderSetup, Reading, Record, Resolution, Secrets, Stopped, Thinking, ThinkingSwitch,
+    env_var_name, explain, render, split,
 };
 
 use crate::cli::{ExplainArgs, OutputFormat};
@@ -118,7 +118,9 @@ pub fn run(args: ExplainArgs) -> Result<u8, CommandError> {
     let mut turns = Vec::with_capacity(total);
     let mut first_seen: HashMap<LookupKey, usize> = HashMap::new();
     for chunk in &chunks {
-        let request = request_for(chunk, &prompt, &config, &setup);
+        // Core builds the request, so this surface and the panel cannot disagree
+        // about the fields the Lookup Key is made of.
+        let request = explain::request(chunk, &config, &setup, &prompt);
         let key = Lookup::from(&request).key();
 
         if let Some(&earlier) = first_seen.get(&key) {
@@ -335,30 +337,6 @@ struct Turn {
     /// The index of the earlier turn with the same Lookup Key. `None` for the
     /// first occurrence, and for every chunk of a run that has no repeats.
     repeat_of: Option<usize>,
-}
-
-/// The request for one Passage. Everything but the text is the same for every
-/// chunk of a run, so the chunks are the same question at the same Level under
-/// the same prompt — which is what leaves the Passage as the only difference
-/// between their Lookup Keys.
-fn request_for(
-    passage: &str,
-    prompt: &Prompt,
-    config: &Config,
-    setup: &ProviderSetup,
-) -> ExplainRequest {
-    ExplainRequest {
-        passage: passage.to_string(),
-        level: config.app.level,
-        source_language: SOURCE_LANGUAGE.to_string(),
-        native_language: config.app.native_language.clone(),
-        provider: setup.name.clone(),
-        model: setup.model.clone(),
-        thinking: setup.thinking,
-        system_prompt: prompt.system_prompt(config.app.level, &config.app.native_language),
-        prompt_version: prompt.version(),
-        prompt_label: prompt.label().to_string(),
-    }
 }
 
 /// `request` or `requests`, so a count of one does not read as a bug.

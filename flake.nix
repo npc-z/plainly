@@ -66,7 +66,12 @@
         # inherits the download by accident.
         rustAnalyzer = fenix.packages.${system}.rust-analyzer;
 
+        # `glib` is here because `LD_LIBRARY_PATH` is built from this list alone,
+        # and it is not transitive: gtk3's own lib dir is on the path, but the
+        # `libglib-2.0` / `libgobject-2.0` / `libgio-2.0` its closure needs are
+        # not, so the panel would link and then fail to start inside the shell.
         libraries = with pkgs; [
+          glib
           gtk3
           gtk-layer-shell
           webkitgtk_4_1

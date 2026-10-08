@@ -16,7 +16,13 @@ license = "MIT"
 [workspace.dependencies]
 plainly-core = { path = "crates/plainly-core" }
 
+async-channel = "2"
 clap = { version = "4", features = ["derive"] }
+# GTK3 plus the wlroots layer-shell protocol: the panel is a layer surface, so
+# it is a GTK process rather than a Tauri one. `v0_6` is the protocol version
+# `keyboard_mode=NONE` needs, which is what keeps the panel from taking focus.
+gtk = "0.18"
+gtk-layer-shell = { version = "0.8", features = ["v0_6"] }
 keyring = "4"
 object = { version = "0.40", default-features = false, features = ["read", "std"] }
 # `bundled` compiles SQLite (FTS5 included) into the binary and links it
@@ -32,6 +38,11 @@ toml_edit = { version = "0.22", features = ["serde"] }
 # would buy nothing but weight. rustls with its own bundled roots also keeps the
 # CLI free of a runtime libssl, the way it is free of GTK.
 ureq = { version = "3.4", features = ["json"] }
+# The compositor's registry, for the panel's capability decision, and the
+# clipboard read a layer surface needs because GTK's own API wants focus:
+# `wl-clipboard-rs` speaks data-control, on the same wayland-client.
+wayland-client = "0.31"
+wl-clipboard-rs = "0.9"
 
 [profile.release]
 strip = true

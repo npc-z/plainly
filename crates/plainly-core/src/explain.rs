@@ -12,9 +12,11 @@ use std::time::Duration;
 
 use crate::Thinking;
 use crate::artifact::{ARTIFACT_VERSION, Artifact, Timestamp};
+use crate::config::Config;
 use crate::explanation::{ContractError, Explanation};
 use crate::presets::{Surface, ThinkingSwitch};
 use crate::probe::{Cache, Capability, Endpoint, Origin, Resolution, capability_for, reprobe};
+use crate::prompt::Prompt;
 use crate::provider::{ExplainRequest, Provider, ProviderError};
 use crate::retry::{self, Failure, FailureKind};
 use crate::setup::ProviderSetup;
@@ -75,6 +77,33 @@ pub fn explain(
         generated_at: now,
         explanation,
     })
+}
+
+/// The request one Passage is explained with, from the run's own choices.
+///
+/// Every surface that explains a Passage builds it here rather than in its own
+/// words: these are exactly the fields the Lookup Key is made of (spec §9), so a
+/// field one surface set differently would fork the cache instead of sharing it.
+/// A surface chooses the Passage, the configuration, the provider profile and
+/// the effective prompt, which is all this needs.
+pub fn request(
+    passage: &str,
+    config: &Config,
+    setup: &ProviderSetup,
+    prompt: &Prompt,
+) -> ExplainRequest {
+    ExplainRequest {
+        passage: passage.to_string(),
+        level: config.app.level,
+        source_language: SOURCE_LANGUAGE.to_string(),
+        native_language: config.app.native_language.clone(),
+        provider: setup.name.clone(),
+        model: setup.model.clone(),
+        thinking: setup.thinking,
+        system_prompt: prompt.system_prompt(config.app.level, &config.app.native_language),
+        prompt_version: prompt.version(),
+        prompt_label: prompt.label().to_string(),
+    }
 }
 
 /// A capability corrected because the endpoint rejected the shape in use.

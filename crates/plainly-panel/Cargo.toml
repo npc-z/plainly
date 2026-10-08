@@ -10,7 +10,22 @@ license.workspace = true
 name = "plainly-panel"
 path = "src/main.rs"
 
-# No plainly-core dependency yet: the binary is a placeholder until its own
-# ticket gives it something to do. The edge is added when the code needs it,
-# rather than sitting here unused.
 [dependencies]
+plainly-core.workspace = true
+
+# GTK3 and the layer-shell protocol (tickets/02, 12).
+gtk.workspace = true
+gtk-layer-shell.workspace = true
+
+# Reading the clipboard without a window: GTK's own API needs a focused surface,
+# which a `keyboard_mode=NONE` layer surface never has (spec §12, issues/07).
+# The fallback path — a focused window on a compositor without data-control —
+# uses GTK's clipboard instead.
+wl-clipboard-rs.workspace = true
+
+# The compositor's registry, for the capability decision (tickets/12).
+wayland-client.workspace = true
+
+# The worker thread reporting back to the main loop: `glib`'s own channel is
+# deprecated in favour of an async one, and this is the one it points at.
+async-channel.workspace = true
