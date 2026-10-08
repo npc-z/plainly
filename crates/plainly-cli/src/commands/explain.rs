@@ -17,12 +17,12 @@ use std::time::Duration;
 
 use plainly_core::{
     Artifact, ChatCompletions, ConfigFile, Downgrade, Endpoint, ExplainRequest, Failure,
-    FailureKind, KeyRequirement, Level, Paths, Prompt, ProviderSetup, Resolution, SOURCE_LANGUAGE,
-    Secrets, Stopped, Thinking, ThinkingSwitch, env_var_name, explain, render,
+    FailureKind, KeyRequirement, Level, Lookup, Paths, Prompt, ProviderSetup, Resolution,
+    SOURCE_LANGUAGE, Secrets, Stopped, Thinking, ThinkingSwitch, env_var_name, explain, render,
 };
 
 use crate::cli::{ExplainArgs, OutputFormat};
-use crate::commands::{CommandError, cache, now, resolve_key, tier};
+use crate::commands::{CommandError, cache, history_store, now, resolve_key, short_hash, tier};
 use crate::exit;
 
 /// What to say when there is nothing to explain. One wording, used both when a
@@ -62,6 +62,11 @@ pub fn run(args: ExplainArgs) -> Result<u8, CommandError> {
         )));
     }
 
+    // The history store is opened before stdin is read for the same reason the
+    // key is checked here: a store that cannot be opened is local state to fix,
+    // and saying so must not need a pipe to end first.
+    let mut store = history_store(&paths)?;
+
     let passage = match from_file {
         Some(passage) => passage,
         None => read_passage(&source)?,
@@ -90,6 +95,38 @@ pub fn run(args: ExplainArgs) -> Result<u8, CommandError> {
         prompt_label: prompt.label().to_string(),
     };
 
+    let now = now()?;
+    let lookup = Lookup::from(&request).key();
+
+    // The history store doubles as the cache (spec §9): the same question, from
+    // the same provider profile under the same prompt, is answered from the row
+    // that already holds it. `--regenerate` is the one way past it.
+    if !args.regenerate {
+        if let Some(record) = store.recall(&lookup, now)? {
+            // A hit says what it is reusing, not just that it reused something:
+            // which provider, model and Level the stored Explanation came from is
+            // the same provenance a generated run prints, and the user has no
+            // other way to tell whose answer this was. The contract tier of the
+            // run that produced it is deliberately not claimed — a Record does
+            // not carry one (spec §9), and guessing the tier of this run would
+            // describe a request that was never made.
+            let artifact = &record.artifact;
+            eprintln!(
+                "plainly: reusing the stored Explanation — {}/{} (thinking {}), {}, {}@{}; \
+                 generated {}; nothing was sent",
+                artifact.provider,
+                artifact.model,
+                artifact.thinking.as_str(),
+                artifact.level,
+                artifact.prompt_label,
+                short_hash(&artifact.prompt_version),
+                artifact.generated_at.to_rfc3339(),
+            );
+            print(artifact, args.format.unwrap_or_default())?;
+            return Ok(exit::SUCCESS);
+        }
+    }
+
     eprintln!(
         "plainly: explaining with {} ({}, thinking {}){}",
         setup.label,
@@ -117,10 +154,16 @@ pub fn run(args: ExplainArgs) -> Result<u8, CommandError> {
         ))
     };
 
-    match explain::run(&setup, &request, &transport, &cache(&paths), now()?, &pause) {
+    match explain::run(&setup, &request, &transport, &cache(&paths), now, &pause) {
         Ok(run) => {
             report(&setup, &run.resolution, None, run.downgrade.as_ref());
-            print(&run.artifact, args.format.unwrap_or_default())?;
+            // Stored before it is printed, and the printed Artifact is the
+            // *stored* one: a regeneration keeps the original `created_at`, so
+            // printing the fresh one would contradict what `history show` says
+            // about the same record. Storing first is also what stops a run whose
+            // answer never reached the store from being paid for again.
+            let record = store.remember(&lookup, &run.artifact)?;
+            print(&record.artifact, args.format.unwrap_or_default())?;
             Ok(exit::SUCCESS)
         }
         Err(failure) => {

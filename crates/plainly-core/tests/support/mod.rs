@@ -103,7 +103,13 @@ pub fn request(passage: &str) -> ExplainRequest {
 
 /// An Artifact whose metadata is unremarkable, for tests about something else.
 pub fn artifact(passage: &str, explanation: Explanation) -> Artifact {
-    let now = Timestamp::from_unix_seconds(1_760_000_000).expect("the fixture instant is in range");
+    artifact_at(passage, explanation, 1_760_000_000)
+}
+
+/// The same Artifact, as if it were generated at `seconds` since the epoch. The
+/// history store orders by time, so a test about that needs an order in time.
+pub fn artifact_at(passage: &str, explanation: Explanation, seconds: i64) -> Artifact {
+    let now = Timestamp::from_unix_seconds(seconds).expect("the fixture instant is in range");
     Artifact {
         passage: passage.to_string(),
         level: Level::B2,

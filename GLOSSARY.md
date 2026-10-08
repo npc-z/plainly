@@ -22,8 +22,12 @@ _Avoid_: entry, log, history item
 The serialized form of an Explanation — bytes on the wire or in the store, not a domain concept. Use it only when the encoding itself is the subject.
 _Avoid_: (do not use as a synonym for Explanation)
 
+**Lookup**:
+One question, as the history store identifies it: the normalized Passage, the Level, the source and native languages, the prompt version, and the provider profile. Two Lookups that agree are the same question.
+_Avoid_: request, query
+
 **Lookup Key**:
-The identity of an Explanation: everything that would make the same request — the Passage, the Level, the source and native languages, the prompt version, and the provider profile. Two lookups sharing a key are the same question, so the stored Explanation answers both instead of being generated again.
+The identity a Lookup is stored and found under: the SHA-256 of its parts. Two lookups sharing a key are the same question, so the stored Explanation answers both instead of being generated again.
 _Avoid_: cache key, hash, dedupe key
 
 **Provider Profile**:

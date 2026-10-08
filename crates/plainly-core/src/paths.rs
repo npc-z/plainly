@@ -19,6 +19,9 @@ pub const IDENTIFIER: &str = "dev.plainly.app";
 /// The configuration file's name inside the config directory.
 pub const CONFIG_FILE: &str = "config.toml";
 
+/// The history store's file name inside the data directory.
+pub const HISTORY_FILE: &str = "history.db";
+
 /// The config, data and cache directories Plainly uses.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Paths {
@@ -183,6 +186,11 @@ impl Paths {
     /// The configuration file itself.
     pub fn config_file(&self) -> PathBuf {
         self.config_dir.join(CONFIG_FILE)
+    }
+
+    /// The history store itself — durable records, unlike the cache.
+    pub fn history_file(&self) -> PathBuf {
+        self.data_dir.join(HISTORY_FILE)
     }
 }
 

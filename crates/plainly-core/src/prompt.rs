@@ -30,9 +30,8 @@
 
 use std::collections::BTreeMap;
 
-use sha2::{Digest, Sha256};
-
 use crate::config::{Level, Prompts};
+use crate::hashing::{push_field, sha256_hex};
 use crate::retry::FailureKind;
 
 /// The name a Record carries so a person can tell which prompt produced it.
@@ -177,7 +176,7 @@ impl Prompt {
     /// gives: a collision means silently reusing an answer to a different
     /// question.
     pub fn version(&self) -> String {
-        hex(&Sha256::digest(self.canonical().as_bytes()))
+        sha256_hex(&self.canonical())
     }
 
     /// The factory prompt to retry with when this prompt is what failed the
@@ -206,9 +205,10 @@ impl Prompt {
 
     /// The bytes the version covers.
     ///
-    /// Every field is length-prefixed, so an appendix containing whatever it
-    /// likes cannot shift one field into another: two different bodies of prompt
-    /// data always produce different bytes, and therefore different versions.
+    /// Every field is length-prefixed ([`push_field`]), so an appendix containing
+    /// whatever it likes cannot shift one field into another: two different
+    /// bodies of prompt data always produce different bytes, and therefore
+    /// different versions.
     fn canonical(&self) -> String {
         let mut out = String::new();
         push_field(&mut out, FACTORY_PROMPT);
@@ -256,15 +256,4 @@ fn fill(level: Level, meaning: &str, native_language: &str) -> String {
 
     out.push_str(rest);
     out
-}
-
-/// Append a field with its byte length in front.
-fn push_field(out: &mut String, field: &str) {
-    out.push_str(&field.len().to_string());
-    out.push(':');
-    out.push_str(field);
-}
-
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }

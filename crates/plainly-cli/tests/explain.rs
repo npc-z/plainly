@@ -421,10 +421,16 @@ fn a_rejected_request_shape_is_probed_again_and_asked_once_more() {
     assert_eq!(code(&first), SUCCESS, "{}", stderr(&first));
 
     // The endpoint changes its mind, which is the case the cached conclusion
-    // cannot survive and the probe has to hear about.
+    // cannot survive and the probe has to hear about. `--regenerate` is the way
+    // past the history-as-cache: without it the second run would be answered
+    // from the first one's row and never reach the endpoint at all.
     server.set_capability(support::provider::StubCapability::without_schema());
 
-    let output = dir.plainly_with(&[], PASSAGE, &[("PLAINLY_STUB_API_KEY", "test-key")]);
+    let output = dir.plainly_with(
+        &["--regenerate"],
+        PASSAGE,
+        &[("PLAINLY_STUB_API_KEY", "test-key")],
+    );
 
     assert_eq!(code(&output), SUCCESS, "{}", stderr(&output));
     assert!(stdout(&output).contains("### Original"));
@@ -700,7 +706,13 @@ fn a_failed_run_reports_the_tier_its_request_carried() {
         ..support::provider::StubCapability::default()
     });
 
-    let output = dir.plainly_with(&[], PASSAGE, &[("PLAINLY_STUB_API_KEY", "test-key")]);
+    // `--regenerate`, because the first run stored an answer for this exact
+    // question and the failure being asserted is about a request, not a hit.
+    let output = dir.plainly_with(
+        &["--regenerate"],
+        PASSAGE,
+        &[("PLAINLY_STUB_API_KEY", "test-key")],
+    );
 
     assert_eq!(code(&output), FAILURE);
     assert_eq!(stdout(&output), "");

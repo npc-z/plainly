@@ -230,10 +230,18 @@ fn a_run_probes_once_and_the_next_run_reads_the_conclusion() {
     let server = FakeProvider::start([Reply::content(ANSWER), Reply::content(ANSWER)]);
     dir.write_config(&custom_provider(&server.base_url()));
 
-    for _ in 0..2 {
-        let output = dir.plainly_with(&[], PASSAGE, &[("PLAINLY_STUB_API_KEY", "test-key")]);
-        assert_eq!(code(&output), SUCCESS, "{}", stderr(&output));
-    }
+    let first = dir.plainly_with(&[], PASSAGE, &[("PLAINLY_STUB_API_KEY", "test-key")]);
+    assert_eq!(code(&first), SUCCESS, "{}", stderr(&first));
+
+    // `--regenerate`, because this is about the *capability* cache: without it
+    // the second run would be answered from the history and would not reach the
+    // endpoint at all, which proves nothing about probing.
+    let second = dir.plainly_with(
+        &["--regenerate"],
+        PASSAGE,
+        &[("PLAINLY_STUB_API_KEY", "test-key")],
+    );
+    assert_eq!(code(&second), SUCCESS, "{}", stderr(&second));
 
     assert_eq!(server.chat_requests().len(), 2, "one request per run");
     assert_eq!(

@@ -35,6 +35,11 @@ pub struct Cli {
 pub enum Command {
     /// Explain one Passage, from a file or from stdin (the default)
     Explain(ExplainArgs),
+    /// The stored Explanations: everything Plainly has already explained
+    History {
+        #[command(subcommand)]
+        command: Option<HistoryCommand>,
+    },
     /// Read and write the configuration file
     Config {
         #[command(subcommand)]
@@ -61,9 +66,17 @@ pub struct ExplainArgs {
     /// This is the command line's form of the panel's "retry with the factory
     /// prompt": when a contract failure names the prompt, this is the one-step
     /// way to find out whether the user's own rules are what the model cannot
-    /// follow. No Explanation is stored, and the configuration is left alone.
+    /// follow. The Explanation is still stored — under the factory prompt's
+    /// version, which is what produced it — and the configuration is left alone.
     #[arg(long)]
     pub factory_prompt: bool,
+    /// Ask the provider again even though this exact question is already stored
+    ///
+    /// The stored Explanation is overwritten in place, and keeps the moment it
+    /// was created and the moment it was last seen: a regeneration is the same
+    /// record with a new answer, not a new record.
+    #[arg(long)]
+    pub regenerate: bool,
 }
 
 impl ExplainArgs {
@@ -76,6 +89,7 @@ impl ExplainArgs {
             file: self.file.or(root.file),
             format: self.format.or(root.format),
             factory_prompt: self.factory_prompt || root.factory_prompt,
+            regenerate: self.regenerate || root.regenerate,
         }
     }
 }
@@ -89,6 +103,19 @@ pub enum OutputFormat {
     Markdown,
     /// The Artifact as one JSON document: the Explanation and its metadata
     Json,
+}
+
+/// The `history` subcommands. A bare `plainly history` lists, because that is
+/// what looking at the history almost always means.
+#[derive(Debug, Subcommand)]
+pub enum HistoryCommand {
+    /// List the stored Explanations, most recently seen first (the default)
+    List,
+    /// Show one stored Explanation as the five sections `explain` prints
+    Show {
+        /// The id `plainly history list` prints
+        id: i64,
+    },
 }
 
 #[derive(Debug, Subcommand)]

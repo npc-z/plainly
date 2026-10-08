@@ -2,6 +2,7 @@
 
 mod config;
 mod explain;
+mod history;
 mod providers;
 
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -9,7 +10,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use clap::Parser;
 
 use plainly_core::{
-    Cache, KeyRequirement, Paths, ProviderSetup, SchemaSupport, Secrets, Timestamp,
+    Cache, KeyRequirement, Paths, ProviderSetup, SchemaSupport, Secrets, Store, Timestamp,
 };
 
 use crate::cli::{Cli, Command};
@@ -62,6 +63,16 @@ impl From<plainly_core::ConfigError> for CommandError {
     }
 }
 
+/// The history store failing is local state rather than anything the provider
+/// did, and the five documented codes have no slot for "the file on disk will not
+/// work": it lands on the failure code, with the store's own message — which
+/// names the path wherever the path is known.
+impl From<plainly_core::StoreError> for CommandError {
+    fn from(error: plainly_core::StoreError) -> Self {
+        CommandError::Failed(error.to_string())
+    }
+}
+
 /// Run the command line and return the process exit code.
 pub fn dispatch() -> u8 {
     let cli = Cli::parse();
@@ -73,6 +84,7 @@ pub fn dispatch() -> u8 {
         // `explain`'s arguments are accepted on both sides of the verb; the
         // subcommand's word wins, and the root's fills anything it left unsaid.
         Some(Command::Explain(args)) => explain::run(args.with_root(cli.explain)),
+        Some(Command::History { command }) => history::run(command),
         Some(Command::Config { command }) => config::run(command),
         Some(Command::Providers { command }) => providers::run(command),
     };
@@ -98,10 +110,33 @@ pub(crate) fn tier(schema: SchemaSupport) -> &'static str {
     }
 }
 
+/// How much of a prompt hash fits in a one-line note. The hash is what tells two
+/// prompts with the same label apart — an appendix changes only the hash — and
+/// eight hex characters are more than a person needs to see that two differ.
+pub(crate) const SHORT_HASH: usize = 8;
+
+/// The first [`SHORT_HASH`] characters of a prompt hash, taken by character
+/// rather than by byte so a hand-edited file cannot split one.
+///
+/// Shared by the two places that abbreviate a version for a one-line report, so
+/// they abbreviate it the same way.
+pub(crate) fn short_hash(hash: &str) -> String {
+    hash.chars().take(SHORT_HASH).collect()
+}
+
 /// Where the capability conclusions live: under `appCacheDir`, beside — never
 /// inside — the user's configuration (spec §8).
 pub(crate) fn cache(paths: &Paths) -> Cache {
     Cache::new(paths.cache_dir().join("providers"))
+}
+
+/// The history store: under `appDataDir`, where durable records live (spec §8).
+///
+/// Opening it creates the file and its directory when they are not there yet, so
+/// a store that cannot be opened is local state the user has to fix rather than a
+/// provider problem.
+pub(crate) fn history_store(paths: &Paths) -> Result<Store, CommandError> {
+    Ok(Store::open(paths.history_file())?)
 }
 
 /// The current instant, for stamping an Artifact or a probe conclusion.
