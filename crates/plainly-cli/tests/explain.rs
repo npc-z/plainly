@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 
 use support::TempDir;
 use support::provider::{FakeProvider, Reply};
-use support::{code, stderr, stdout};
+use support::{code, custom_provider, stderr, stdout};
 
 const SUCCESS: i32 = 0;
 const FAILURE: i32 = 1;
@@ -29,18 +29,6 @@ const ANSWER: &str = r#"{
   "grammar": null,
   "translation": "委员会对此事进行了彻底调查，但那位经理已经躲了起来。"
 }"#;
-
-/// A configuration for a provider Plainly ships no preset for: the endpoint and
-/// model are the user's, which is the custom-provider path.
-fn custom_provider(endpoint: &str) -> String {
-    format!(
-        "[app]\n\
-         provider = \"stub\"\n\n\
-         [providers.stub]\n\
-         endpoint = \"{endpoint}\"\n\
-         model = \"stub-model\"\n"
-    )
-}
 
 /// A configuration that keeps the shipped DeepSeek preset but points it at the
 /// stub, so the preset's own choices stay in play.
@@ -849,14 +837,14 @@ fn a_prompt_that_fails_the_contract_offers_the_factory_one() {
     assert_eq!(code(&retry), SUCCESS, "{}", stderr(&retry));
     let document: Value =
         serde_json::from_str(&stdout(&retry)).expect("stdout is one JSON document");
-    assert_eq!(document["prompt_version"], plainly_core::Prompt::factory().version());
+    assert_eq!(
+        document["prompt_version"],
+        plainly_core::Prompt::factory().version()
+    );
     assert_eq!(document["prompt_label"], "v7-descriptors");
 
     let both_runs = server.chat_requests();
-    let retried = both_runs
-        .last()
-        .expect("the retry was sent")
-        .body["messages"][0]["content"]
+    let retried = both_runs.last().expect("the retry was sent").body["messages"][0]["content"]
         .as_str()
         .expect("the system message is text");
     assert!(

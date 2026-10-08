@@ -10,7 +10,7 @@ mod support;
 
 use support::TempDir;
 use support::provider::{FakeProvider, Reply};
-use support::{code, stderr, stdout};
+use support::{code, custom_provider, stderr, stdout};
 
 const SUCCESS: i32 = 0;
 const USAGE: i32 = 2;
@@ -34,16 +34,6 @@ const REGENERATED: &str = r#"{
   "grammar": "The `but` clause carries the contrast.",
   "translation": "对同一句话的第二次尝试。"
 }"#;
-
-fn custom_provider(endpoint: &str) -> String {
-    format!(
-        "[app]\n\
-         provider = \"stub\"\n\n\
-         [providers.stub]\n\
-         endpoint = \"{endpoint}\"\n\
-         model = \"stub-model\"\n"
-    )
-}
 
 /// The id the listing prints for its one row.
 fn only_id(listing: &str) -> i64 {
@@ -191,7 +181,11 @@ fn a_new_level_is_a_new_record() {
     let at_a2 = dir.plainly_with(&[], PASSAGE, &[("PLAINLY_STUB_API_KEY", "test-key")]);
     assert_eq!(code(&at_a2), SUCCESS, "{}", stderr(&at_a2));
 
-    assert_eq!(server.chat_requests().len(), 2, "a new Level is a new query");
+    assert_eq!(
+        server.chat_requests().len(),
+        2,
+        "a new Level is a new query"
+    );
 
     let listing = dir.plainly_with(&["history"], "", &[]);
     assert_eq!(
@@ -256,7 +250,10 @@ fn show_prints_the_five_sections_and_the_provenance() {
         "### Key Help",
         "### Translation",
     ] {
-        assert!(product.contains(heading), "missing {heading} in:\n{product}");
+        assert!(
+            product.contains(heading),
+            "missing {heading} in:\n{product}"
+        );
     }
     // Provenance is human information, so it stays on stderr even here: stdout
     // is the product, exactly as it is for `explain`. The show line carries the
@@ -382,11 +379,7 @@ fn a_search_for_nothing_is_a_usage_error() {
         let search = dir.plainly_with(&["history", "search", nothing], "", &[]);
         assert_eq!(code(&search), USAGE);
         assert_eq!(stdout(&search), "");
-        assert!(
-            stderr(&search).contains("look for"),
-            "{}",
-            stderr(&search)
-        );
+        assert!(stderr(&search).contains("look for"), "{}", stderr(&search));
     }
 }
 
@@ -434,10 +427,18 @@ fn a_tag_is_added_shown_filtered_and_taken_off() {
     // The same tag narrows a search rather than replacing it.
     let searched = dir.plainly_with(&["history", "search", "cards", "--tag", "reading"], "", &[]);
     assert_eq!(only_id(&stdout(&searched)), newest);
-    let elsewhere = dir.plainly_with(&["history", "search", "committee", "--tag", "reading"], "", &[]);
+    let elsewhere = dir.plainly_with(
+        &["history", "search", "committee", "--tag", "reading"],
+        "",
+        &[],
+    );
     assert_eq!(stdout(&elsewhere), "");
 
-    let untagged = dir.plainly_with(&["history", "untag", &newest.to_string(), "reading"], "", &[]);
+    let untagged = dir.plainly_with(
+        &["history", "untag", &newest.to_string(), "reading"],
+        "",
+        &[],
+    );
     assert_eq!(code(&untagged), SUCCESS, "{}", stderr(&untagged));
     assert_eq!(stdout(&untagged), "", "and neither is taking one off");
     assert_eq!(
@@ -445,7 +446,9 @@ fn a_tag_is_added_shown_filtered_and_taken_off() {
         ""
     );
     assert_eq!(
-        stdout(&dir.plainly_with(&["history"], "", &[])).lines().count(),
+        stdout(&dir.plainly_with(&["history"], "", &[]))
+            .lines()
+            .count(),
         2,
         "taking a tag off does not take the record with it"
     );
@@ -455,7 +458,10 @@ fn a_tag_is_added_shown_filtered_and_taken_off() {
 fn tagging_a_record_that_is_not_there_is_a_usage_error() {
     let dir = TempDir::new("history-tags-missing");
 
-    for command in [["history", "tag", "7", "work"], ["history", "untag", "7", "work"]] {
+    for command in [
+        ["history", "tag", "7", "work"],
+        ["history", "untag", "7", "work"],
+    ] {
         let run = dir.plainly_with(&command, "", &[]);
         assert_eq!(code(&run), USAGE, "{}", stderr(&run));
         assert!(stderr(&run).contains('7'), "{}", stderr(&run));
@@ -512,7 +518,9 @@ fn clearing_takes_a_second_act() {
         stderr(&refused)
     );
     assert_eq!(
-        stdout(&dir.plainly_with(&["history"], "", &[])).lines().count(),
+        stdout(&dir.plainly_with(&["history"], "", &[]))
+            .lines()
+            .count(),
         1,
         "a refusal clears nothing"
     );
@@ -585,7 +593,10 @@ fn export_writes_the_product_to_stdout_and_nothing_else() {
         "### Key Help",
         "### Translation",
     ] {
-        assert!(product.contains(heading), "missing {heading} in:\n{product}");
+        assert!(
+            product.contains(heading),
+            "missing {heading} in:\n{product}"
+        );
     }
     assert_eq!(stderr(&markdown), "", "an export says nothing else");
 
@@ -620,7 +631,10 @@ fn export_writes_the_product_to_stdout_and_nothing_else() {
         table.contains("go to ground → hide so that nobody can find you"),
         "the Glosses are in one cell:\n{table}"
     );
-    assert!(table.contains("委员会"), "and so is the Translation:\n{table}");
+    assert!(
+        table.contains("委员会"),
+        "and so is the Translation:\n{table}"
+    );
     assert_eq!(stderr(&raw), "");
 }
 
@@ -652,10 +666,7 @@ fn export_of_an_empty_history_is_a_product_with_no_records() {
 fn an_export_without_a_known_format_is_a_usage_error() {
     let dir = TempDir::new("history-export-usage");
 
-    for args in [
-        vec!["history", "export"],
-        vec!["history", "export", "pdf"],
-    ] {
+    for args in [vec!["history", "export"], vec!["history", "export", "pdf"]] {
         let run = dir.plainly_with(&args, "", &[]);
         assert_eq!(code(&run), USAGE, "{}", stderr(&run));
         assert_eq!(stdout(&run), "");

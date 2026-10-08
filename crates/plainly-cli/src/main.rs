@@ -5,6 +5,7 @@
 //! the way it is.
 
 mod cli;
+mod clipboard;
 mod commands;
 mod exit;
 

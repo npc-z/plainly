@@ -112,6 +112,36 @@ impl TempDir {
             .stderr(Stdio::piped());
         command
     }
+
+    /// A stub `wl-paste` on `PATH`, for the `--clipboard` runs.
+    ///
+    /// The real command needs a Wayland session that publishes data-control,
+    /// which a test runner does not have; `--clipboard` reading what a
+    /// `wl-paste` prints is the part under test. Returns the `PATH` value to
+    /// pass to [`TempDir::plainly_with`], with the stub in front of the shell's
+    /// own `PATH`.
+    pub fn wl_paste_stub(&self, script: &str) -> String {
+        use std::os::unix::fs::PermissionsExt;
+
+        let bin = self.join("bin");
+        std::fs::create_dir_all(&bin).expect("the stub directory is creatable");
+        let path = bin.join("wl-paste");
+        std::fs::write(&path, format!("#!/bin/sh\n{script}\n")).expect("the stub is writable");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
+            .expect("the stub is executable");
+
+        match std::env::var("PATH") {
+            Ok(path) if !path.is_empty() => format!("{}:{path}", bin.display()),
+            _ => bin.display().to_string(),
+        }
+    }
+
+    /// A `PATH` with nothing on it that could answer as `wl-paste`.
+    pub fn empty_path(&self) -> String {
+        let bin = self.join("no-wl-clipboard");
+        std::fs::create_dir_all(&bin).expect("the directory is creatable");
+        bin.display().to_string()
+    }
 }
 
 impl Drop for TempDir {
@@ -126,6 +156,18 @@ pub fn code(output: &std::process::Output) -> i32 {
         .status
         .code()
         .unwrap_or_else(|| panic!("killed by a signal: {output:?}"))
+}
+
+/// A configuration for a provider Plainly ships no preset for: the endpoint and
+/// model are the user's, which is the custom-provider path.
+pub fn custom_provider(endpoint: &str) -> String {
+    format!(
+        "[app]\n\
+         provider = \"stub\"\n\n\
+         [providers.stub]\n\
+         endpoint = \"{endpoint}\"\n\
+         model = \"stub-model\"\n"
+    )
 }
 
 pub fn stdout(output: &std::process::Output) -> String {

@@ -9,9 +9,8 @@ pub const FAILURE: u8 = 1;
 pub const USAGE: u8 = 2;
 /// Plainly is not configured: no key where one is needed, or no usable provider.
 pub const NOT_CONFIGURED: u8 = 3;
-/// Plainly refused the input on purpose (sensitive clipboard content).
-// Its first use is the clipboard path in ticket 12.
-#[allow(dead_code)]
+/// Plainly refused the input on purpose: the clipboard is marked sensitive, or
+/// its marker could not be read.
 pub const REFUSED: u8 = 4;
 
 #[cfg(test)]

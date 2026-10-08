@@ -20,9 +20,9 @@ use std::time::Duration;
 
 use plainly_core::{
     Artifact, ChatCompletions, Config, ConfigFile, Downgrade, Endpoint, ExplainRequest, Failure,
-    FailureKind, KeyRequirement, Level, Lookup, LookupKey, Paths, Prompt, ProviderSetup, Record,
-    Resolution, SOURCE_LANGUAGE, Secrets, Stopped, Thinking, ThinkingSwitch, env_var_name, explain,
-    render, split,
+    FailureKind, KeyRequirement, Level, Lookup, LookupKey, PASSWORD_HINT, Paths, Prompt,
+    ProviderSetup, Reading, Record, Resolution, SOURCE_LANGUAGE, Secrets, Stopped, Thinking,
+    ThinkingSwitch, env_var_name, explain, render, split,
 };
 
 use crate::cli::{ExplainArgs, OutputFormat};
@@ -38,14 +38,22 @@ pub fn run(args: ExplainArgs) -> Result<u8, CommandError> {
     // The invocation is settled before anything is read: a bare `plainly` at a
     // terminal has no Passage, and answering that beats waiting for input that
     // is not coming.
-    let source = source(args.file.as_deref(), std::io::stdin().is_terminal())?;
+    let source = source(
+        args.file.as_deref(),
+        args.clipboard,
+        std::io::stdin().is_terminal(),
+    )?;
 
-    // A named file is read right away, because a path that is not there is a
-    // usage error and configuration has nothing to say about it. Stdin is
-    // deliberately left for later: a missing key should be reported without
-    // draining a pipe that may be a large file, or one that never ends.
-    let from_file = match source {
-        Source::File(_) => Some(read_passage(&source)?),
+    // Everything that can be read without a pipe is read now. A named file
+    // because a path that is not there is a usage error, and the clipboard
+    // because what it holds decides whether this run happens at all: a refusal
+    // has to leave no trace, so it is taken before configuration, the history
+    // store or the network are touched (spec §11). Stdin is deliberately left
+    // for later: a missing key should be reported without draining a pipe that
+    // may be a large file, or one that never ends.
+    let from_source = match &source {
+        Source::File(path) => Some(read_file(path)?),
+        Source::Clipboard => Some(read_clipboard()?),
         Source::Stdin => None,
     };
 
@@ -71,9 +79,9 @@ pub fn run(args: ExplainArgs) -> Result<u8, CommandError> {
     // and saying so must not need a pipe to end first.
     let mut store = history_store(&paths)?;
 
-    let passage = match from_file {
+    let passage = match from_source {
         Some(passage) => passage,
-        None => read_passage(&source)?,
+        None => read_stdin()?,
     };
 
     // The effective prompt: the factory text plus the user's appendix and
@@ -564,24 +572,67 @@ fn describe(failure: &Failure) -> String {
     )
 }
 
-/// The Passage, from the named file or from stdin.
-fn read_passage(source: &Source) -> Result<String, CommandError> {
-    let passage = match source {
-        Source::File(path) => std::fs::read_to_string(path).map_err(|error| {
-            CommandError::Usage(format!("cannot read {}: {error}", path.display()))
-        })?,
-        Source::Stdin => {
-            let mut passage = String::new();
-            std::io::stdin()
-                .lock()
-                .read_to_string(&mut passage)
-                .map_err(|error| CommandError::Failed(format!("cannot read stdin: {error}")))?;
-            passage
-        }
-    };
+/// A Passage from the named file, or the usage error for a path that cannot be
+/// read: configuration has nothing to say about a path that is not there.
+fn read_file(path: &Path) -> Result<String, CommandError> {
+    let passage = std::fs::read_to_string(path)
+        .map_err(|error| CommandError::Usage(format!("cannot read {}: {error}", path.display())))?;
 
+    passage_or_usage(passage, NO_PASSAGE)
+}
+
+/// A Passage from stdin.
+fn read_stdin() -> Result<String, CommandError> {
+    let mut passage = String::new();
+    std::io::stdin()
+        .lock()
+        .read_to_string(&mut passage)
+        .map_err(|error| CommandError::Failed(format!("cannot read stdin: {error}")))?;
+
+    passage_or_usage(passage, NO_PASSAGE)
+}
+
+/// The clipboard's Passage, or the refusal its owner asked for.
+///
+/// The judgement is core's (spec §11); this only words it and turns it into an
+/// exit code. Nothing has been configured, opened or sent at this point, so a
+/// refusal has nothing to undo.
+fn read_clipboard() -> Result<String, CommandError> {
+    let clipboard = crate::clipboard::read().map_err(|error| match error {
+        crate::clipboard::Error::Empty | crate::clipboard::Error::NotText => {
+            CommandError::Usage(format!("there is no Passage: {error}"))
+        }
+        error => CommandError::Failed(error.to_string()),
+    })?;
+
+    match clipboard.reading() {
+        // The refusal says both halves of what happened: why, and that the
+        // content went nowhere. There is deliberately no "explain it anyway".
+        Reading::Sensitive => Err(CommandError::Refused(format!(
+            "the clipboard is marked sensitive ({PASSWORD_HINT} = secret): \
+             nothing was sent and nothing was stored"
+        ))),
+        // The marker was published and its value could not be read, so the run
+        // cannot tell whether it is secret. It refused on purpose, which is what
+        // code 4 is for, and the message names the half that is missing rather
+        // than letting the content look public.
+        Reading::Unread => Err(CommandError::Refused(format!(
+            "the clipboard publishes {PASSWORD_HINT} but its value could not be read: \
+             nothing was sent and nothing was stored"
+        ))),
+        Reading::Passage(passage) => {
+            passage_or_usage(passage, "there is no Passage: the clipboard is empty")
+        }
+    }
+}
+
+/// Whitespace is not a Passage, whoever handed it over.
+///
+/// The wording is the caller's, because an empty pipe and an empty clipboard are
+/// different mistakes to the person who made one; the rule is one rule.
+fn passage_or_usage(passage: String, empty: &str) -> Result<String, CommandError> {
     if passage.trim().is_empty() {
-        return Err(CommandError::Usage(NO_PASSAGE.to_string()));
+        return Err(CommandError::Usage(empty.to_string()));
     }
     Ok(passage)
 }
@@ -591,18 +642,28 @@ fn read_passage(source: &Source) -> Result<String, CommandError> {
 enum Source {
     File(PathBuf),
     Stdin,
+    Clipboard,
 }
 
 /// Decide the source before reading anything.
 ///
 /// The terminal case is the one that matters: with no file and a terminal on
 /// stdin, reading would wait for a pipe that is never coming, which the person
-/// at the keyboard experiences as a hang rather than as a mistake.
-fn source(file: Option<&Path>, stdin_is_terminal: bool) -> Result<Source, CommandError> {
-    match file {
-        Some(path) => Ok(Source::File(path.to_path_buf())),
-        None if stdin_is_terminal => Err(CommandError::Usage(NO_PASSAGE.to_string())),
-        None => Ok(Source::Stdin),
+/// at the keyboard experiences as a hang rather than as a mistake. Naming two
+/// sources at once is a mistake in the asking: neither silently wins.
+fn source(
+    file: Option<&Path>,
+    clipboard: bool,
+    stdin_is_terminal: bool,
+) -> Result<Source, CommandError> {
+    match (file, clipboard) {
+        (Some(_), true) => Err(CommandError::Usage(
+            "name a file or --clipboard, not both".to_string(),
+        )),
+        (Some(path), false) => Ok(Source::File(path.to_path_buf())),
+        (None, true) => Ok(Source::Clipboard),
+        (None, false) if stdin_is_terminal => Err(CommandError::Usage(NO_PASSAGE.to_string())),
+        (None, false) => Ok(Source::Stdin),
     }
 }
 
@@ -615,7 +676,7 @@ mod tests {
     /// coming. This is the decision, taken before any read.
     #[test]
     fn a_terminal_with_no_file_is_a_usage_error_rather_than_a_wait() {
-        let error = source(None, true).unwrap_err();
+        let error = source(None, false, true).unwrap_err();
 
         assert!(matches!(error, CommandError::Usage(_)), "got {error:?}");
         assert!(error.to_string().contains("pipe one in"), "{error}");
@@ -623,7 +684,7 @@ mod tests {
 
     #[test]
     fn a_pipe_is_read_when_no_file_is_named() {
-        assert_eq!(source(None, false).unwrap(), Source::Stdin);
+        assert_eq!(source(None, false, false).unwrap(), Source::Stdin);
     }
 
     /// A named file is read even when the command happens to be run from a
@@ -631,9 +692,30 @@ mod tests {
     #[test]
     fn a_named_file_wins_over_the_terminal() {
         assert_eq!(
-            source(Some(Path::new("passage.md")), true).unwrap(),
+            source(Some(Path::new("passage.md")), false, true).unwrap(),
             Source::File(PathBuf::from("passage.md"))
         );
+    }
+
+    /// `--clipboard` is a source of its own, and it does not need a pipe or a
+    /// terminal to decide anything.
+    #[test]
+    fn the_clipboard_is_a_source_of_its_own() {
+        assert_eq!(
+            source(None, true, true).unwrap(),
+            Source::Clipboard,
+            "a terminal does not matter when the clipboard was named"
+        );
+    }
+
+    /// Two sources at once is a mistake in the asking rather than a rule about
+    /// which one wins.
+    #[test]
+    fn a_file_and_the_clipboard_at_once_is_a_usage_error() {
+        let error = source(Some(Path::new("passage.md")), true, false).unwrap_err();
+
+        assert!(matches!(error, CommandError::Usage(_)), "got {error:?}");
+        assert!(error.to_string().contains("not both"), "{error}");
     }
 
     /// A keyring that is present but cannot answer: a headless box with a

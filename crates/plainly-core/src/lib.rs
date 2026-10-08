@@ -8,7 +8,9 @@
 
 pub mod artifact;
 pub mod chat;
+pub mod clipboard;
 pub mod config;
+pub mod desktop;
 pub mod discover;
 pub mod explain;
 pub mod explanation;
@@ -31,10 +33,12 @@ pub use chat::{
     ChatCompletions, MAX_TOKENS, MAX_TOKENS_THINKING, ModelReader, completion_budget, context_fits,
     min_context_length, models_from,
 };
+pub use clipboard::{Clipboard, MimeType, PASSWORD_HINT, PASSWORD_HINT_SECRET, Reading};
 pub use config::{
     App, Config, ConfigError, ConfigFile, DEFAULT_CONFIG, ExportFormat, Level, PanelCorner,
     Prompts, ProviderProfile, Thinking,
 };
+pub use desktop::{DATA_CONTROL, Desktop, Presentation};
 pub use discover::{COMMON_PORTS, Candidate, CommonPort, LocalRuntime, ModelLister};
 pub use explain::{Downgrade, ExplainError, Run, RunFailure, SOURCE_LANGUAGE, explain};
 pub use explanation::{ContractError, Explanation, Gloss, wire_schema};

@@ -41,6 +41,11 @@
         # manager, a C toolchain for linking, and the odds and ends the tickets
         # reach for. None of this is needed to *run* plainly — this is a mkShell,
         # so the list is simply what ends up on PATH.
+        #
+        # `wl-clipboard` is here for `plainly explain --clipboard`, the headless
+        # surface's reader of the session clipboard (ticket 12). The panel reads
+        # the clipboard through data-control directly; this is what a client with
+        # no window has instead.
         devTools = with pkgs; [
           pnpm
           nodejs_24
@@ -48,6 +53,7 @@
           pkg-config
           xdg-utils
           patchelf
+          wl-clipboard
         ];
 
         # The editor's view of the code. Not needed to build or run anything,

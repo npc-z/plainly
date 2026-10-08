@@ -58,6 +58,15 @@ pub enum Command {
 pub struct ExplainArgs {
     /// A file to read the Passage from; stdin when omitted
     pub file: Option<PathBuf>,
+    /// Explain what the clipboard holds instead of stdin or a file
+    ///
+    /// The clipboard is read through `wl-paste` (wl-clipboard) and handed to
+    /// core as data. Content a password manager has marked secret — the MIME
+    /// type `x-kde-passwordManagerHint` with the value `secret` — is refused:
+    /// nothing is sent, nothing is stored, and the exit code is 4. A manager
+    /// that does not use that convention is not covered by it.
+    #[arg(long)]
+    pub clipboard: bool,
     /// What to write to stdout; markdown when omitted
     #[arg(long, value_enum)]
     pub format: Option<OutputFormat>,
@@ -88,6 +97,7 @@ impl ExplainArgs {
     pub fn with_root(self, root: ExplainArgs) -> Self {
         Self {
             file: self.file.or(root.file),
+            clipboard: self.clipboard || root.clipboard,
             format: self.format.or(root.format),
             factory_prompt: self.factory_prompt || root.factory_prompt,
             regenerate: self.regenerate || root.regenerate,

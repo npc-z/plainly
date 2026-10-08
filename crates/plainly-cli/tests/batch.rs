@@ -12,7 +12,7 @@ use serde_json::Value;
 
 use support::TempDir;
 use support::provider::{FakeProvider, Reply};
-use support::{code, stderr, stdout};
+use support::{code, custom_provider, stderr, stdout};
 
 const SUCCESS: i32 = 0;
 const FAILURE: i32 = 1;
@@ -26,18 +26,6 @@ const ANSWER: &str = r#"{
   "grammar": null,
   "translation": "委员会对此事进行了彻底调查，但那位经理已经躲了起来。"
 }"#;
-
-/// A configuration for a provider Plainly ships no preset for: the endpoint and
-/// model are the user's, which is the custom-provider path.
-fn custom_provider(endpoint: &str) -> String {
-    format!(
-        "[app]\n\
-         provider = \"stub\"\n\n\
-         [providers.stub]\n\
-         endpoint = \"{endpoint}\"\n\
-         model = \"stub-model\"\n"
-    )
-}
 
 /// A paragraph of exactly `count` distinct words, so a test can say which chunk
 /// a request carried and in which order.

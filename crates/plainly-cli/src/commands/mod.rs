@@ -27,6 +27,12 @@ pub enum CommandError {
     NotConfigured(String),
     /// Plainly tried and could not.
     Failed(String),
+    /// Plainly refused the input on purpose — the clipboard is marked sensitive,
+    /// or its marker could not be read — so nothing was sent and nothing was
+    /// stored. Distinct from a failure because a script branching on the exit
+    /// code has to be able to tell "we chose not to" from "it went wrong"
+    /// (spec §10, §11).
+    Refused(String),
 }
 
 impl CommandError {
@@ -35,6 +41,7 @@ impl CommandError {
             CommandError::Usage(_) => exit::USAGE,
             CommandError::NotConfigured(_) => exit::NOT_CONFIGURED,
             CommandError::Failed(_) => exit::FAILURE,
+            CommandError::Refused(_) => exit::REFUSED,
         }
     }
 }
@@ -211,7 +218,8 @@ impl std::fmt::Display for CommandError {
         match self {
             CommandError::Usage(message)
             | CommandError::NotConfigured(message)
-            | CommandError::Failed(message) => f.write_str(message),
+            | CommandError::Failed(message)
+            | CommandError::Refused(message) => f.write_str(message),
         }
     }
 }
