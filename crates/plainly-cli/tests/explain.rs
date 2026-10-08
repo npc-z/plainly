@@ -222,7 +222,7 @@ fn the_json_format_is_one_document_with_the_metadata() {
     assert_eq!(document["model"], "stub-model");
     assert_eq!(document["thinking"], "off");
     assert_eq!(document["artifact_version"], 1);
-    assert_eq!(document["prompt_label"], "v6-synthesis");
+    assert_eq!(document["prompt_label"], "v7-descriptors");
     assert_eq!(
         document["prompt_version"]
             .as_str()
@@ -782,5 +782,145 @@ fn a_local_provider_is_named_as_local_beside_its_model() {
     assert!(
         !rendered.contains("local"),
         "the product stays the Explanation; the caveat is stderr: {rendered}"
+    );
+}
+
+/// A user's appendix is what failed the contract, and the way out is one flag.
+/// The retry records the prompt that actually produced the answer — the factory
+/// one — rather than the prompt that failed (spec §5).
+#[test]
+fn a_prompt_that_fails_the_contract_offers_the_factory_one() {
+    let dir = TempDir::new("explain-prompt-contract");
+    let server = FakeProvider::start([
+        // The appended prompt fails the contract twice, which is drift, not noise.
+        Reply::content("I'd rather not, sorry."),
+        Reply::content("I'd rather not, sorry."),
+        // The retry on the factory prompt is answered.
+        Reply::content(ANSWER),
+    ]);
+    dir.write_config(&format!(
+        "[app]\nprovider = \"stub\"\n\n\
+         [providers.stub]\nendpoint = \"{}\"\nmodel = \"stub-model\"\n\n\
+         [prompts]\nappendix = \"Always answer in one line.\"\n",
+        server.base_url()
+    ));
+
+    let output = dir.plainly_with(&[], PASSAGE, &[("PLAINLY_STUB_API_KEY", "test-key")]);
+
+    assert_eq!(code(&output), FAILURE);
+    assert_eq!(stdout(&output), "", "a failure produces no product");
+    let message = stderr(&output);
+    assert!(
+        message.contains("your prompt did not pass the contract"),
+        "the failure names what did not pass: {message}"
+    );
+    assert!(
+        message.contains("--factory-prompt"),
+        "and how to retry: {message}"
+    );
+
+    let first_run = server.chat_requests();
+    let sent = first_run[0].body["messages"][0]["content"]
+        .as_str()
+        .expect("the system message is text");
+    assert!(
+        sent.contains("Always answer in one line."),
+        "the appendix reached the model: {sent}"
+    );
+
+    let retry = dir.plainly_with(
+        &["--factory-prompt", "--format", "json"],
+        PASSAGE,
+        &[("PLAINLY_STUB_API_KEY", "test-key")],
+    );
+
+    assert_eq!(code(&retry), SUCCESS, "{}", stderr(&retry));
+    let document: Value =
+        serde_json::from_str(&stdout(&retry)).expect("stdout is one JSON document");
+    assert_eq!(document["prompt_version"], plainly_core::Prompt::factory().version());
+    assert_eq!(document["prompt_label"], "v7-descriptors");
+
+    let both_runs = server.chat_requests();
+    let retried = both_runs
+        .last()
+        .expect("the retry was sent")
+        .body["messages"][0]["content"]
+        .as_str()
+        .expect("the system message is text");
+    assert!(
+        !retried.contains("Always answer in one line."),
+        "the retry leaves the user's appendix out: {retried}"
+    );
+    assert!(
+        retried.contains("B2 ("),
+        "the level still travels with its meaning: {retried}"
+    );
+}
+
+/// The record carries the prompt's hash and its human-readable label, and not
+/// the prompt's text: a record is rendered from its own fields, so a later
+/// factory prompt cannot invalidate it (spec §5).
+#[test]
+fn a_record_carries_the_hash_and_the_label_but_not_the_prompt() {
+    let dir = TempDir::new("explain-prompt-version");
+    let server = FakeProvider::start([Reply::content(ANSWER)]);
+    let appendix = "Always answer in one line.";
+    dir.write_config(&format!(
+        "[app]\nprovider = \"stub\"\n\n\
+         [providers.stub]\nendpoint = \"{}\"\nmodel = \"stub-model\"\n\n\
+         [prompts]\nappendix = \"{appendix}\"\n",
+        server.base_url()
+    ));
+
+    let output = dir.plainly_with(
+        &["--format", "json"],
+        PASSAGE,
+        &[("PLAINLY_STUB_API_KEY", "test-key")],
+    );
+
+    assert_eq!(code(&output), SUCCESS, "{}", stderr(&output));
+    let product = stdout(&output);
+    let document: Value = serde_json::from_str(&product).expect("stdout is one JSON document");
+
+    let effective = plainly_core::prompt::Prompt::from_config(&plainly_core::Prompts {
+        appendix: appendix.to_string(),
+        ..Default::default()
+    });
+    assert_eq!(document["prompt_version"], effective.version());
+    assert_ne!(
+        document["prompt_version"],
+        plainly_core::Prompt::factory().version(),
+        "the appended prompt is a different prompt"
+    );
+    assert_eq!(document["prompt_label"], "v7-descriptors");
+    assert!(
+        !product.contains(appendix) && !product.contains("You explain hard English"),
+        "the prompt body is not stored in the record: {product}"
+    );
+}
+
+/// The factory prompt failing the contract — the default configuration, where
+/// there is no appendix to blame — still says what did not pass it, and does not
+/// offer a fallback that is already what ran.
+#[test]
+fn the_factory_prompt_failing_the_contract_says_so_without_offering_itself() {
+    let dir = TempDir::new("explain-factory-contract");
+    let server = FakeProvider::start([
+        Reply::content("I'd rather not, sorry."),
+        Reply::content("I'd rather not, sorry."),
+    ]);
+    dir.write_config(&custom_provider(&server.base_url()));
+
+    let output = dir.plainly_with(&[], PASSAGE, &[("PLAINLY_STUB_API_KEY", "test-key")]);
+
+    assert_eq!(code(&output), FAILURE);
+    let message = stderr(&output);
+    assert!(
+        message.contains("the factory prompt did not pass the contract"),
+        "{message}"
+    );
+    assert!(
+        !message.contains("--factory-prompt"),
+        "nothing is offered when the factory prompt is already what ran: {message}"
     );
 }

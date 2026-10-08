@@ -55,6 +55,15 @@ pub struct ExplainArgs {
     /// What to write to stdout; markdown when omitted
     #[arg(long, value_enum)]
     pub format: Option<OutputFormat>,
+    /// Ignore the appendix and the descriptor overrides in [prompts] for this
+    /// run, and ask with the shipped factory prompt only
+    ///
+    /// This is the command line's form of the panel's "retry with the factory
+    /// prompt": when a contract failure names the prompt, this is the one-step
+    /// way to find out whether the user's own rules are what the model cannot
+    /// follow. No Explanation is stored, and the configuration is left alone.
+    #[arg(long)]
+    pub factory_prompt: bool,
 }
 
 impl ExplainArgs {
@@ -66,6 +75,7 @@ impl ExplainArgs {
         Self {
             file: self.file.or(root.file),
             format: self.format.or(root.format),
+            factory_prompt: self.factory_prompt || root.factory_prompt,
         }
     }
 }

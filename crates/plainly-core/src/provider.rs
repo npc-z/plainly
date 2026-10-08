@@ -34,12 +34,12 @@ pub struct ExplainRequest {
     pub thinking: Thinking,
     /// The system prompt to send, already filled in for this request. The app
     /// owns the prompt — its factory text, the user's appendix, the level
-    /// descriptors — so a provider is handed the finished text rather than
-    /// assembling one of its own (tickets/07).
+    /// descriptors ([`crate::Prompt`]) — so a provider is handed the finished
+    /// text rather than assembling one of its own.
     pub system_prompt: String,
-    /// The SHA-256 of the prompt data in effect — the factory prompt today,
-    /// plus the user's appendix and the level descriptors once tickets/07 folds
-    /// them in. It is what makes two runs comparable.
+    /// The SHA-256 of the prompt data in effect — the factory prompt plus the
+    /// user's appendix and the level descriptors ([`crate::Prompt`]). It is what
+    /// makes two runs comparable.
     pub prompt_version: String,
     /// That prompt's human-readable name.
     pub prompt_label: String,

@@ -48,7 +48,9 @@ impl Drop for TempDir {
     }
 }
 
-/// A SHA-256, of the shape tickets/07 will derive from the Effective Prompt.
+/// A plausible-looking stand-in for a prompt hash. These tests deliberately do
+/// not compute the real one — [`plainly_core::Prompt`]'s own tests do — so that
+/// a run's metadata can be asserted without depending on the factory text.
 pub const PROMPT_VERSION: &str = "9f2c1d4b6a8e0f3c5d7b9a1e2f4c6d8b0a2e4f6c8d0b2a4e6f8c0d2b4a6e8f0c";
 
 /// The Passage from the prototype's first example.
@@ -93,9 +95,9 @@ pub fn request(passage: &str) -> ExplainRequest {
         provider: "deepseek".to_string(),
         model: "deepseek-flash".to_string(),
         thinking: Thinking::Off,
-        system_prompt: plainly_core::prompt::system_prompt(Level::B2, "Chinese"),
+        system_prompt: plainly_core::Prompt::factory().system_prompt(Level::B2, "Chinese"),
         prompt_version: PROMPT_VERSION.to_string(),
-        prompt_label: "v6-synthesis".to_string(),
+        prompt_label: "v7-descriptors".to_string(),
     }
 }
 
@@ -112,7 +114,7 @@ pub fn artifact(passage: &str, explanation: Explanation) -> Artifact {
         thinking: Thinking::Off,
         artifact_version: ARTIFACT_VERSION,
         prompt_version: PROMPT_VERSION.to_string(),
-        prompt_label: "v6-synthesis".to_string(),
+        prompt_label: "v7-descriptors".to_string(),
         created_at: now,
         generated_at: now,
         explanation,

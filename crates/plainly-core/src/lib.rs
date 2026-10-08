@@ -40,7 +40,7 @@ pub use probe::{
     Cache, CacheError, Capability, Endpoint, EndpointModel, Origin, ProbeEndpoint, ProbeRequest,
     Resolution,
 };
-pub use prompt::{FACTORY_PROMPT, PROMPT_LABEL};
+pub use prompt::{FACTORY_PROMPT, PROMPT_LABEL, Prompt, factory_descriptor};
 pub use provider::{ExplainRequest, Provider, ProviderError, ProviderErrorKind};
 pub use render::{Section, SectionKind};
 pub use retry::{Failure, FailureKind, Stopped};

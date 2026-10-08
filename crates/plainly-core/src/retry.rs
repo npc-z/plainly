@@ -235,11 +235,25 @@ impl FailureKind {
         }
     }
 
+    /// Whether the model's *answer* failed the contract: JSON that did not
+    /// parse, or a document that did not hold the schema.
+    ///
+    /// [`FailureKind::Empty`] is deliberately not included, even though it
+    /// repeats as drift alongside this one. An empty answer also covers an
+    /// endpoint that did not answer with a chat completion at all — no choices,
+    /// no message, a 200 whose body is not JSON — and blaming the user's prompt
+    /// for that (tickets/07 answers a contract failure with "your prompt did not
+    /// pass the contract" and a retry on the factory prompt) would be wrong, on
+    /// a retry that could not differ.
+    pub fn is_contract(self) -> bool {
+        matches!(self, FailureKind::Malformed)
+    }
+
     /// Whether two of these in a row mean drift rather than noise.
     ///
-    /// Only the answer's shape qualifies. A rate limit or a 5xx that repeats is
-    /// the case backing off exists for, and cutting it short would make the
-    /// documented schedule dead code.
+    /// The answer's shape, malformed or empty: a rate limit or a 5xx that
+    /// repeats is the case backing off exists for, and cutting that short would
+    /// make the documented schedule dead code.
     fn repeats_mean_drift(self) -> bool {
         matches!(self, FailureKind::Malformed | FailureKind::Empty)
     }

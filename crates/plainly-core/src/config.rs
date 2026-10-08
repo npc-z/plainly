@@ -30,7 +30,7 @@ pub const DEFAULT_CONFIG: &str = include_str!("default_config.toml");
 
 /// The learner's reading level on the A1–C1 scale. It sets the vocabulary and
 /// how much syntax the Explanation may keep.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Serialize, Deserialize)]
 pub enum Level {
     A1,
     A2,
@@ -244,10 +244,23 @@ pub struct ProviderProfile {
 /// prompt is not here — it travels with the application so that upstream
 /// improvements reach the user — and neither is `prompt_version`, which is
 /// derived from the content that is in effect.
+///
+/// The appendix is only ever *appended* to the factory prompt: nothing here
+/// replaces or removes a rule of the factory text, and that is deliberate. The
+/// factory rules are what keep two people's histories comparable, so a user who
+/// wants to counteract one writes the opposite rule after it instead. The
+/// capability that weakness costs is recorded in the spec rather than hidden.
+/// (The descriptor table below is a different thing: it is prompt data the user
+/// may reword, and rewording it changes the version.)
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Prompts {
     pub appendix: String,
+    /// The meaning handed to the model beside a level label, per level. A level
+    /// left out, or set to an empty string, uses the shipped wording. This is
+    /// prompt data rather than a setting: it is part of what `prompt_version`
+    /// hashes, so changing a descriptor cannot silently reuse a stored
+    /// Explanation generated under the old wording.
     pub level_descriptors: BTreeMap<String, String>,
 }
 

@@ -17,8 +17,8 @@ use std::time::Duration;
 
 use plainly_core::{
     Artifact, ChatCompletions, ConfigFile, Downgrade, Endpoint, ExplainRequest, Failure,
-    KeyRequirement, Paths, ProviderSetup, Resolution, SOURCE_LANGUAGE, Secrets, Stopped, Thinking,
-    ThinkingSwitch, env_var_name, explain, prompt, render,
+    FailureKind, KeyRequirement, Level, Paths, Prompt, ProviderSetup, Resolution, SOURCE_LANGUAGE,
+    Secrets, Stopped, Thinking, ThinkingSwitch, env_var_name, explain, render,
 };
 
 use crate::cli::{ExplainArgs, OutputFormat};
@@ -67,6 +67,16 @@ pub fn run(args: ExplainArgs) -> Result<u8, CommandError> {
         None => read_passage(&source)?,
     };
 
+    // The effective prompt: the factory text plus the user's appendix and
+    // descriptor overrides (spec §5). `--factory-prompt` leaves those out for
+    // this run only, which is what makes the retry the message below offers a
+    // single step rather than a trip into the configuration file.
+    let prompt = if args.factory_prompt {
+        Prompt::factory()
+    } else {
+        Prompt::from_config(&config.prompts)
+    };
+
     let request = ExplainRequest {
         passage,
         level: config.app.level,
@@ -75,9 +85,9 @@ pub fn run(args: ExplainArgs) -> Result<u8, CommandError> {
         provider: setup.name.clone(),
         model: setup.model.clone(),
         thinking: setup.thinking,
-        system_prompt: prompt::system_prompt(config.app.level, &config.app.native_language),
-        prompt_version: prompt::version(),
-        prompt_label: prompt::PROMPT_LABEL.to_string(),
+        system_prompt: prompt.system_prompt(config.app.level, &config.app.native_language),
+        prompt_version: prompt.version(),
+        prompt_label: prompt.label().to_string(),
     };
 
     eprintln!(
@@ -120,6 +130,7 @@ pub fn run(args: ExplainArgs) -> Result<u8, CommandError> {
                 failure.reprobe.as_ref(),
                 failure.downgrade.as_ref(),
             );
+            report_contract_failure(&prompt, config.app.level, failure.failure.kind);
             Err(CommandError::Failed(describe(&failure.failure)))
         }
     }
@@ -192,6 +203,36 @@ fn report(
             "plainly: note: {} takes no thinking switch, so this run is not more detailed",
             setup.label
         );
+    }
+}
+
+/// What a person is told when the answer, not the endpoint, is what failed.
+///
+/// The run never falls back on its own (spec §5): switching to the factory
+/// prompt behind the user's back would silently undo rules they wrote and hide
+/// that anything went wrong. So a contract failure always names the prompt that
+/// did not pass it — whose prompt it was, and, when there is one, the one-step
+/// retry with the factory prompt. The decision and the fallback both come from
+/// [`Prompt::fallback_after`]; this only words them.
+fn report_contract_failure(prompt: &Prompt, level: Level, kind: FailureKind) {
+    if !kind.is_contract() {
+        return;
+    }
+
+    match prompt.fallback_after(kind, level) {
+        // No whole command is printed: this run's Passage came from a file, a
+        // pipe or a terminal, and the surface cannot know which, so a command
+        // written out here would send a user who named a file back to stdin.
+        Some(factory) => eprintln!(
+            "plainly: your prompt did not pass the contract; re-run the same command with \
+             --factory-prompt to retry on the factory prompt ({})",
+            factory.label()
+        ),
+        // What this run sent is byte-identical to the factory text at this level
+        // (the appendix is empty, or only another level's row was reworded), so
+        // there is no fallback to offer: naming the factory prompt would name
+        // the text already sent.
+        None => eprintln!("plainly: the factory prompt did not pass the contract"),
     }
 }
 

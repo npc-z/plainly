@@ -190,7 +190,7 @@ fn the_json_document_is_the_artifact() {
     assert_eq!(value["thinking"], "off");
     assert_eq!(value["artifact_version"], 1);
     assert_eq!(value["prompt_version"], support::PROMPT_VERSION);
-    assert_eq!(value["prompt_label"], "v6-synthesis");
+    assert_eq!(value["prompt_label"], "v7-descriptors");
     assert_eq!(value["created_at"], "2025-10-09T08:53:20Z");
     assert_eq!(value["generated_at"], "2025-10-09T08:53:20Z");
 

@@ -29,7 +29,7 @@ fn a_good_answer_becomes_an_artifact_with_our_passage_and_the_metadata_we_stampe
     assert_eq!(artifact.thinking, Thinking::Off);
     assert_eq!(artifact.artifact_version, 1);
     assert_eq!(artifact.prompt_version, support::PROMPT_VERSION);
-    assert_eq!(artifact.prompt_label, "v6-synthesis");
+    assert_eq!(artifact.prompt_label, "v7-descriptors");
     assert_eq!(artifact.created_at, now());
     assert_eq!(artifact.generated_at, now());
     assert_eq!(

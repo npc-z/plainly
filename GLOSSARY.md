@@ -26,6 +26,28 @@ _Avoid_: (do not use as a synonym for Explanation)
 The identity of an Explanation: everything that would make the same request — the Passage, the Level, the source and native languages, the prompt version, and the provider profile. Two lookups sharing a key are the same question, so the stored Explanation answers both instead of being generated again.
 _Avoid_: cache key, hash, dedupe key
 
+**Provider Profile**:
+The three answers that make two runs interchangeable: the provider, the model id, and whether thinking is on. A profile is a component of the Lookup Key, so switching model does not hand back an Explanation another model produced.
+_Avoid_: provider, endpoint, model settings
+
+### The prompt
+
+**Factory Prompt**:
+The system prompt Plainly ships, immutable within a build and replaced by application updates. It is not configuration: the user cannot edit it, only extend it.
+_Avoid_: default prompt, base prompt, system message
+
+**Effective Prompt**:
+What one run actually sends: the Factory Prompt with the Level and Native Language substituted, plus the user's append-only appendix. The `prompt_version` a Record carries hashes the prompt *data* behind it — the unsubstituted factory text, the appendix, and the descriptor table — rather than this rendered text, because the Level and Native Language already identify the question through the Lookup Key.
+_Avoid_: final prompt, merged prompt, full prompt
+
+**Level Descriptor**:
+The meaning handed to the model beside a Level label ("A2 (very common words, short sentences, concrete)"). A label alone barely moves the output, so the descriptor ships with it; it is prompt data, part of the Effective Prompt's hash, and a user may reword a row.
+_Avoid_: level definition, level hint, level text
+
+**Prompt Appendix**:
+The user's own rules, appended after the Factory Prompt's. Append-only: no configuration field replaces or removes a factory rule, so a user who wants to counteract one writes the opposite rule after it.
+_Avoid_: custom prompt, override, prompt extension
+
 ### Inside an Explanation
 
 **Blocker**:
