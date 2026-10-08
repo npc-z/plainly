@@ -29,26 +29,40 @@ use crate::setup::ProviderSetup;
 
 /// The completion budget every request is given.
 ///
-/// 2048, not the 1200 floor, and deliberately paired with the 150-word splitting
-/// threshold (spec §6): a 150-word chunk needs roughly 900 output tokens, and a
-/// cut-off answer is malformed JSON, which looks like a model problem while the
-/// root cause is a budget. Change one of the two and look at the other.
+/// 2048, not the 1200 floor, and deliberately paired with the splitting
+/// threshold [`crate::split::CHUNK_WORDS`] (spec §6): a chunk at the threshold
+/// needs roughly 900 output tokens, and a cut-off answer is malformed JSON, which
+/// looks like a model problem while the root cause is a budget. Change one of the
+/// two and look at the other; `MAX_TOKENS_FLOOR` below is where the pair is held
+/// together.
 pub const MAX_TOKENS: u32 = 2048;
 
 /// The budget when the user asked for the detailed mode.
 ///
 /// Reasoning is spent before the answer exists, and it can be most of the
-/// completion (spec §7). A 150-word chunk needs roughly 900 answer tokens, so
-/// the ordinary budget leaves nothing for thinking; 8192 is what the prototype's
-/// thinking runs used against DeepSeek, several times the 1304 reasoning tokens
-/// measured for a single sentence, whose own default output budget is 64K. A
-/// local runtime's context is the other half of that question, and tickets/06
-/// probes it rather than this constant guessing.
+/// completion (spec §7). A chunk at the splitting threshold needs roughly 900
+/// answer tokens, so the ordinary budget leaves nothing for thinking; 8192 is
+/// what the prototype's thinking runs used against DeepSeek, several times the
+/// 1304 reasoning tokens measured for a single sentence, whose own default
+/// output budget is 64K. A local runtime's context is the other half of that
+/// question, and tickets/06 probes it rather than this constant guessing.
 pub const MAX_TOKENS_THINKING: u32 = 8192;
 
-/// The floor is part of the constants rather than a comment below them, so the
-/// pairing with the 150-word threshold cannot be forgotten.
-const _: () = assert!(MAX_TOKENS >= 1200, "the budget must cover a 150-word chunk");
+/// The floor [`MAX_TOKENS`] must clear: the spec's 1200 output tokens for a chunk
+/// at [`crate::split::CHUNK_WORDS`] (spec §6).
+const MAX_TOKENS_FLOOR: u32 = 1200;
+
+/// The pairing with the splitting threshold is an assert rather than a comment,
+/// so the two cannot drift apart without a build failure: the budget clears the
+/// floor, and the floor covers what a chunk at the threshold costs to answer.
+const _: () = assert!(
+    MAX_TOKENS >= MAX_TOKENS_FLOOR,
+    "the budget must cover a chunk at the splitting threshold"
+);
+const _: () = assert!(
+    MAX_TOKENS_FLOOR >= (crate::split::CHUNK_WORDS * crate::split::OUTPUT_TOKENS_PER_WORD) as u32,
+    "the floor must cover the output tokens a chunk at the threshold needs"
+);
 const _: () = assert!(
     MAX_TOKENS_THINKING >= MAX_TOKENS,
     "the detailed mode must not get a smaller budget"
@@ -79,10 +93,10 @@ pub const fn completion_budget(thinking: Thinking) -> u32 {
 }
 
 /// The prompt's side of the budget: the shipped system prompt plus a chunk of at
-/// most 150 words (spec §6), measured at a little over 1000 tokens and rounded
-/// up for a tokenizer that splits them differently. Being wrong this way costs a
-/// needless warning; being wrong the other way offers a model that cannot answer
-/// as one that can.
+/// most [`crate::split::CHUNK_WORDS`] words (spec §6), measured at a little over
+/// 1000 tokens and rounded up for a tokenizer that splits them differently. Being
+/// wrong this way costs a needless warning; being wrong the other way offers a
+/// model that cannot answer as one that can.
 const PROMPT_TOKENS: u64 = 2048;
 
 /// The smallest context length a model can report and still hold one Passage at

@@ -23,6 +23,7 @@ pub mod render;
 pub mod retry;
 pub mod secrets;
 pub mod setup;
+pub mod split;
 pub mod store;
 
 pub use artifact::{ARTIFACT_VERSION, Artifact, Timestamp};
@@ -52,4 +53,5 @@ pub use secrets::{
     SecretStore, Secrets, Stored, env_var_name,
 };
 pub use setup::{ProviderSetup, SetupError};
+pub use split::{CHUNK_WORDS, OUTPUT_TOKENS_PER_WORD, PANEL_CHUNK_LIMIT, TooManyChunks};
 pub use store::{Lookup, LookupKey, Record, Store, StoreError};

@@ -162,8 +162,10 @@ impl Lookup<'_> {
 /// The identity of one question, as the store indexes it.
 ///
 /// A type of its own rather than a `String`, so that a Passage or a bare provider
-/// name cannot be passed where a key belongs.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// name cannot be passed where a key belongs. It is hashable so a caller holding
+/// several questions — the CLI's batch — can ask whether two of them are the same
+/// question without hashing the Passage again.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct LookupKey(String);
 
 impl LookupKey {
