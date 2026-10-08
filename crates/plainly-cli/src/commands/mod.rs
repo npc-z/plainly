@@ -67,10 +67,35 @@ impl From<plainly_core::ConfigError> for CommandError {
 /// did, and the five documented codes have no slot for "the file on disk will not
 /// work": it lands on the failure code, with the store's own message — which
 /// names the path wherever the path is known.
+///
+/// The exception is the store saying that what was asked for is not there: an id
+/// that names no Record, or a Tag with nothing in it. Those are mistakes in the
+/// asking, which is what code 2 is for.
 impl From<plainly_core::StoreError> for CommandError {
     fn from(error: plainly_core::StoreError) -> Self {
-        CommandError::Failed(error.to_string())
+        use plainly_core::StoreError;
+        match error {
+            StoreError::NoRecord { id } => no_record(id),
+            StoreError::EmptyTag { .. } => CommandError::Usage(
+                "a tag cannot be blank: it needs at least one character that is not a space"
+                    .to_string(),
+            ),
+            StoreError::Open { .. }
+            | StoreError::Directory { .. }
+            | StoreError::Unusable { .. }
+            | StoreError::Sqlite { .. }
+            | StoreError::Corrupt { .. } => CommandError::Failed(error.to_string()),
+        }
     }
+}
+
+/// The wording for an id that names nothing, shared by every subcommand that
+/// takes one: the store says a Record is missing, the command line says where the
+/// ones that are there are listed.
+pub(crate) fn no_record(id: i64) -> CommandError {
+    CommandError::Usage(format!(
+        "no record {id}: `plainly history` lists what is stored"
+    ))
 }
 
 /// Run the command line and return the process exit code.

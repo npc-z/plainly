@@ -18,6 +18,10 @@ _Avoid_: artifact, result, output, answer
 One row in the history store: an Explanation plus the Passage, Level, Native Language, provider, model, timestamps and versions.
 _Avoid_: entry, log, history item
 
+**Tag**:
+A word the learner attaches to a Record to organise the history by their own scheme. Added by hand: nothing infers one from the Passage, and a Record carries none until the learner says so.
+_Avoid_: label, category, keyword
+
 **Artifact**:
 The serialized form of an Explanation — bytes on the wire or in the store, not a domain concept. Use it only when the encoding itself is the subject.
 _Avoid_: (do not use as a synonym for Explanation)

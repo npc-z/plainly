@@ -74,6 +74,25 @@ CREATE TABLE IF NOT EXISTS glosses (
     gloss      TEXT NOT NULL,
     PRIMARY KEY (record_id, ord)
 );
+CREATE TABLE IF NOT EXISTS tags (
+    record_id INTEGER NOT NULL REFERENCES records(id) ON DELETE CASCADE,
+    tag       TEXT NOT NULL,
+    PRIMARY KEY (record_id, tag)
+);
+-- Two search tables rather than one, because the two things a learner searches
+-- for are different sizes: a Passage and its Comprehensible English are one row
+-- per Record, while a Gloss is one row per expression. Plain (not external
+-- content) tables: they hold their own copy of the text, which is what lets a
+-- regeneration delete and re-insert a row without also feeding it the old one.
+CREATE VIRTUAL TABLE IF NOT EXISTS record_fts USING fts5(
+    passage,
+    comprehensible
+);
+CREATE VIRTUAL TABLE IF NOT EXISTS gloss_fts USING fts5(
+    expression,
+    gloss,
+    record_id UNINDEXED
+);
 ";
 
 /// One Record, joined to its Glosses: one row per Gloss, or a single row with
@@ -167,6 +186,12 @@ pub struct Record {
     pub lookup_key: LookupKey,
     /// When this question was last asked. The history is ordered by it.
     pub last_seen: Timestamp,
+    /// The learner's own Tags for this Record, in tag order.
+    ///
+    /// Tags are added by hand and are the learner's vocabulary, not Plainly's:
+    /// nothing infers one from the Passage, because a wrong Tag is worse than no
+    /// Tag when the point of a Tag is that the learner chose it.
+    pub tags: Vec<String>,
     /// The Passage, the Explanation, and every piece of provenance — including
     /// the Level and Native Language the Explanation was pitched at, which is
     /// what makes changing a setting leave old records alone.
@@ -206,12 +231,19 @@ pub enum StoreError {
     #[error("record {record} of the history store holds {value} where {expected} was expected")]
     Corrupt {
         /// The row to look at: nothing else in the store identifies it to a
-        /// person, and until `history delete` exists (tickets/09) there is no
-        /// other handle on it.
+        /// person, and this is the id `history delete` takes.
         record: i64,
         value: String,
         expected: &'static str,
     },
+    /// The id names no Record: a deletion or a Tag was asked of something that is
+    /// not in the history, which is a mistake in the asking rather than a failure
+    /// of the store.
+    #[error("there is no record {id} in the history")]
+    NoRecord { id: i64 },
+    /// A Tag with nothing in it would be a chip that filters nothing.
+    #[error("a tag cannot be blank: {tag:?} has nothing in it")]
+    EmptyTag { tag: String },
 }
 
 impl From<rusqlite::Error> for StoreError {
@@ -279,6 +311,11 @@ impl Store {
         conn.pragma_update(None, "foreign_keys", "ON")
             .map_err(unusable)?;
         conn.execute_batch(SCHEMA).map_err(unusable)?;
+        // A store written before the search tables existed has none of their
+        // rows. They are derived data — every row in them is a copy of text that
+        // lives in `records` or `glosses` — so "empty while the history is not"
+        // means exactly that, and rebuilding is a no-op in every other case.
+        reindex(&conn).map_err(unusable)?;
 
         Ok(Self { conn })
     }
@@ -365,16 +402,34 @@ impl Store {
 
         // The Explanation is replaced whole, so its Glosses are too: a
         // regeneration that changed the number of Glosses must not leave the old
-        // ones behind.
+        // ones behind. The search rows are rewritten from the same values in the
+        // same loop — a copy kept in step by being made in one place.
         tx.execute("DELETE FROM glosses WHERE record_id = ?1", [id])?;
+        tx.execute("DELETE FROM gloss_fts WHERE record_id = ?1", [id])?;
         {
             let mut insert = tx.prepare(
                 "INSERT INTO glosses (record_id, ord, expression, gloss) VALUES (?1, ?2, ?3, ?4)",
             )?;
+            let mut index = tx.prepare(
+                "INSERT INTO gloss_fts (expression, gloss, record_id) VALUES (?1, ?2, ?3)",
+            )?;
             for (ord, gloss) in artifact.explanation.glosses.iter().enumerate() {
                 insert.execute(params![id, ord as i64, &gloss.expression, &gloss.gloss])?;
+                index.execute(params![&gloss.expression, &gloss.gloss, id])?;
             }
         }
+
+        // Same for the Record's own row: a regeneration whose Passage changed
+        // spelling must not leave the old words findable.
+        tx.execute("DELETE FROM record_fts WHERE rowid = ?1", [id])?;
+        tx.execute(
+            "INSERT INTO record_fts (rowid, passage, comprehensible) VALUES (?1, ?2, ?3)",
+            params![
+                id,
+                &artifact.passage,
+                &artifact.explanation.comprehensible
+            ],
+        )?;
 
         let record = read_by_id(&tx, id)?.expect("the row was just written");
         tx.commit()?;
@@ -382,19 +437,166 @@ impl Store {
         Ok(record)
     }
 
-    /// Every stored Explanation, most recently seen first.
+    /// Every stored Explanation, most recently seen first: the search with
+    /// nothing asked of it.
     pub fn list(&self) -> Result<Vec<Record>, StoreError> {
-        // `id` breaks ties, because `last_seen` is only accurate to the second
-        // and two questions asked in the same second still have an order.
-        self.query(
-            &format!("{READ} ORDER BY r.last_seen DESC, r.id DESC, g.ord"),
-            params![],
-        )
+        self.search("", None)
     }
 
     /// One stored Explanation, if the id is in the store.
     pub fn show(&self, id: i64) -> Result<Option<Record>, StoreError> {
         read_by_id(&self.conn, id)
+    }
+
+    /// Tag a Record with the learner's own word for it.
+    ///
+    /// The Tag is trimmed, because what it was typed into is a text field and its
+    /// ends are not part of it; a Tag with nothing left after trimming is refused
+    /// rather than stored. Applying the same tag twice is not a mistake —
+    /// the second one has nothing left to do.
+    ///
+    /// The Tag comes back as it was stored, so a caller that reports what it did
+    /// reports what the history now holds rather than what it was handed.
+    pub fn tag<'a>(&mut self, id: i64, tag: &'a str) -> Result<&'a str, StoreError> {
+        let tag = trim_tag(tag)?;
+        let tx = self.conn.transaction()?;
+        if !exists(&tx, id)? {
+            return Err(StoreError::NoRecord { id });
+        }
+
+        tx.execute(
+            "INSERT OR IGNORE INTO tags (record_id, tag) VALUES (?1, ?2)",
+            params![id, tag],
+        )?;
+        tx.commit()?;
+
+        Ok(tag)
+    }
+
+    /// Take one of a Record's Tags off again, returning the Tag that was asked
+    /// for, trimmed, the way [`Store::tag`] does.
+    ///
+    /// Removing a Tag the Record does not carry is not an error: the caller asked
+    /// for a Record without that Tag and that is what it now has. Removing a Tag
+    /// from a Record that does not exist is an error, because then there is no
+    /// Record at all to have an opinion about.
+    pub fn untag<'a>(&mut self, id: i64, tag: &'a str) -> Result<&'a str, StoreError> {
+        let tag = trim_tag(tag)?;
+        let tx = self.conn.transaction()?;
+        if !exists(&tx, id)? {
+            return Err(StoreError::NoRecord { id });
+        }
+
+        tx.execute(
+            "DELETE FROM tags WHERE record_id = ?1 AND tag = ?2",
+            params![id, tag],
+        )?;
+        tx.commit()?;
+
+        Ok(tag)
+    }
+
+    /// Remove one Record from the history, for good.
+    ///
+    /// A hard delete (spec §9): no tombstone, no `deleted_at`, nothing left to
+    /// find. The Passage, the Explanation, the Glosses, the Tags and the search
+    /// rows go together, because a Record that keeps any one of them is not gone:
+    /// it still answers a search, or it hands the next Record the words of a
+    /// Passage its learner threw away.
+    pub fn delete(&mut self, id: i64) -> Result<(), StoreError> {
+        let tx = self.conn.transaction()?;
+        if !exists(&tx, id)? {
+            return Err(StoreError::NoRecord { id });
+        }
+
+        // The search tables first: once the Record is gone there is no id left to
+        // aim at its Gloss rows.
+        tx.execute("DELETE FROM record_fts WHERE rowid = ?1", [id])?;
+        tx.execute("DELETE FROM gloss_fts WHERE record_id = ?1", [id])?;
+        // The Glosses and the Tags go with the Record: both reference it with
+        // ON DELETE CASCADE, and `foreign_keys` is on.
+        tx.execute("DELETE FROM records WHERE id = ?1", [id])?;
+        tx.commit()?;
+
+        Ok(())
+    }
+
+    /// Remove every Record, and say how many there were.
+    ///
+    /// The count is what a caller can repeat back: clearing is the one act here
+    /// that cannot be aimed at anything, so it reports what it did rather than
+    /// trusting that it was understood.
+    pub fn clear(&mut self) -> Result<usize, StoreError> {
+        let tx = self.conn.transaction()?;
+        tx.execute("DELETE FROM record_fts", [])?;
+        tx.execute("DELETE FROM gloss_fts", [])?;
+        let removed = tx.execute("DELETE FROM records", [])?;
+        tx.commit()?;
+
+        Ok(removed)
+    }
+
+    /// The stored Explanations whose English matches `query`, most recently seen
+    /// first, narrowed to one Tag when one is given.
+    ///
+    /// Two tables answer: one holds the Passage and the Comprehensible English,
+    /// the other holds each Gloss's expression and its words. A record both
+    /// answer for appears once — the history is a list of Records, not of
+    /// matches. Every term of the query has to be held somewhere, though not
+    /// necessarily in the same field. The Translation and the Grammar note are
+    /// deliberately not indexed (spec §9): `translation` is Chinese, and the
+    /// tokenizer is a property of the table, so searching it would need a third
+    /// table with a tokenizer of its own. That is a stated fact of v0 rather than
+    /// a defect to find later, and the surfaces that offer a search box say so.
+    ///
+    /// An empty query is not an error and not a miss: it matches everything,
+    /// which is what a search box holds before anything has been typed into it.
+    /// Terms are matched by prefix, because the box is typed into. The order is
+    /// `last_seen`, most recent first, with `id` breaking ties — `last_seen` is
+    /// only accurate to the second, and two questions asked in the same second
+    /// still have an order.
+    pub fn search(&self, query: &str, tag: Option<&str>) -> Result<Vec<Record>, StoreError> {
+        let terms = match_terms(query);
+        let tag = tag.map(trim_tag).transpose()?;
+        let mut clauses: Vec<String> = Vec::new();
+        let mut values: Vec<&dyn rusqlite::ToSql> = Vec::new();
+
+        // A clause per term, and the clauses are ANDed. One `a AND b` expression
+        // would not do: `MATCH` is evaluated per table, so it would ask the
+        // Passage and the Glosses each for *both* words, and a query with one word
+        // in each would find nothing. Asked this way, every term has to be held
+        // somewhere, which is what the surfaces promise.
+        for term in &terms {
+            // One number, used by both sub-selects: they are the same term asked
+            // of two tables.
+            let at = values.len() + 1;
+            clauses.push(format!(
+                "r.id IN (SELECT rowid FROM record_fts WHERE record_fts MATCH ?{at} \
+                 UNION SELECT record_id FROM gloss_fts WHERE gloss_fts MATCH ?{at})"
+            ));
+            values.push(term);
+        }
+
+        // `as_ref`, not `if let Some(tag) = tag`: the value bound has to be the
+        // reference itself, since `ToSql` is implemented for `&str` rather than
+        // for the unsized `str` behind it.
+        if let Some(tag) = tag.as_ref() {
+            let at = values.len() + 1;
+            clauses.push(format!(
+                "r.id IN (SELECT record_id FROM tags WHERE tag = ?{at})"
+            ));
+            values.push(tag);
+        }
+
+        let filter = match clauses.is_empty() {
+            true => String::new(),
+            false => format!(" WHERE {}", clauses.join(" AND ")),
+        };
+
+        self.query(
+            &format!("{READ}{filter} ORDER BY r.last_seen DESC, r.id DESC, g.ord"),
+            rusqlite::params_from_iter(values),
+        )
     }
 
     fn by_key(&self, key: &LookupKey) -> Result<Option<Record>, StoreError> {
@@ -412,19 +614,65 @@ impl Store {
         let rows = statement
             .query_map(params, Raw::read)?
             .collect::<Result<Vec<_>, _>>()?;
+        let mut records = group(rows)?;
+        read_tags(&self.conn, &mut records)?;
 
-        group(rows)
+        Ok(records)
     }
 }
 
-/// Read one Record by id, Glosses and all.
+/// Whether the history holds this Record.
+///
+/// A tag or a deletion asks before it writes, so that a missing Record is
+/// reported as a missing Record rather than as a foreign key that could not be
+/// satisfied.
+fn exists(conn: &Connection, id: i64) -> Result<bool, StoreError> {
+    Ok(conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM records WHERE id = ?1)",
+        [id],
+        |row| row.get(0),
+    )?)
+}
+
+/// The Tag as it will be stored or searched for: trimmed, and refused when
+/// nothing is left.
+fn trim_tag(tag: &str) -> Result<&str, StoreError> {
+    let trimmed = tag.trim();
+    match trimmed.is_empty() {
+        true => Err(StoreError::EmptyTag {
+            tag: tag.to_string(),
+        }),
+        false => Ok(trimmed),
+    }
+}
+
+/// Fill in every Record's tags, in tag order.
+///
+/// A statement of its own rather than a third table in the join: two one-to-many
+/// tables joined at once multiply their rows, and a Record with three Glosses and
+/// two tags would come back as six.
+fn read_tags(conn: &Connection, records: &mut [Record]) -> Result<(), StoreError> {
+    let mut statement = conn.prepare("SELECT tag FROM tags WHERE record_id = ?1 ORDER BY tag")?;
+
+    for record in records {
+        record.tags = statement
+            .query_map([record.id], |row| row.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+    }
+
+    Ok(())
+}
+
+/// Read one Record by id, Glosses and tags and all.
 fn read_by_id(conn: &Connection, id: i64) -> Result<Option<Record>, StoreError> {
     let mut statement = conn.prepare(&format!("{READ} WHERE r.id = ?1 ORDER BY g.ord"))?;
     let rows = statement
         .query_map([id], Raw::read)?
         .collect::<Result<Vec<_>, _>>()?;
+    let mut records = group(rows)?;
+    read_tags(conn, &mut records)?;
 
-    Ok(group(rows)?.into_iter().next())
+    Ok(records.into_iter().next())
 }
 
 /// Gather the joined rows back into Records: consecutive rows with one id are one
@@ -564,6 +812,7 @@ impl Raw {
             id: self.id,
             lookup_key: LookupKey(self.lookup_key),
             last_seen: timestamp(self.id, "last_seen", &self.last_seen)?,
+            tags: Vec::new(),
             artifact,
         })
     }
@@ -585,4 +834,64 @@ fn timestamp(record: i64, column: &'static str, value: &str) -> Result<Timestamp
 /// the Passage itself is.
 pub fn normalize(passage: &str) -> String {
     passage.replace("\r\n", "\n").trim().to_string()
+}
+
+/// What a person typed, as one FTS5 `MATCH` expression per term — and nothing at
+/// all when there is nothing to look for.
+///
+/// Every term becomes a quoted phrase and every phrase is a prefix. Quoting is
+/// what keeps FTS5's query language out of a search box: `-`, `*`, `NEAR(` and a
+/// stray `"` are then literal text rather than an expression the person never
+/// meant to write, and a query of nothing but punctuation quietly matches
+/// nothing instead of failing. A double quote inside a term is escaped by
+/// doubling it, which is how FTS5 ends a string.
+///
+/// The terms come back separately rather than joined into one expression, because
+/// the caller has to ask each of them of both search tables and AND the answers;
+/// see [`Store::search`].
+fn match_terms(query: &str) -> Vec<String> {
+    query
+        .split_whitespace()
+        .map(|term| format!("\"{}\"*", term.replace('"', "\"\"")))
+        .collect()
+}
+
+/// Rebuild the search tables from the history when they are empty.
+///
+/// The guard is what makes this the upgrade path from a store written before the
+/// search tables existed rather than work on every open: in steady state they
+/// hold one row per Passage and one per Gloss, and the only way to be empty while
+/// the history is not is to have been written by an earlier build. The two halves
+/// are decided separately because a history in which nothing was ever glossed is
+/// ordinary. Each guard asks whether *any* row is there rather than counting
+/// them, so opening a long history stays cheap.
+fn reindex(conn: &Connection) -> rusqlite::Result<()> {
+    if !indexed(conn, "record_fts")? {
+        conn.execute_batch(
+            "INSERT INTO record_fts (rowid, passage, comprehensible)
+             SELECT id, passage, comprehensible FROM records",
+        )?;
+    }
+
+    if !indexed(conn, "gloss_fts")? {
+        conn.execute_batch(
+            "INSERT INTO gloss_fts (expression, gloss, record_id)
+             SELECT expression, gloss, record_id FROM glosses",
+        )?;
+    }
+
+    Ok(())
+}
+
+/// Whether a search table holds anything at all.
+///
+/// The table name is interpolated rather than bound because SQLite has no
+/// placeholder for an identifier; it is one of two constants in this file, never
+/// anything a caller supplies.
+fn indexed(conn: &Connection, table: &str) -> rusqlite::Result<bool> {
+    conn.query_row(
+        &format!("SELECT EXISTS (SELECT 1 FROM {table})"),
+        [],
+        |row| row.get(0),
+    )
 }

@@ -110,11 +110,62 @@ pub enum OutputFormat {
 #[derive(Debug, Subcommand)]
 pub enum HistoryCommand {
     /// List the stored Explanations, most recently seen first (the default)
-    List,
+    List {
+        /// Only the Records carrying this tag
+        #[arg(long)]
+        tag: Option<String>,
+    },
     /// Show one stored Explanation as the five sections `explain` prints
     Show {
         /// The id `plainly history list` prints
         id: i64,
+    },
+    /// Find stored Explanations by a word in the Passage, the Comprehensible
+    /// English or a Gloss
+    ///
+    /// The Translation and the Grammar note are not searched: the Translation is
+    /// Chinese and v0 searches English only. Every word of the query has to
+    /// appear somewhere — the Passage, the Comprehensible English, a Gloss
+    /// expression, a Gloss — and each is matched by prefix.
+    Search {
+        /// What to look for
+        query: String,
+        /// Only the Records carrying this tag
+        #[arg(long)]
+        tag: Option<String>,
+    },
+    /// Tag one stored Explanation with a word of your own
+    ///
+    /// Tags are the learner's: nothing infers one, and nothing is tagged unless
+    /// you say so.
+    Tag {
+        /// The id `plainly history list` prints
+        id: i64,
+        /// The Tag; quote it if it has spaces
+        tag: String,
+    },
+    /// Take a Tag off one stored Explanation
+    Untag {
+        /// The id `plainly history list` prints
+        id: i64,
+        /// The Tag to remove
+        tag: String,
+    },
+    /// Delete one stored Explanation, for good
+    ///
+    /// Nothing is left behind: no tombstone, and no way back.
+    Delete {
+        /// The id `plainly history list` prints
+        id: i64,
+    },
+    /// Delete every stored Explanation
+    ///
+    /// There is no way back, so it takes a second act: without `--yes` it says
+    /// what it would remove and stops.
+    Clear {
+        /// Confirm that every Record should go
+        #[arg(long)]
+        yes: bool,
     },
 }
 

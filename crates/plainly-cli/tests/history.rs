@@ -272,13 +272,25 @@ fn show_prints_the_five_sections_and_the_provenance() {
 #[test]
 fn history_works_without_a_provider_or_a_configuration_file() {
     // The history is local and needs nothing configured: a machine whose config
-    // was deleted can still read what it stored.
+    // was deleted can still read what it stored, search it, and clear it.
     let dir = TempDir::new("history-empty");
 
     let listing = dir.plainly_with(&["history"], "", &[]);
 
     assert_eq!(code(&listing), SUCCESS, "{}", stderr(&listing));
     assert_eq!(stdout(&listing), "", "nothing stored, nothing printed");
+
+    let search = dir.plainly_with(&["history", "search", "ground"], "", &[]);
+    assert_eq!(code(&search), SUCCESS, "{}", stderr(&search));
+    assert_eq!(stdout(&search), "");
+
+    let cleared = dir.plainly_with(&["history", "clear", "--yes"], "", &[]);
+    assert_eq!(code(&cleared), SUCCESS, "{}", stderr(&cleared));
+    assert!(
+        stderr(&cleared).contains('0'),
+        "clearing an empty history says so: {}",
+        stderr(&cleared)
+    );
 }
 
 #[test]
@@ -290,4 +302,264 @@ fn showing_a_record_that_is_not_there_is_a_usage_error() {
     assert_eq!(code(&shown), USAGE);
     assert_eq!(stdout(&shown), "");
     assert!(stderr(&shown).contains('7'), "{}", stderr(&shown));
+}
+
+// ---------------------------------------------------------------------------
+// Search, tags, deletion and clearing
+// ---------------------------------------------------------------------------
+
+/// A second Passage, so a search or a tag filter has something to leave out.
+const SECOND: &str = "She was told to keep her cards close to her chest.";
+
+const SECOND_ANSWER: &str = r#"{
+  "comprehensible": "She was told not to say what she was planning.",
+  "glosses": [
+    { "expression": "keep your cards close to your chest", "gloss": "not tell anyone your plans" }
+  ],
+  "grammar": null,
+  "translation": "有人让她不要把计划说出去。"
+}"#;
+
+/// A directory holding one explained Passage, and the id it was stored under.
+fn one_explained(name: &str) -> (TempDir, i64) {
+    let dir = TempDir::new(name);
+    let server = FakeProvider::start([Reply::content(ANSWER)]);
+    dir.write_config(&custom_provider(&server.base_url()));
+
+    let run = dir.plainly_with(&[], PASSAGE, &[("PLAINLY_STUB_API_KEY", "test-key")]);
+    assert_eq!(code(&run), SUCCESS, "{}", stderr(&run));
+
+    let listing = dir.plainly_with(&["history"], "", &[]);
+    let id = only_id(&stdout(&listing));
+    (dir, id)
+}
+
+#[test]
+fn search_finds_a_stored_explanation_through_any_of_its_english() {
+    let (dir, id) = one_explained("history-search");
+
+    // One word from each of the three indexed fields: the Passage, the
+    // Comprehensible English, and a Gloss.
+    for query in ["committee", "hiding", "nobody"] {
+        let hit = dir.plainly_with(&["history", "search", query], "", &[]);
+        assert_eq!(code(&hit), SUCCESS, "{}", stderr(&hit));
+        assert_eq!(
+            only_id(&stdout(&hit)),
+            id,
+            "{query:?} should find the record: {}",
+            stdout(&hit)
+        );
+    }
+
+    let miss = dir.plainly_with(&["history", "search", "bicycles"], "", &[]);
+    assert_eq!(code(&miss), SUCCESS, "{}", stderr(&miss));
+    assert_eq!(stdout(&miss), "");
+}
+
+#[test]
+fn search_says_that_the_translation_is_not_searchable() {
+    let (dir, _) = one_explained("history-search-fact");
+
+    // A word that is in the Translation and nowhere else: the miss is the stated
+    // fact, not a defect, and the search location says which it is.
+    let search = dir.plainly_with(&["history", "search", "委员会"], "", &[]);
+
+    assert_eq!(code(&search), SUCCESS, "{}", stderr(&search));
+    assert_eq!(stdout(&search), "");
+    let message = stderr(&search);
+    assert!(
+        message.contains("not searchable in v0"),
+        "the search location states the limit: {message}"
+    );
+    assert!(message.contains("Translation"), "{message}");
+}
+
+#[test]
+fn a_search_for_nothing_is_a_usage_error() {
+    let (dir, _) = one_explained("history-search-empty");
+
+    for nothing in ["", "   "] {
+        let search = dir.plainly_with(&["history", "search", nothing], "", &[]);
+        assert_eq!(code(&search), USAGE);
+        assert_eq!(stdout(&search), "");
+        assert!(
+            stderr(&search).contains("look for"),
+            "{}",
+            stderr(&search)
+        );
+    }
+}
+
+#[test]
+fn a_tag_is_added_shown_filtered_and_taken_off() {
+    let dir = TempDir::new("history-tags");
+    let server = FakeProvider::start([Reply::content(ANSWER), Reply::content(SECOND_ANSWER)]);
+    dir.write_config(&custom_provider(&server.base_url()));
+
+    let first = dir.plainly_with(&[], PASSAGE, &[("PLAINLY_STUB_API_KEY", "test-key")]);
+    assert_eq!(code(&first), SUCCESS, "{}", stderr(&first));
+    let second = dir.plainly_with(&[], SECOND, &[("PLAINLY_STUB_API_KEY", "test-key")]);
+    assert_eq!(code(&second), SUCCESS, "{}", stderr(&second));
+
+    let listing = dir.plainly_with(&["history"], "", &[]);
+    assert_eq!(stdout(&listing).lines().count(), 2);
+    let newest = only_id(&stdout(&listing));
+
+    let tagged = dir.plainly_with(&["history", "tag", &newest.to_string(), "reading"], "", &[]);
+    assert_eq!(code(&tagged), SUCCESS, "{}", stderr(&tagged));
+    assert_eq!(stdout(&tagged), "", "tagging is not a product");
+
+    let filtered = dir.plainly_with(&["history", "list", "--tag", "reading"], "", &[]);
+    assert_eq!(code(&filtered), SUCCESS, "{}", stderr(&filtered));
+    assert_eq!(
+        stdout(&filtered).lines().count(),
+        1,
+        "only the tagged record: {}",
+        stdout(&filtered)
+    );
+    assert_eq!(only_id(&stdout(&filtered)), newest);
+    assert!(
+        stdout(&filtered).contains("[reading]"),
+        "a row shows the tag it was filtered by: {}",
+        stdout(&filtered)
+    );
+
+    let shown = dir.plainly_with(&["history", "show", &newest.to_string()], "", &[]);
+    assert!(
+        stderr(&shown).contains("tagged reading"),
+        "the detail says it too: {}",
+        stderr(&shown)
+    );
+
+    // The same tag narrows a search rather than replacing it.
+    let searched = dir.plainly_with(&["history", "search", "cards", "--tag", "reading"], "", &[]);
+    assert_eq!(only_id(&stdout(&searched)), newest);
+    let elsewhere = dir.plainly_with(&["history", "search", "committee", "--tag", "reading"], "", &[]);
+    assert_eq!(stdout(&elsewhere), "");
+
+    let untagged = dir.plainly_with(&["history", "untag", &newest.to_string(), "reading"], "", &[]);
+    assert_eq!(code(&untagged), SUCCESS, "{}", stderr(&untagged));
+    assert_eq!(stdout(&untagged), "", "and neither is taking one off");
+    assert_eq!(
+        stdout(&dir.plainly_with(&["history", "list", "--tag", "reading"], "", &[])),
+        ""
+    );
+    assert_eq!(
+        stdout(&dir.plainly_with(&["history"], "", &[])).lines().count(),
+        2,
+        "taking a tag off does not take the record with it"
+    );
+}
+
+#[test]
+fn tagging_a_record_that_is_not_there_is_a_usage_error() {
+    let dir = TempDir::new("history-tags-missing");
+
+    for command in [["history", "tag", "7", "work"], ["history", "untag", "7", "work"]] {
+        let run = dir.plainly_with(&command, "", &[]);
+        assert_eq!(code(&run), USAGE, "{}", stderr(&run));
+        assert!(stderr(&run).contains('7'), "{}", stderr(&run));
+    }
+}
+
+#[test]
+fn a_blank_tag_is_a_usage_error() {
+    let (dir, id) = one_explained("history-tags-blank");
+
+    let run = dir.plainly_with(&["history", "tag", &id.to_string(), "   "], "", &[]);
+
+    assert_eq!(code(&run), USAGE);
+    assert!(stderr(&run).contains("cannot be blank"), "{}", stderr(&run));
+    assert!(
+        !stdout(&dir.plainly_with(&["history"], "", &[])).contains('['),
+        "nothing was tagged"
+    );
+}
+
+#[test]
+fn deleting_a_record_forgets_it() {
+    let (dir, id) = one_explained("history-delete");
+
+    let deleted = dir.plainly_with(&["history", "delete", &id.to_string()], "", &[]);
+    assert_eq!(code(&deleted), SUCCESS, "{}", stderr(&deleted));
+    assert_eq!(stdout(&deleted), "", "a deletion is not a product");
+    assert!(stderr(&deleted).contains(&id.to_string()));
+
+    assert_eq!(stdout(&dir.plainly_with(&["history"], "", &[])), "");
+    assert_eq!(
+        stdout(&dir.plainly_with(&["history", "search", "committee"], "", &[])),
+        ""
+    );
+    assert_eq!(
+        code(&dir.plainly_with(&["history", "show", &id.to_string()], "", &[])),
+        USAGE
+    );
+
+    let again = dir.plainly_with(&["history", "delete", &id.to_string()], "", &[]);
+    assert_eq!(code(&again), USAGE);
+}
+
+#[test]
+fn clearing_takes_a_second_act() {
+    let (dir, id) = one_explained("history-clear");
+
+    let refused = dir.plainly_with(&["history", "clear"], "", &[]);
+    assert_eq!(code(&refused), USAGE);
+    assert_eq!(stdout(&refused), "");
+    assert!(
+        stderr(&refused).contains("--yes"),
+        "the refusal says how to confirm: {}",
+        stderr(&refused)
+    );
+    assert_eq!(
+        stdout(&dir.plainly_with(&["history"], "", &[])).lines().count(),
+        1,
+        "a refusal clears nothing"
+    );
+
+    let cleared = dir.plainly_with(&["history", "clear", "--yes"], "", &[]);
+    assert_eq!(code(&cleared), SUCCESS, "{}", stderr(&cleared));
+    assert_eq!(stdout(&cleared), "");
+    assert!(
+        stderr(&cleared).contains('1'),
+        "it says how many went: {}",
+        stderr(&cleared)
+    );
+    assert_eq!(stdout(&dir.plainly_with(&["history"], "", &[])), "");
+    assert_eq!(
+        code(&dir.plainly_with(&["history", "show", &id.to_string()], "", &[])),
+        USAGE
+    );
+}
+
+#[test]
+fn a_tag_with_a_space_in_it_is_still_one_tag() {
+    // The help says to quote such a Tag, so the lines have to be able to say it
+    // back: `["to read"]` is one Tag, where `[to read]` would read as two.
+    let (dir, id) = one_explained("history-tags-spaces");
+
+    // Padded on purpose: the confirmation has to say what the history holds, not
+    // what was typed at it.
+    let tagged = dir.plainly_with(&["history", "tag", &id.to_string(), "  to read  "], "", &[]);
+    assert_eq!(code(&tagged), SUCCESS, "{}", stderr(&tagged));
+    assert!(
+        stderr(&tagged).contains("\"to read\""),
+        "the confirmation echoes the stored Tag: {}",
+        stderr(&tagged)
+    );
+
+    let listing = dir.plainly_with(&["history"], "", &[]);
+    assert!(
+        stdout(&listing).contains("[\"to read\"]"),
+        "{:?}",
+        stdout(&listing)
+    );
+
+    let filtered = dir.plainly_with(&["history", "list", "--tag", "to read"], "", &[]);
+    assert_eq!(only_id(&stdout(&filtered)), id);
+    assert_eq!(
+        stdout(&dir.plainly_with(&["history", "list", "--tag", "to"], "", &[])),
+        "",
+        "the spaces inside a Tag are not separators"
+    );
 }
