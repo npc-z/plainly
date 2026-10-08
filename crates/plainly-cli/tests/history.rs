@@ -563,3 +563,121 @@ fn a_tag_with_a_space_in_it_is_still_one_tag() {
         "the spaces inside a Tag are not separators"
     );
 }
+
+// ---------------------------------------------------------------------------
+// The three exports
+// ---------------------------------------------------------------------------
+
+#[test]
+fn export_writes_the_product_to_stdout_and_nothing_else() {
+    let (dir, _) = one_explained("history-export");
+
+    let markdown = dir.plainly_with(&["history", "export", "markdown"], "", &[]);
+    assert_eq!(code(&markdown), SUCCESS, "{}", stderr(&markdown));
+    let product = stdout(&markdown);
+    assert!(
+        product.contains(" · B2 · stub/stub-model · v7-descriptors"),
+        "the section is headed with what tells two Records apart:\n{product}"
+    );
+    for heading in [
+        "### Original",
+        "### Comprehensible English",
+        "### Key Help",
+        "### Translation",
+    ] {
+        assert!(product.contains(heading), "missing {heading} in:\n{product}");
+    }
+    assert_eq!(stderr(&markdown), "", "an export says nothing else");
+
+    let anki = dir.plainly_with(&["history", "export", "anki"], "", &[]);
+    assert_eq!(code(&anki), SUCCESS, "{}", stderr(&anki));
+    let product = stdout(&anki);
+    let cards: Vec<&str> = product.lines().collect();
+    assert_eq!(
+        cards.len(),
+        2,
+        "the header and the one card this Gloss makes:\n{product}"
+    );
+    assert_eq!(
+        cards[0],
+        "expression,gloss,passage,level,native_language,provider,model,prompt_label"
+    );
+    assert!(
+        cards[1].starts_with("go to ground,hide so that nobody can find you,\""),
+        "front and back are the Gloss, and the Passage follows as context: {}",
+        cards[1]
+    );
+    assert_eq!(stderr(&anki), "");
+
+    let raw = dir.plainly_with(&["history", "export", "raw"], "", &[]);
+    assert_eq!(code(&raw), SUCCESS, "{}", stderr(&raw));
+    let table = stdout(&raw);
+    assert!(
+        table.starts_with("id,created_at,generated_at,last_seen,level,"),
+        "{table}"
+    );
+    assert!(
+        table.contains("go to ground → hide so that nobody can find you"),
+        "the Glosses are in one cell:\n{table}"
+    );
+    assert!(table.contains("委员会"), "and so is the Translation:\n{table}");
+    assert_eq!(stderr(&raw), "");
+}
+
+#[test]
+fn export_of_an_empty_history_is_a_product_with_no_records() {
+    // Nothing is configured and nothing has been explained: an empty history is a
+    // legal thing to export, not an error.
+    let dir = TempDir::new("history-export-empty");
+
+    let markdown = dir.plainly_with(&["history", "export", "markdown"], "", &[]);
+    assert_eq!(code(&markdown), SUCCESS, "{}", stderr(&markdown));
+    assert_eq!(stdout(&markdown), "");
+
+    for (format, header) in [
+        ("anki", "expression,gloss,passage"),
+        ("raw", "id,created_at,generated_at"),
+    ] {
+        let export = dir.plainly_with(&["history", "export", format], "", &[]);
+        assert_eq!(code(&export), SUCCESS, "{}", stderr(&export));
+        assert!(
+            stdout(&export).lines().count() == 1 && stdout(&export).starts_with(header),
+            "the columns alone, so an import still knows what it is reading: {:?}",
+            stdout(&export)
+        );
+    }
+}
+
+#[test]
+fn an_export_without_a_known_format_is_a_usage_error() {
+    let dir = TempDir::new("history-export-usage");
+
+    for args in [
+        vec!["history", "export"],
+        vec!["history", "export", "pdf"],
+    ] {
+        let run = dir.plainly_with(&args, "", &[]);
+        assert_eq!(code(&run), USAGE, "{}", stderr(&run));
+        assert_eq!(stdout(&run), "");
+    }
+}
+
+#[test]
+fn the_export_and_the_single_record_view_share_one_rendering() {
+    // The detail view and the export must not drift: the same Record, read one
+    // way, is inside the same Record read the other way.
+    let (dir, id) = one_explained("history-export-shared");
+
+    let shown = dir.plainly_with(&["history", "show", &id.to_string()], "", &[]);
+    assert_eq!(code(&shown), SUCCESS, "{}", stderr(&shown));
+    let exported = dir.plainly_with(&["history", "export", "markdown"], "", &[]);
+    assert_eq!(code(&exported), SUCCESS, "{}", stderr(&exported));
+
+    assert!(
+        stdout(&exported).contains(&stdout(&shown)),
+        "the five sections the detail view prints are the ones the export carries:\n\
+         --- show ---\n{}\n--- export ---\n{}",
+        stdout(&shown),
+        stdout(&exported)
+    );
+}

@@ -12,10 +12,15 @@
 //! (spec §9), so `clear` asks twice — the command is the first act, `--yes` the
 //! second — while `delete` takes the id it was pointed at.
 //!
+//! `export` prints the whole history as one document in the shape the caller
+//! asked for — markdown to read, an Anki CSV to review from, a raw CSV for a
+//! spreadsheet. All three are products, so all three go to stdout and nothing
+//! else does.
+//!
 //! Reading the history never touches the network and never needs a provider: the
 //! store is local, and a record is all there is.
 
-use plainly_core::{Paths, Record, Store, render};
+use plainly_core::{ExportFormat, Paths, Record, Store, export, render};
 
 use crate::cli::HistoryCommand;
 use crate::commands::{CommandError, history_store, no_record, short_hash};
@@ -45,6 +50,7 @@ pub fn run(command: Option<HistoryCommand>) -> Result<u8, CommandError> {
         HistoryCommand::Untag { id, tag } => remove_tag(id, &tag),
         HistoryCommand::Delete { id } => delete(id),
         HistoryCommand::Clear { yes } => clear(yes),
+        HistoryCommand::Export { format } => write_export(format),
     }
 }
 
@@ -127,6 +133,28 @@ fn clear(yes: bool) -> Result<u8, CommandError> {
     let removed = store.clear()?;
 
     eprintln!("plainly: cleared {removed} records");
+    Ok(exit::SUCCESS)
+}
+
+/// The history in its own order — most recently seen first — as the one document
+/// the caller asked for.
+///
+/// The order is the history's, not the export's: a dump that re-sorted itself
+/// would be a different history from the one `list` shows and the one the main
+/// window shows.
+fn write_export(format: ExportFormat) -> Result<u8, CommandError> {
+    let store = open()?;
+    let records = store.list()?;
+
+    print!(
+        "{}",
+        match format {
+            ExportFormat::Markdown => export::markdown(&records),
+            ExportFormat::Anki => export::anki_csv(&records),
+            ExportFormat::Raw => export::raw_csv(&records),
+        }
+    );
+
     Ok(exit::SUCCESS)
 }
 

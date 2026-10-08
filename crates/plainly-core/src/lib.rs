@@ -12,6 +12,7 @@ pub mod config;
 pub mod discover;
 pub mod explain;
 pub mod explanation;
+pub mod export;
 mod hashing;
 pub mod paths;
 pub mod presets;

@@ -3,6 +3,7 @@
 use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
+use plainly_core::ExportFormat;
 
 /// Explain hard English in English.
 #[derive(Debug, Parser)]
@@ -166,6 +167,22 @@ pub enum HistoryCommand {
         /// Confirm that every Record should go
         #[arg(long)]
         yes: bool,
+    },
+    /// Write the stored Explanations to stdout as one document
+    ///
+    /// The product goes to stdout and nothing else does, so it can be redirected
+    /// or piped: `plainly history export anki > cards.csv`.
+    Export {
+        /// What to write: `markdown` to read, `anki` for one card per Gloss,
+        /// `raw` for one row per Record
+        // Parsed by core's own `FromStr` rather than a second enum with the same
+        // three variants: `app.export_format` and this argument name one closed
+        // set of shapes, and two spellings of it is how they come to disagree.
+        // There is no `.apkg` (spec §9) — writing one means implementing half of
+        // Anki's importer, and Anki already maps CSV fields onto its own. A plain
+        // comment, so a maintainer reads it and the help text does not.
+        #[arg(value_parser = |text: &str| text.parse::<ExportFormat>())]
+        format: ExportFormat,
     },
 }
 
