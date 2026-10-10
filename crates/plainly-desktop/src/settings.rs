@@ -179,14 +179,6 @@ pub struct BehaviorView {
 
     pub panel_autohide: bool,
     pub panel_autohide_seconds: u32,
-    /// Whether the panel in this build reads its three 行为 keys at all — the
-    /// corner and output above, and the auto-dismiss pair and section switches
-    /// below. It does not: the panel is a fixed 470px surface in the top-left
-    /// that never dismisses itself, and the ticket that gives it a position and
-    /// a timer is the next one. The screen says so under each group, because a
-    /// switch that appears to work and does not is worse than one that says
-    /// where it stands (spec §12).
-    pub panel_settings_honoured: bool,
     pub autohide_min: u32,
     pub autohide_max: u32,
     /// Whether this session can explain on copy at all.
@@ -506,7 +498,6 @@ fn behavior(app: &App, facts: &Facts) -> BehaviorView {
         outputs,
         panel_autohide: app.panel_autohide,
         panel_autohide_seconds: app.panel_autohide_seconds,
-        panel_settings_honoured: false,
         autohide_min: AUTO_HIDE_RANGE.0,
         autohide_max: AUTO_HIDE_RANGE.1,
         // A configuration that says "on" on a session that cannot do it is

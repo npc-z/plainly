@@ -3,16 +3,30 @@
 //! It is a separate binary because Tauri can create a layer surface but cannot
 //! draw into one — measured on the host, with a plain GTK C prototype rendering
 //! correctly in the same session. The compositor's keybinding spawns it, it
-//! reads the clipboard itself, and it exits when ✕ is pressed or when it never
-//! manages to draw. Ticket 15 is the rest of the panel: its actions, its
-//! position, and its complete set of states.
+//! reads the clipboard itself, and it exits when ✕ is pressed, when its
+//! auto-dismiss timer runs out, or when it never manages to draw.
+//!
+//! The modules are split by the question each one answers, which is also what
+//! makes the panel testable at all: `state.rs` is what it is showing, `position.rs`
+//! is where it goes, `prefs.rs` is what the configuration says, and `panel.rs` is
+//! the widgets that draw the answer. Tickets/15 is where that shape settled.
 
 mod app;
 mod capability;
 mod clipboard;
+mod css;
+mod document;
+mod open;
 mod panel;
 mod plan;
+mod position;
+mod prefs;
+mod provenance;
+mod provider;
+mod state;
 mod strings;
+#[cfg(test)]
+mod support;
 mod watchdog;
 mod worker;
 

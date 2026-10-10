@@ -73,8 +73,17 @@
         # and it is not transitive: gtk3's own lib dir is on the path, but the
         # `libglib-2.0` / `libgobject-2.0` / `libgio-2.0` its closure needs are
         # not, so the panel would link and then fail to start inside the shell.
+        #
+        # `at-spi2-core` (which is what the `atk` alias resolves to) is the same
+        # story with a different library: gtk3's closure has
+        # `libatk-1.0.so.0` in at-spi2-core's lib dir, which is not on the path
+        # either, and the panel dies at startup with "cannot open shared object
+        # file". The panel's own tests do not need it (they never open a display),
+        # which is exactly why this gap only shows up when someone runs the panel
+        # — so it is fixable here or it is rediscovered every time.
         libraries = with pkgs; [
           glib
+          at-spi2-core
           gtk3
           gtk-layer-shell
           webkitgtk_4_1

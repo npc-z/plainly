@@ -608,7 +608,6 @@
 
     return `
       <h2>${esc(heading(3))}</h2>
-      <p class="note">${esc(b.panel_settings_honoured ? "" : s.panel_settings_note)}</p>
       <div class="field">
         <label>${esc(s.copy_auto)}</label>
         <div class="inline">

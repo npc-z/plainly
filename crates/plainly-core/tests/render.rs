@@ -9,6 +9,11 @@ use plainly_core::{Explanation, SectionKind, render};
 /// handed it rather than knowing it.
 const NOT_NEEDED: &str = "本段不需要";
 
+/// The same for a Key Help with no Glosses. Its own sentence rather than the
+/// Grammar one: two empty sections saying the same thing would make one of them
+/// look like the other's mistake (tickets/15).
+const NO_GLOSSES: &str = "本段没有需要解释的表达";
+
 /// The prototype's common example, parsed through the contract so the fixture
 /// and the renderer cannot drift apart.
 fn common() -> Explanation {
@@ -81,7 +86,7 @@ fn the_document_omits_a_grammar_section_there_is_none_of() {
 
 #[test]
 fn the_panel_keeps_the_grammar_section_and_says_it_is_not_needed() {
-    let sections = render::panel(support::PASSAGE, &common(), NOT_NEEDED);
+    let sections = render::panel(support::PASSAGE, &common(), NOT_NEEDED, NO_GLOSSES);
 
     let kinds: Vec<SectionKind> = sections.iter().map(|section| section.kind).collect();
     assert_eq!(
@@ -107,7 +112,12 @@ fn the_panel_keeps_the_grammar_section_and_says_it_is_not_needed() {
 #[test]
 fn the_panel_shows_the_grammar_note_when_there_is_one() {
     let explanation = structural();
-    let sections = render::panel(support::PASSAGE_WITH_GRAMMAR, &explanation, NOT_NEEDED);
+    let sections = render::panel(
+        support::PASSAGE_WITH_GRAMMAR,
+        &explanation,
+        NOT_NEEDED,
+        NO_GLOSSES,
+    );
 
     let grammar = sections
         .iter()
@@ -142,10 +152,13 @@ fn the_passage_is_rendered_verbatim_even_when_it_is_not_clean_prose() {
 }
 
 #[test]
-fn a_key_help_with_no_glosses_is_left_out_rather_than_headed_blank() {
+fn an_empty_key_help_is_left_out_of_the_document_and_said_on_the_panel() {
     // Zero Glosses is a legitimate answer — the contract has no lower bound, and
     // "nothing in this Passage blocks comprehension" is a real thing for the
-    // model to say. A heading with nothing under it would read like a defect.
+    // model to say. A heading with nothing under it would read like a defect, so
+    // the document drops the section; the panel keeps it with a sentence, because
+    // a panel is read once, in place, where a gap cannot be told from a section
+    // that was never generated (tickets/15).
     let explanation = Explanation::parse(
         r#"{ "comprehensible": "c", "glosses": [], "grammar": null, "translation": "t" }"#,
     )
@@ -156,27 +169,43 @@ fn a_key_help_with_no_glosses_is_left_out_rather_than_headed_blank() {
         "### Original\nOriginal text.\n\n### Comprehensible English\nc\n\n### Translation\nt\n"
     );
 
-    let sections = render::panel("Original text.", &explanation, NOT_NEEDED);
+    let sections = render::panel("Original text.", &explanation, NOT_NEEDED, NO_GLOSSES);
     let kinds: Vec<SectionKind> = sections.iter().map(|section| section.kind).collect();
     assert_eq!(
         kinds,
         [
             SectionKind::Original,
             SectionKind::ComprehensibleEnglish,
+            SectionKind::KeyHelp,
             SectionKind::Grammar,
             SectionKind::Translation,
         ],
-        "the panel keeps the Grammar it must label and drops the empty Key Help"
+        "the panel keeps both sections it has to label"
+    );
+
+    let key_help = sections
+        .iter()
+        .find(|section| section.kind == SectionKind::KeyHelp)
+        .expect("the panel has the section");
+    assert_eq!(key_help.body, NO_GLOSSES);
+    assert_ne!(
+        key_help.body, NOT_NEEDED,
+        "the two empty sections do not say the same thing"
     );
 }
 
 #[test]
 fn the_panel_and_the_document_carry_the_same_bodies() {
-    // Two surfaces, one renderer: the panel differs in what it does with a
-    // Grammar section that is not there, and in nothing else.
+    // Two surfaces, one renderer: the panel differs in what it does with the two
+    // sections a model can leave empty, and in nothing else.
     let explanation = structural();
     let document = render::markdown(support::PASSAGE_WITH_GRAMMAR, &explanation);
-    let sections = render::panel(support::PASSAGE_WITH_GRAMMAR, &explanation, NOT_NEEDED);
+    let sections = render::panel(
+        support::PASSAGE_WITH_GRAMMAR,
+        &explanation,
+        NOT_NEEDED,
+        NO_GLOSSES,
+    );
 
     for section in sections {
         assert!(

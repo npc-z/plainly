@@ -166,8 +166,6 @@ pub struct SettingsStrings {
     pub provenance_generated: &'static str,
     pub provenance_seen: &'static str,
     pub provenance_format: &'static str,
-    /// Shown under every group of 行为 controls the panel does not read yet.
-    pub panel_settings_note: &'static str,
     pub section_titles: [&'static str; 5],
     pub panel_corner_top_left: &'static str,
     pub panel_corner_top_right: &'static str,
@@ -238,7 +236,6 @@ pub const SETTINGS: SettingsStrings = SettingsStrings {
     provenance_generated: "生成",
     provenance_seen: "最后查看",
     provenance_format: "记录格式",
-    panel_settings_note: "这些已经写进 [app]，但 v0 的面板还固定在左上角、也不会自动消失、节也全显示——它们会随面板的定位与退出路径票据生效，现在改了不会立刻看出变化。",
     prompt_version: "版本",
     prompt_version_note: "出厂提示词随应用更新持续改进；版本是内容的哈希，所以相同提示词仍然只生成一次。",
     prompt_appendix: "你的附录（追加在出厂提示词之后）",
