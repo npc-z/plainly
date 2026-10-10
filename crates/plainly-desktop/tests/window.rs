@@ -508,12 +508,8 @@ fn copy_on_popup_is_offered_only_where_data_control_exists() {
     let desktop = window(&dir, &[]);
     let behavior = desktop.settings().expect("the settings read").behavior;
     assert!(
-        !behavior.copy_auto_popup_honoured,
-        "the listener is not built, so the switch says it does nothing yet"
-    );
-    assert!(
         behavior.copy_auto_popup_availability.enabled,
-        "this session does have data-control, which is why the note is about the listener"
+        "this session does have data-control, which is what the note rests on"
     );
     let with = availability(&plainly_core::Desktop::new(["ext_data_control_manager_v1"]));
     let without = availability(&plainly_core::Desktop::new(["wl_compositor"]));
@@ -524,11 +520,16 @@ fn copy_on_popup_is_offered_only_where_data_control_exists() {
         "the available case names the capability it rests on: {}",
         with.note
     );
-    // And the sentence about the listener not existing is the same constant the
+    // And the sentence about what turning it on costs is the same constant the
     // screen draws, so the two cannot drift into promising and retracting.
     assert_eq!(
-        plainly_desktop::strings::STRINGS.copy_auto_not_honoured,
-        plainly_desktop::strings::COPY_AUTO_NOT_HONOURED
+        plainly_desktop::strings::STRINGS.copy_auto_note,
+        plainly_desktop::strings::COPY_AUTO_NOTE
+    );
+    assert!(
+        plainly_desktop::strings::COPY_AUTO_NOTE.contains("--watch"),
+        "the price of the switch names the process that pays it: {}",
+        plainly_desktop::strings::COPY_AUTO_NOTE
     );
     assert!(!without.enabled);
     assert!(

@@ -53,8 +53,71 @@ pub const SOCKET_NAME: &str = "dev.plainly.app-desktop.sock";
 /// The lock file beside the socket.
 pub const LOCK_NAME: &str = "dev.plainly.app-desktop.lock";
 
-/// What a second launch writes to the window.
+/// The first word of every request on the socket.
 const ACTIVATE: &str = "activate";
+
+/// What a launch asks the window that already holds the lock to do.
+///
+/// One sentence with two parts, because the second one is the only thing a
+/// window needs to know about a listener: whether this launch is one. A launch
+/// that is not tells the running listener to stop — the two requests "show me the
+/// window" and "keep watching for copies" are different, and a process cannot be
+/// both unless it was asked to be. `--nowatch` is how that is spelled **on the
+/// wire**; there is no such command-line flag, because "I did not type `--watch`"
+/// is not something a launch has to say twice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Activation {
+    /// Whether the launch that sent this is `--watch`.
+    pub watch: bool,
+}
+
+impl Activation {
+    /// What this launch says about itself.
+    ///
+    /// A plain `plainly-desktop` — the panel's ⤢, a desktop shortcut — is not a
+    /// watcher, and says so. That is the safe direction: only a launch that was
+    /// asked for the listener may keep one alive.
+    pub fn of(watch: bool) -> Self {
+        Self { watch }
+    }
+
+    /// The line that goes over the socket.
+    fn to_line(self) -> String {
+        format!(
+            "{ACTIVATE} {}\n",
+            match self.watch {
+                true => "--watch",
+                false => "--nowatch",
+            }
+        )
+    }
+
+    /// The same, back from the socket.
+    ///
+    /// A request this process does not understand is still an activation. The
+    /// one thing every launch agrees on is bringing the window forward, and
+    /// refusing to act on a garbled line would leave a person pressing a
+    /// shortcut that does nothing at all. The only part that is guessed is
+    /// whether the sender is a watcher, and the safe guess for that is "no":
+    /// only a launch that actually asked to listen may keep a listener alive.
+    /// A line that is not an activation at all is `None`, because there is
+    /// nothing to bring forward for it either.
+    fn parse(line: &str) -> Option<Self> {
+        let mut words = line.split_whitespace();
+
+        // The verb first, whole: `activated` is not a request to come forward.
+        if words.next() != Some(ACTIVATE) {
+            return None;
+        }
+
+        // Then the one word that says whether the sender is a watcher, matched
+        // exactly. Only `--watch` means yes: `activate --nowatch --watch` is not
+        // a spelling of anything, and the safe reading of it is "not a watcher".
+        Some(Self::of(
+            words.next() == Some("--watch") && words.next().is_none(),
+        ))
+    }
+}
 
 /// How long a launch keeps trying to reach a window that holds the lock, and how
 /// long it waits between tries.
@@ -83,12 +146,12 @@ pub enum Role {
 /// included, so that "it just opened" and "it was already open" are one path
 /// rather than two. It is called from the listener thread, so what travels on
 /// that channel has to be something the main loop can act on from there.
-pub fn claim(activate: Sender<()>) -> Result<Role, String> {
+pub fn claim(activate: Sender<Activation>, watch: bool) -> Result<Role, String> {
     let paths = Paths::resolve()?;
 
     match hold(&paths.lock)? {
         Hold::Taken => {
-            hand_over(&paths.socket)?;
+            hand_over(&paths.socket, Activation::of(watch))?;
             Ok(Role::Handed)
         }
         Hold::Mine(held) => {
@@ -107,7 +170,7 @@ pub fn claim(activate: Sender<()>) -> Result<Role, String> {
             // The window comes forward when it opens because this is where that
             // happens, not because startup remembered to do it.
             activate
-                .send(())
+                .send(Activation::of(watch))
                 .map_err(|_| "the window closed while it was starting".to_string())?;
 
             // Held for as long as the window lives; the kernel releases it when
@@ -235,14 +298,14 @@ fn bind(path: &Path) -> Result<UnixListener, String> {
 }
 
 /// Serve the socket: every connection is one request to come forward.
-fn listen(listener: UnixListener, activate: Sender<()>) {
+fn listen(listener: UnixListener, activate: Sender<Activation>) {
     thread::spawn(move || {
         for stream in listener.incoming() {
             let Ok(stream) = stream else { continue };
             let mut line = String::new();
             let _ = BufReader::new(&stream).read_line(&mut line);
-            if line.trim() == ACTIVATE {
-                let _ = activate.send(());
+            if let Some(activation) = Activation::parse(&line) {
+                let _ = activate.send(activation);
             }
         }
     });
@@ -254,14 +317,14 @@ fn listen(listener: UnixListener, activate: Sender<()>) {
 /// launch that arrived in between would otherwise give up on a window that is
 /// about to be listening, and from a key binding that looks like nothing
 /// happening at all.
-fn hand_over(path: &Path) -> Result<(), String> {
+fn hand_over(path: &Path, activation: Activation) -> Result<(), String> {
     let mut last = String::new();
 
     for _ in 0..HANDOVER_TRIES {
         match UnixStream::connect(path) {
             Ok(mut stream) => {
                 stream
-                    .write_all(format!("{ACTIVATE}\n").as_bytes())
+                    .write_all(activation.to_line().as_bytes())
                     .map_err(|error| format!("cannot ask the window to come forward: {error}"))?;
                 return Ok(());
             }
@@ -385,20 +448,65 @@ mod tests {
     }
 
     #[test]
+    fn a_request_says_whether_the_launch_that_sent_it_is_a_watcher() {
+        // The window's answer to "keep listening" depends on this, so the two
+        // spellings have to be told apart on the way back in — and a line nobody
+        // can read is still a request to come forward, because that is the one
+        // thing every launch agrees on.
+        assert_eq!(Activation::parse("activate\n"), Some(Activation::of(false)));
+        assert_eq!(
+            Activation::parse("activate --watch\n"),
+            Some(Activation::of(true))
+        );
+        assert_eq!(
+            Activation::parse("activate --nowatch\n"),
+            Some(Activation::of(false))
+        );
+        assert_eq!(
+            Activation::parse("activate --nonsense\n"),
+            Some(Activation::of(false)),
+            "an unreadable request is still a request to come forward"
+        );
+        assert_eq!(Activation::parse("something else\n"), None);
+        assert_eq!(
+            Activation::parse("activated --watch\n"),
+            None,
+            "the verb is matched whole: `activated` asks for nothing"
+        );
+        assert_eq!(
+            Activation::parse("activate --nowatch --watch\n"),
+            Some(Activation::of(false)),
+            "two words is not a spelling of anything, and the safe reading is not a watcher"
+        );
+
+        // And the line a launch writes is the line the window reads.
+        for watch in [true, false] {
+            assert_eq!(
+                Activation::parse(&Activation::of(watch).to_line()),
+                Some(Activation::of(watch))
+            );
+        }
+    }
+
+    #[test]
     fn a_second_launch_asks_the_window_to_come_forward() {
         let dir = temp_dir("handover");
         let socket = dir.join(SOCKET_NAME);
         let lock = dir.join(LOCK_NAME);
-        let (sender, receiver) = channel();
+        let (sender, receiver) = channel::<Activation>();
 
         let _held = hold(&lock).expect("the lock opens");
         let listener = bind(&socket).expect("the socket is bindable");
         listen(listener, sender);
 
-        hand_over(&socket).expect("the window is reachable");
-        receiver
-            .recv_timeout(Duration::from_secs(5))
-            .expect("the request arrives");
+        hand_over(&socket, Activation::of(true)).expect("the window is reachable");
+        assert_eq!(
+            receiver
+                .recv_timeout(Duration::from_secs(5))
+                .expect("the request arrives"),
+            Activation::of(true),
+            "the launch's own answer about being a watcher travels with the ask"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -417,7 +525,8 @@ mod tests {
             drop(stream);
         });
 
-        hand_over(&socket).expect("a window that starts in time is still reached");
+        hand_over(&socket, Activation::of(false))
+            .expect("a window that starts in time is still reached");
         listening.join().expect("the helper thread does not panic");
 
         let _ = std::fs::remove_dir_all(&dir);

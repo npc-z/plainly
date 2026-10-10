@@ -38,6 +38,18 @@ _Avoid_: cache key, hash, dedupe key
 The three answers that make two runs interchangeable: the provider, the model id, and whether thinking is on. A profile is a component of the Lookup Key, so switching model does not hand back an Explanation another model produced.
 _Avoid_: provider, endpoint, model settings
 
+**Reading**:
+The clipboard as the listener holds it: the Passage plus the MIME types its owner published. A Reading is either readable text or one of the two unreadable states (empty, or a session that will not answer) — and it is *not* a judgement: deciding what may be done with it is `Clipboard::reading`, in core.
+_Avoid_: observation, clipboard content, snapshot
+
+**Copy Listener**:
+The process that watches the clipboard and spawns the panel for a new Reading: `plainly-desktop --watch`, off by default, and the only resident process the feature introduces. It decides nothing — the panel it starts judges sensitive content, hits the cache and reuses its own window — so the automatic trigger and the compositor key binding are one path, not two.
+_Avoid_: watcher, daemon, copy-auto-popup (that is the switch, not the process)
+
+**Arm**:
+The Reading the listener finds on the clipboard when it starts, which it adopts as the baseline and never opens a panel for. It exists so that "the same words copied again" is told apart from "the clipboard already held these words".
+_Avoid_: initial state, seed, first reading
+
 ### The prompt
 
 **Factory Prompt**:

@@ -420,7 +420,7 @@ impl Desktop {
     /// Put text on the clipboard. Fails loudly: a "copied" that copied nothing
     /// is worse than an error.
     pub fn copy(&self, text: &str) -> Result<(), WindowError> {
-        crate::clipboard::copy(text)
+        crate::copy::copy(text)
     }
 
     /// Change one or more settings, then hand back the whole settings screen.
@@ -501,6 +501,16 @@ impl Desktop {
     /// Where the durable records live, so the window can offer to open them.
     pub fn data_dir(&self) -> &Path {
         self.paths.data_dir()
+    }
+
+    /// Where the configuration file is.
+    ///
+    /// The listener reads it again on every copy (that is how the switch is
+    /// obeyed), and it is opened before the window is built, so the window hands
+    /// the path over rather than letting a second discovery of the same
+    /// environment produce a second opinion about where the file is.
+    pub fn config_file(&self) -> PathBuf {
+        self.paths.config_file()
     }
 
     fn query(&self) -> Result<(String, Option<String>), WindowError> {

@@ -23,12 +23,14 @@ pub mod app;
 pub mod capability;
 pub mod clipboard;
 pub mod commands;
+pub mod copy;
 pub mod error;
 pub mod open;
 pub mod settings;
 pub mod single;
 pub mod strings;
 pub mod view;
+pub mod watch;
 pub mod window;
 
 pub use app::{

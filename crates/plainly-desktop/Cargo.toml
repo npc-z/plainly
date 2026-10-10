@@ -45,6 +45,12 @@ libc = "0.2"
 
 # The compositor's registry decides whether "explain on copy" can be offered at
 # all (spec §12, §13): the same probe the panel makes, read for a different
-# question. The clipboard itself is written through `wl-copy`, so this crate
-# needs the registry and nothing else from the Wayland stack.
+# question. The clipboard itself is *written* through `wl-copy`.
 wayland-client.workspace = true
+
+# The listener *reads* it, and a window cannot: `--watch` has no surface and no
+# focus, and taking focus on every copy is the opposite of what the feature is
+# for. This is the panel's own reader (tickets/12), and the same crate the panel
+# depends on for the same protocol — `watch::Watcher` is the part the panel does
+# not need, because a panel is spawned *by* a copy rather than watching for one.
+wl-clipboard-rs.workspace = true

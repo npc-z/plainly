@@ -65,8 +65,9 @@ pub struct Strings {
     pub error_prefix: &'static str,
     /// The badge a locally hosted model carries in the detail (spec §12).
     pub local_badge: &'static str,
-    /// Under the copy-on-popup switch while the listener is not built.
-    pub copy_auto_not_honoured: &'static str,
+    /// Under the copy-on-popup switch: what turning it on costs, and how the
+    /// listener that spends it is started.
+    pub copy_auto_note: &'static str,
     /// What the frontend says when it is being viewed outside the window, where
     /// no command — not even this one — can be reached. It is here rather than
     /// written into the JavaScript because the interface's copy has one home.
@@ -119,7 +120,7 @@ pub const STRINGS: Strings = Strings {
     saved: "已保存",
     error_prefix: "出错了：",
     local_badge: "本机",
-    copy_auto_not_honoured: COPY_AUTO_NOT_HONOURED,
+    copy_auto_note: COPY_AUTO_NOTE,
     outside_window: "这个页面运行在窗口之外：请用 plainly-desktop 打开。",
     unknown_export: "不认识的导出格式：",
 };
@@ -328,24 +329,75 @@ pub fn update_failed(reason: &str) -> String {
 // no function here, because the sentence is assembled on the side that has the
 // reason in hand.
 
-/// "Explain on copy" can work here. What it *would* cost — one resident process,
-/// only while the switch is on (spec §12) — is what
-/// [`COPY_AUTO_NOT_HONOURED`] says, and it is underneath this line rather than
-/// in it: one screen that promises and then retracts a behaviour in two
-/// sentences is worse than one that names the capability and its state.
-pub const COPY_AUTO_AVAILABLE: &str = "这个桌面支持 data-control，能力上可行。";
+/// "Explain on copy" can work here. What it costs is said underneath this line
+/// ([`COPY_AUTO_NOTE`]) rather than in it: the capability and the price are two
+/// facts, and one sentence holding both would leave the switch looking available
+/// when the process that honours it is not running (spec §12).
+pub const COPY_AUTO_AVAILABLE: &str = "这个桌面支持 data-control。";
 
-/// The other half of the sentence above, while the listener is not built: the
-/// capability exists on this session, the program that would use it does not
-/// exist yet, and the switch says so instead of pretending. It is also the one
-/// source of that sentence — the action's own string field is this constant.
-pub const COPY_AUTO_NOT_HONOURED: &str =
-    "监听循环还没有实现：开关会写进配置，但 v0 不会真的在复制时弹面板。";
+/// What the switch costs and what starts the listener.
+///
+/// Under the switch in both directions, because both are true: on a session that
+/// has no data-control the switch is greyed and this is the same "off" the note
+/// above it describes. The key fact is the third sentence — the listener is a
+/// process the user starts, and a switch turned on with nobody listening is on
+/// in the file and off in the world. Saying that here is the difference between
+/// a switch and a switch that appears to work (spec §12, tickets/14).
+pub const COPY_AUTO_NOTE: &str =
+    "开启后由 plainly-desktop --watch 监听剪贴板：打开这个开关才引入一个常驻进程，默认路径下没有东西需要常驻。";
 
 /// "Explain on copy" cannot work here. The switch is drawn greyed with this
 /// sentence rather than hidden, so that a missing capability is a fact the user
 /// knows rather than a feature they think does not exist (spec §12).
 pub const COPY_AUTO_UNAVAILABLE: &str = "你的桌面不支持：需要 wlroots 类合成器的 data-control 协议。换成 niri / sway 这类合成器后可用。";
+
+/// `--watch` on a session with no data-control.
+///
+/// The same fact as [`COPY_AUTO_UNAVAILABLE`], said from the process rather than
+/// the settings screen: the switch is greyed there, so the only way to ask for a
+/// listener anyway is `--watch` by hand.
+pub fn watch_needs_data_control() -> &'static str {
+    "plainly-desktop --watch：这个桌面没有 data-control（需要 wlroots 类合成器），监听不会启动。"
+}
+
+/// `--watch` with the listener actually started.
+///
+/// Said out loud on the launch that asked for it: a resident process that
+/// started quietly is one a person cannot tell from one that failed, and the
+/// whole point of `--watch` is that it is a deliberate, visible cost.
+pub const WATCH_STARTED: &str =
+    "plainly-desktop --watch：复制自动弹的监听已启动（配置里 copy_auto_popup 打开时才真的弹面板）。";
+
+/// The listener stopping because the switch was turned off.
+pub const WATCH_STOPPED_SWITCH_OFF: &str =
+    "plainly-desktop --watch：配置里 copy_auto_popup 已关，监听停止。";
+
+/// The listener stopping because a later launch asked for the window instead.
+pub const WATCH_STOPPED_WINDOW: &str =
+    "plainly-desktop --watch：又启动了一次不监听的主窗口，监听停止。";
+
+/// The clipboard watch ending on its own: the compositor stopped answering, or
+/// the session went away.
+pub const WATCH_ENDED: &str =
+    "plainly-desktop --watch：剪贴板监听结束（合成器不再应答或会话已断开），复制自动弹不再生效。";
+
+/// A clipboard that could not be read at all, with the library's reason.
+///
+/// The listener has no surface to put this on, so it goes to stderr: a resident
+/// process that is not working has to say so somewhere, and a silent one is the
+/// one thing it must not be.
+pub fn watch_read_failed(reason: &str) -> String {
+    format!("plainly-desktop --watch：读不了剪贴板：{reason}")
+}
+
+/// `plainly-panel` would not start, from the listener.
+///
+/// Named, because the two binaries are usually built together and one of them
+/// missing is the commonest reason for this.
+pub fn watch_panel_would_not_start(error: std::io::Error) -> String {
+    format!("plainly-desktop --watch：拉不起 plainly-panel：{error}")
+}
+
 
 /// The settings screen's copy, for the command that hands it over.
 pub fn settings_strings() -> SettingsStrings {
@@ -431,11 +483,3 @@ pub fn output_label(index: usize) -> String {
     format!("显示器 {}", index + 1)
 }
 
-/// The argument `--watch` when the listener is not built yet.
-///
-/// Said out loud rather than silently ignored: a process started to watch for
-/// copies and doing nothing is worse than one that says so. It does not claim
-/// the switch is greyed — on a session with data-control it is not, and the
-/// settings screen says the same thing this line does.
-pub const WATCH_NOT_IMPLEMENTED: &str =
-    "plainly-desktop --watch：复制自动弹的监听还没有实现，这个进程不会做任何事";

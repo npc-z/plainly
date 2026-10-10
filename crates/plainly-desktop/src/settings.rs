@@ -183,13 +183,6 @@ pub struct BehaviorView {
     pub autohide_max: u32,
     /// Whether this session can explain on copy at all.
     pub copy_auto_popup: bool,
-    /// Whether the switch would actually do anything if it were on. It would
-    /// not: the listener that watches for copies is the next ticket's, so the
-    /// note under the switch promises a process the build does not start. Said
-    /// rather than implied, for the same reason the panel's position controls
-    /// say it: a switch that appears to work and does not is worse than a switch
-    /// that says where it stands.
-    pub copy_auto_popup_honoured: bool,
     /// One sentence, shown whether or not the switch can be used: a capability
     /// that is missing is named rather than hidden (spec §12).
     pub copy_auto_popup_availability: Availability,
@@ -506,7 +499,6 @@ fn behavior(app: &App, facts: &Facts) -> BehaviorView {
         // is not rewritten — the key is the user's, and a session that gains
         // data-control brings it back.
         copy_auto_popup: app.copy_auto_popup && copy_auto.enabled,
-        copy_auto_popup_honoured: false,
         copy_auto_popup_availability: copy_auto,
         sections: SectionsView {
             original: app.show_original,

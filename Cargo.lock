@@ -2969,6 +2969,7 @@ dependencies = [
  "tauri-build",
  "thiserror 2.0.21",
  "wayland-client",
+ "wl-clipboard-rs",
 ]
 
 [[package]]

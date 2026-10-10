@@ -614,7 +614,7 @@
           <input id="copy-auto" type="checkbox" ${b.copy_auto_popup ? "checked" : ""} ${b.copy_auto_popup_availability.enabled ? "" : "disabled"}>
           <span class="note">${esc(b.copy_auto_popup_availability.note)}</span>
         </div>
-        ${b.copy_auto_popup_honoured ? "" : `<p class="note">${esc(t.copy_auto_not_honoured)}</p>`}
+        ${b.copy_auto_popup_availability.enabled ? `<p class="note">${esc(t.copy_auto_note)}</p>` : ""}
       </div>
       <div class="field">
         <label>${esc(s.panel_corner)}</label>
