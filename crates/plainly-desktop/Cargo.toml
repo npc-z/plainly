@@ -6,11 +6,45 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+# A library as well as a binary: everything the window *decides* — which Records
+# a search means, what the settings page shows, where an export lands — is
+# reachable from a test without a display, and `src/commands.rs` is only the
+# translation of those calls into Tauri's calling convention.
+[lib]
+name = "plainly_desktop"
+path = "src/lib.rs"
+
 [[bin]]
 name = "plainly-desktop"
 path = "src/main.rs"
 
-# No plainly-core dependency yet: the binary is a placeholder until its own
-# ticket gives it something to do. The edge is added when the code needs it,
-# rather than sitting here unused.
+[build-dependencies]
+tauri-build = "2.7.1"
+
 [dependencies]
+plainly-core.workspace = true
+
+# The window itself (spec §13). Tauri cannot draw a layer surface — ticket 12
+# settled that — but an ordinary window is exactly what it is for.
+tauri = "2.12.1"
+
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+# `tauri-plugin-single-instance` is the plugin the spec names, but this machine
+# has no route to crates.io and the plugin is not in the local registry, so the
+# handover it performs is spoken directly instead — an `flock` lock file in the
+# session's runtime directory decides who is the window, and a socket beside it
+# carries the request. No dependency is involved either way; see `single.rs`.
+
+# One syscall, for the one thing the standard library will not answer: the
+# process's own user id, which names the fallback socket when a session has no
+# `XDG_RUNTIME_DIR`. It is already in the graph through the keyring.
+libc = "0.2"
+
+# The compositor's registry decides whether "explain on copy" can be offered at
+# all (spec §12, §13): the same probe the panel makes, read for a different
+# question. The clipboard itself is written through `wl-copy`, so this crate
+# needs the registry and nothing else from the Wayland stack.
+wayland-client.workspace = true

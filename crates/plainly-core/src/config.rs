@@ -84,6 +84,13 @@ pub enum ExportFormat {
 }
 
 impl ExportFormat {
+    /// Every format, in the order a surface should offer them.
+    pub const ALL: [ExportFormat; 3] = [
+        ExportFormat::Markdown,
+        ExportFormat::Anki,
+        ExportFormat::Raw,
+    ];
+
     /// The label as it is written in configuration.
     pub fn as_str(self) -> &'static str {
         match self {

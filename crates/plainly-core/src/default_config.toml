@@ -32,7 +32,13 @@ show_grammar = true
 show_translation = true
 
 # Where the panel appears. `panel_corner` is one of top-left, top-right,
-# bottom-left, bottom-right; `panel_display` is "current" or an output name.
+# bottom-left, bottom-right; `panel_display` is "current" — follow the output
+# the pointer is on — or the name of one output, which is the compositor's
+# connector name (`eDP-1`, `DP-2`). The main window writes "output-1", "output-2"
+# for a display it can count but not name: `wl_output` carries a make and a model
+# and the connector name comes from the `xdg-output` protocol, which v0 does not
+# speak. Until the panel's positioning ticket lands, both keys are written and
+# nothing reads them yet.
 panel_corner = "top-left"
 panel_display = "current"
 

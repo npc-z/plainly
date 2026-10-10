@@ -45,7 +45,9 @@
         # `wl-clipboard` is here for `plainly explain --clipboard`, the headless
         # surface's reader of the session clipboard (ticket 12). The panel reads
         # the clipboard through data-control directly; this is what a client with
-        # no window has instead.
+        # no window has instead. The main window *writes* the clipboard through
+        # `wl-copy` from the same package, and falls back to `xclip` on a session
+        # with no Wayland at all (ticket 14) — hence both.
         devTools = with pkgs; [
           pnpm
           nodejs_24
@@ -54,6 +56,7 @@
           xdg-utils
           patchelf
           wl-clipboard
+          xclip
         ];
 
         # The editor's view of the code. Not needed to build or run anything,

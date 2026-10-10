@@ -1,0 +1,37 @@
+<!doctype html>
+<!--
+  The Plainly main window (ticket 14).
+
+  Plain HTML, one stylesheet and one script, embedded in the binary by
+  `tauri-build`. Everything it draws comes from the backend as data, including
+  the copy: `strings.rs` owns the words, so this file has none of its own that a
+  translator would have to hunt for.
+
+  The layout is the one ticket 16 settled: a top bar with two tabs, a resident
+  330px list on the left (search box, then rows grouped by day), and the detail
+  on the right. The panel's own surface is not drawn here — it is a separate
+  process — but the relationship is the one the prototype made visible: the
+  window is where you go to look things up.
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Plainly</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="win">
+  <header class="tbar">
+    <span class="name" id="app-name">Plainly</span>
+    <nav>
+      <a id="tab-history" data-screen="history"></a>
+      <a id="tab-settings" data-screen="settings"></a>
+    </nav>
+    <span class="banner" id="banner" hidden></span>
+  </header>
+  <div class="body" id="body"></div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
