@@ -1,0 +1,66 @@
+# The two crates that must build with no graphics stack, which is the promise
+# the workspace split exists to keep: `plainly-core` and `plainly-cli` (spec §2,
+# §10, §14). Neither reaches GTK, gtk-layer-shell, WebKit or Wayland, so a plain
+# runner can build and test both — and saying so here is what makes the promise a
+# thing CI checks rather than a thing the README claims. `plainly-core` is the
+# spec's primary testing seam ("缝 A"), so leaving it out would let a regression
+# in the contract, the lookup key or the splitter pass this job green.
+#
+# The panel and the main window are deliberately absent: they need the flake's
+# libraries, and the spec asks for a manual checklist, not a runner, to cover
+# them (`docs/manual-checks.md`).
+#
+# The runner is a plain Rust toolchain rather than `nix develop` on purpose:
+# installing Nix to build crates that need no system libraries would be the
+# expensive way to prove the cheap thing.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  headless:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The toolchain comes from the runner's image rather than from
+      # `flake.nix`: pinning it here would be a second place to keep in step, and
+      # `rust-toolchain.toml` does not exist. The workspace's own
+      # `rust-version = "1.85"` is the floor, and `stable` is what the runner
+      # has; a build that needs nightly would fail here rather than later.
+      #
+      # No `rustfmt` component and no format step: the formatter's output for
+      # this revision differs between the toolchain the flake pins and the one
+      # the runner installs, so a format gate here would fail on lines nobody
+      # touched. Formatting is a review matter until the two agree.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      # Seam A: the domain logic. Its tests use a stub provider on loopback for
+      # the network side and a temporary XDG tree for the store, so no key and no
+      # real endpoint are involved.
+      - name: cargo test -p plainly-core
+        run: cargo test -p plainly-core
+
+      # Seam B: the real binary, a temporary XDG tree, and a stub provider on
+      # loopback. If this job ever fails on a missing `libgtk`, a dependency has
+      # crept into `plainly-core` or `plainly-cli`.
+      - name: cargo test -p plainly-cli
+        run: cargo test -p plainly-cli
+
+      # The same invariant, checked from the outside: the dependency graph and
+      # the built binary's linkage. It builds the CLI itself and prints the
+      # shared libraries it needs.
+      #
+      # It reads cargo's JSON with `python3`, which this runner's base image has;
+      # nothing here installs a toolchain for the check itself.
+      - name: the CLI is headless
+        run: scripts/check-headless-cli.sh
+
+      # Warnings are not failures on their own (`-D warnings` would make an
+      # unrelated rustc release break the build), but they are read.
+      - name: clippy
+        run: cargo clippy -p plainly-core -p plainly-cli --all-targets

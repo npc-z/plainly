@@ -51,6 +51,14 @@
         devTools = with pkgs; [
           pnpm
           nodejs_24
+          # `python3` is asked for by name in two places a contributor is told to
+          # run inside this shell: `scripts/check-headless-cli.sh` reads cargo's
+          # JSON with it, and `scripts/stub-provider.py` is the fake provider the
+          # manual end-to-end checklist uses. On a machine whose base system has
+          # no python3, a non-pure `nix develop` would still find one by accident
+          # through the host `PATH`; declaring it here is what makes it a
+          # guarantee (AGENTS.md: a missing program is fixed in `flake.nix`).
+          python3
           clang
           pkg-config
           xdg-utils
@@ -140,8 +148,10 @@
 
         # Deliberately empty. readest learned this the expensive way: `checks`
         # pointed at the app build turns `nix flake check` into a full release
-        # build. CI is deferred out of v0 anyway; when it lands it runs
-        # `cargo test -p plainly-cli`, not a flake check.
+        # build. CI is `.github/workflows/ci.yml` instead, and it runs
+        # `cargo test -p plainly-core -p plainly-cli` — the crates that need no
+        # system libraries — rather than a flake check, so the GUI crates are
+        # never built there.
         checks = { };
       });
 }

@@ -34,3 +34,7 @@ result-*
 # Tauri's generated schemas: rewritten by `tauri-build` on every compile, and
 # derived entirely from `tauri.conf.json`.
 crates/plainly-desktop/gen/
+
+# The manual end-to-end stub logs one line per request; it is evidence, not
+# source.
+scripts/stub-provider.requests.log

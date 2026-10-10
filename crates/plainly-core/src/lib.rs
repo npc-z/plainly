@@ -12,6 +12,7 @@ pub mod clipboard;
 pub mod config;
 pub mod desktop;
 pub mod discover;
+pub mod display;
 pub mod explain;
 pub mod explanation;
 pub mod export;
@@ -40,6 +41,7 @@ pub use config::{
 };
 pub use desktop::{DATA_CONTROL, Desktop, Presentation};
 pub use discover::{COMMON_PORTS, Candidate, CommonPort, LocalRuntime, ModelLister};
+pub use display::{DisplaySession, SessionRefusal};
 pub use explain::{Downgrade, ExplainError, Run, RunFailure, SOURCE_LANGUAGE, explain};
 pub use explanation::{ContractError, Explanation, Gloss, wire_schema};
 pub use paths::{CONFIG_FILE, HISTORY_FILE, IDENTIFIER, PathError, PathInputs, Paths};

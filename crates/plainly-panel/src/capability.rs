@@ -4,14 +4,27 @@
 //! whether the session publishes data-control (spec §12, tickets/12). The answer
 //! is read from the compositor's registry rather than guessed at, and handed to
 //! core, which owns the decision.
+//!
+//! The one answer that is settled before connecting is the session itself: a
+//! Wayland client on X11 can only fail, and its failure would name a socket
+//! rather than the exclusion (spec §1).
 
+use plainly_core::DisplaySession;
 use plainly_core::desktop::{Desktop, Presentation};
 use wayland_client::globals::{GlobalListContents, registry_queue_init};
 use wayland_client::protocol::wl_registry;
 use wayland_client::{Connection, Dispatch, QueueHandle};
 
 /// How this session's panel has to present itself.
+///
+/// X11 is refused in words rather than attempted: the panel is a layer surface,
+/// X11 has no such surface, and v0 excludes the session outright. Nothing is
+/// degraded here — the degradation v0 has is GNOME's, and GNOME is Wayland.
 pub fn presentation() -> Result<Presentation, String> {
+    if let Some(refusal) = DisplaySession::from_process_env().refusal("the panel") {
+        return Err(refusal.to_string());
+    }
+
     Ok(Desktop::new(protocols()?).presentation())
 }
 

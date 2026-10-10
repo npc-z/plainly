@@ -15,6 +15,8 @@
 
 use std::process::Command;
 
+use plainly_core::DisplaySession;
+use plainly_core::SessionRefusal;
 use plainly_core::clipboard::{Clipboard, MimeType, PASSWORD_HINT};
 
 /// The program that reaches the clipboard from a client that has no window.
@@ -41,6 +43,15 @@ pub enum Error {
     /// `wl-paste` falls back to any offered type and would hand over an image's
     /// bytes as if they were a Passage.
     NotText,
+    /// The session refuses this read before it is attempted: X11, or a machine
+    /// with no Wayland session at all (spec §1). Reported as that rather than as
+    /// `wl-paste`'s own complaint about a socket, because the person's next step
+    /// is different — not "fix the clipboard" but "use Wayland, or use the
+    /// command line, which needs no display".
+    ///
+    /// The refusal carries its own sentence and cannot be built for a Wayland
+    /// session, so this arm cannot be reached with "nothing is wrong".
+    Refused(SessionRefusal),
     /// `wl-paste` ran and failed: no data-control, no session to talk to.
     Failed(String),
 }
@@ -53,6 +64,7 @@ impl std::fmt::Display for Error {
             }
             Error::Empty => f.write_str("the clipboard is empty"),
             Error::NotText => f.write_str("the clipboard holds no text"),
+            Error::Refused(refusal) => refusal.fmt(f),
             Error::Failed(reason) => write!(f, "cannot read the clipboard: {reason}"),
         }
     }
@@ -60,7 +72,16 @@ impl std::fmt::Display for Error {
 
 /// The clipboard as data: the Passage it holds, and the MIME types its owner
 /// published with the value of the password hint when it published one.
+///
+/// The session is settled first and the read is not attempted on one v0 refuses,
+/// because the answer is already known: `wl-paste` reaches the clipboard through
+/// Wayland, so on X11 it can only fail, and its failure would report a socket
+/// rather than the exclusion (spec §1).
 pub fn read() -> Result<Clipboard, Error> {
+    if let Some(refusal) = DisplaySession::from_process_env().refusal("reading the clipboard") {
+        return Err(Error::Refused(refusal));
+    }
+
     let mut types = Vec::new();
     for mime in list_types()? {
         // The hint is the only type a rule reads a value from. Every other type
@@ -101,14 +122,36 @@ fn listing_refused(reason: String) -> Error {
     }
 }
 
-/// Why a text request failed: the clipboard emptied itself under us, or it never
-/// held text in the first place.
+/// Why a text request failed: the session cannot be reached, the clipboard
+/// emptied itself under us, or it never held text in the first place.
+///
+/// Unlike a listing, this request speaks about one type — a session that cannot
+/// be reached and a clipboard that offers no text fail it with different
+/// meanings, and only the second is a usage error.
 fn text_refused(reason: String) -> Error {
     if reason.contains(NOTHING_COPIED) {
         Error::Empty
+    } else if is_session_failure(&reason) {
+        Error::Failed(reason)
     } else {
+        // `wl-paste` ran and spoke about the selection rather than about the
+        // session: an image on the clipboard, say, rather than a broken one.
         Error::NotText
     }
+}
+
+/// Whether `wl-paste` is complaining about the session rather than about the
+/// clipboard's contents.
+///
+/// The phrases are the ones `wl-clipboard` itself uses when it cannot reach a
+/// compositor — "Failed to connect to a Wayland server", "XDG_RUNTIME_DIR is not
+/// set", "compositor does not support the data-control protocol". A version that
+/// words it differently costs a less precise message, not a wrong answer: either
+/// way the read failed and the run stops.
+fn is_session_failure(reason: &str) -> bool {
+    ["wayland", "compositor", "XDG_RUNTIME_DIR", "data-control"]
+        .iter()
+        .any(|phrase| reason.to_lowercase().contains(&phrase.to_lowercase()))
 }
 
 /// One `wl-paste` run whose answer is text.
@@ -147,5 +190,67 @@ fn reason(output: &std::process::Output) -> String {
         format!("wl-paste exited with {}", output.status)
     } else {
         said.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The exclusion is stated, not echoed: a person on X11 reads what is
+    /// unsupported and what still works, not a socket error.
+    #[test]
+    fn the_x11_refusal_names_the_session_and_the_way_out() {
+        let refusal = DisplaySession::X11
+            .refusal("reading the clipboard")
+            .expect("X11 is refused");
+        let message = Error::Refused(refusal).to_string();
+
+        assert!(message.contains("X11"), "{message}");
+        assert!(message.contains("Wayland"), "{message}");
+        assert!(message.contains("clipboard"), "{message}");
+        assert!(message.contains("plainly"), "{message}");
+    }
+
+    /// Both refusals read as a read that did not happen, and neither of them is
+    /// mistaken for a clipboard that held no text: those send a person to
+    /// different places.
+    #[test]
+    fn a_refused_session_is_told_apart_from_a_clipboard_without_text() {
+        for session in [DisplaySession::X11, DisplaySession::None] {
+            let refusal = session
+                .refusal("reading the clipboard")
+                .expect("neither of these is Wayland");
+            let refused = Error::Refused(refusal).to_string();
+            let text = Error::NotText.to_string();
+
+            assert_ne!(refused, text);
+            assert!(
+                refused.contains("X11") || refused.contains("no Wayland session"),
+                "{refused}"
+            );
+            assert!(text.contains("no text"), "{text}");
+        }
+    }
+
+    /// `wl-clipboard`'s own words for "there is no compositor" are recognized as
+    /// a session failure rather than as a selection that offers no text.
+    #[test]
+    fn the_readers_own_words_for_a_missing_session_are_recognized() {
+        for reason in [
+            "Failed to connect to a Wayland server",
+            "XDG_RUNTIME_DIR is not set",
+            "the compositor does not support the data-control protocol",
+        ] {
+            assert!(
+                is_session_failure(reason),
+                "{reason:?} is about the session"
+            );
+        }
+
+        assert!(
+            !is_session_failure("no suitable type"),
+            "a selection with no text is about the clipboard, not the session"
+        );
     }
 }

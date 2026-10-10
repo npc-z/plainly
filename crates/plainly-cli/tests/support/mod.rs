@@ -69,10 +69,51 @@ impl TempDir {
         stdin: &str,
         env: &[(&str, &str)],
     ) -> std::process::Output {
+        self.plainly_with_session(self.command(), args, stdin, env)
+    }
+
+    /// The same, but stated as an X11 session rather than the pinned Wayland
+    /// one: `DISPLAY` set, no `WAYLAND_DISPLAY`.
+    ///
+    /// The session is stated per test rather than inherited: what the CLI says
+    /// on an X11 session must not depend on whether the machine running the tests
+    /// is itself Wayland.
+    pub fn plainly_on_x11(
+        &self,
+        args: &[&str],
+        stdin: &str,
+        env: &[(&str, &str)],
+    ) -> std::process::Output {
+        let mut command = self.base_command();
+        command.env_remove("WAYLAND_DISPLAY").env("DISPLAY", ":0");
+        self.plainly_with_session(command, args, stdin, env)
+    }
+
+    /// The same, with neither display variable: a container or a cron job, where
+    /// the session question is answered "none".
+    pub fn plainly_without_a_session(
+        &self,
+        args: &[&str],
+        stdin: &str,
+        env: &[(&str, &str)],
+    ) -> std::process::Output {
+        let mut command = self.base_command();
+        command.env_remove("WAYLAND_DISPLAY").env_remove("DISPLAY");
+        self.plainly_with_session(command, args, stdin, env)
+    }
+
+    /// One run of the binary: add the test's environment, feed it stdin, and
+    /// collect what it said.
+    fn plainly_with_session(
+        &self,
+        mut command: std::process::Command,
+        args: &[&str],
+        stdin: &str,
+        env: &[(&str, &str)],
+    ) -> std::process::Output {
         use std::io::Write;
 
-        let mut child = self
-            .command()
+        let mut child = command
             .args(args)
             .envs(env.iter().copied())
             .spawn()
@@ -87,11 +128,31 @@ impl TempDir {
         child.wait_with_output().expect("the process is waitable")
     }
 
-    /// The same environment, as a command a test can add to before running it.
+    /// The same, with an environment of the test's choosing, as a command a test
+    /// can add to before running it.
     pub fn command(&self) -> std::process::Command {
+        let mut command = self.base_command();
+        // The session is pinned rather than inherited: the environment was read
+        // in this session by the machine running the tests, and a test about what
+        // the CLI says on an X11 session must not depend on whether the
+        // developer's own session is Wayland. The pinned values are the ones the
+        // tests that do not care about the session want.
+        command
+            .env("WAYLAND_DISPLAY", "wayland-1")
+            .env_remove("DISPLAY");
+        command
+    }
+
+    /// The environment a run gets in any session: the temporary XDG tree, the
+    /// keyring switched off, and no provider key leaking in from the developer's
+    /// shell.
+    fn base_command(&self) -> std::process::Command {
         use std::process::{Command, Stdio};
 
         let mut command = Command::new(env!("CARGO_BIN_EXE_plainly"));
+        // Discovery resolves a key for the name of every candidate it asks, so a
+        // key exported for a local preset would otherwise travel from the
+        // developer's shell into a scan of their own machine.
         command
             .env("HOME", self.path())
             .env("XDG_CONFIG_HOME", self.join("config"))
@@ -101,9 +162,6 @@ impl TempDir {
             .env_remove("PLAINLY_DEEPSEEK_API_KEY")
             .env_remove("PLAINLY_OPENAI_API_KEY")
             .env_remove("PLAINLY_STUB_API_KEY")
-            // Discovery resolves a key for the name of every candidate it asks,
-            // so a key exported for a local preset would otherwise travel from
-            // the developer's shell into a scan of their own machine.
             .env_remove("PLAINLY_LLAMACPP_API_KEY")
             .env_remove("PLAINLY_OLLAMA_API_KEY")
             .env_remove("PLAINLY_LMSTUDIO_API_KEY")

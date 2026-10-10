@@ -15,7 +15,13 @@ Single-context: `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents
 ## Environment
 
 The development environment is the flake in this repo: `nix develop` provides the toolchain, the
-libraries and the helper tools. CI runs the same shell.
+libraries and the helper tools. That is the environment everything is built and checked in.
+
+CI is the one exception, and it is a narrow one: `.github/workflows/ci.yml` runs
+`cargo test -p plainly-core` and `cargo test -p plainly-cli`, plus clippy over both, on a plain Rust
+toolchain. Those are the crates that must build with no graphics stack (spec §2, §14), and proving
+that should not need Nix. The panel and the main window — the crates that do need the flake — have no
+CI job; their coverage is the manual checklist in `docs/manual-checks.md`.
 
 ### Never search `/nix/store` by hand
 

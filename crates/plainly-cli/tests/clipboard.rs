@@ -279,3 +279,94 @@ fn naming_a_file_and_the_clipboard_at_once_is_a_usage_error() {
     assert_eq!(stdout(&output), "");
     assert!(stderr(&output).contains("not both"), "{}", stderr(&output));
 }
+
+/// On an X11 session the clipboard cannot be read — `wl-paste` reaches the
+/// clipboard through Wayland, and v0 excludes X11 outright (spec §1) — and what
+/// the run owes the person is that sentence rather than the reader's own
+/// complaint about a socket. The refusal is explicit, not silent.
+#[test]
+fn an_x11_session_is_told_that_the_clipboard_path_is_unsupported() {
+    let dir = TempDir::new("clipboard-x11");
+    let path = dir.wl_paste_stub(&wl_paste(&["text/plain;charset=utf-8"], "public", PASSAGE));
+
+    // The stub is on PATH and would answer if it were asked; on X11 it must not
+    // be asked at all.
+    let output = dir.plainly_on_x11(&["--clipboard"], "", &[("PATH", &path)]);
+
+    assert_eq!(code(&output), FAILURE, "{}", stderr(&output));
+    assert_eq!(
+        stdout(&output),
+        "",
+        "no product comes out of a refused read"
+    );
+    let message = stderr(&output);
+    assert!(message.contains("X11"), "{message}");
+    assert!(message.contains("Wayland"), "{message}");
+    assert!(
+        message.contains("plainly"),
+        "the sentence points at the surface X11 does have: {message}"
+    );
+}
+
+/// The same X11 session does not touch the command line itself: a Passage from
+/// a pipe or a file is what X11 users still have, and it is the whole reason the
+/// exclusion can be stated without a caveat (spec §1, §14).
+#[test]
+fn a_passage_over_a_pipe_is_explained_on_an_x11_session() {
+    let dir = TempDir::new("clipboard-x11-stdin");
+    let server = FakeProvider::start([Reply::content(ANSWER)]);
+    dir.write_config(&custom_provider(&server.base_url()));
+
+    let output = dir.plainly_on_x11(&[], PASSAGE, &[("PLAINLY_STUB_API_KEY", "test-key")]);
+
+    assert_eq!(code(&output), SUCCESS, "{}", stderr(&output));
+    assert!(stdout(&output).contains(PASSAGE), "{}", stdout(&output));
+}
+
+/// A Wayland session whose compositor will not answer — no data-control, or no
+/// compositor to talk to — is a failure rather than "the clipboard holds no
+/// text": the two send the person to different places, and the second is not
+/// true. The reader's own words are kept, because they name the protocol.
+#[test]
+fn a_session_that_cannot_be_reached_is_a_failure_not_a_usage_error() {
+    let dir = TempDir::new("clipboard-no-session");
+    let path = dir.wl_paste_stub("printf 'Failed to connect to a Wayland server\\n' >&2\nexit 1");
+
+    let output = dir.plainly_with(&["--clipboard"], "", &[("PATH", &path)]);
+
+    assert_eq!(code(&output), FAILURE, "{}", stderr(&output));
+    assert_eq!(stdout(&output), "");
+    let message = stderr(&output);
+    assert!(message.contains("Wayland"), "{message}");
+    assert!(
+        !message.contains("holds no text"),
+        "a session that refused is not a clipboard without text: {message}"
+    );
+}
+
+/// A machine with no display session at all — a container, a cron job — is told
+/// the same thing in its own words, before the reader is asked: there is no
+/// `wl-paste` on `PATH` here, and the run must not need one to say why the
+/// clipboard cannot be read. It is not the X11 sentence, because the fix is not
+/// "switch compositor".
+#[test]
+fn no_display_session_is_refused_in_its_own_words() {
+    let dir = TempDir::new("clipboard-no-display");
+    let path = dir.empty_path();
+
+    let output = dir.plainly_without_a_session(&["--clipboard"], "", &[("PATH", &path)]);
+
+    assert_eq!(code(&output), FAILURE, "{}", stderr(&output));
+    assert_eq!(stdout(&output), "");
+    let message = stderr(&output);
+    assert!(message.contains("no Wayland session"), "{message}");
+    assert!(message.contains("needs one"), "{message}");
+    assert!(
+        !message.contains("X11"),
+        "no display is not the X11 exclusion: {message}"
+    );
+    assert!(
+        !message.contains("wl-paste"),
+        "the session is settled before the reader is asked: {message}"
+    );
+}

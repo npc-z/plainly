@@ -31,31 +31,35 @@ echo "   none"
 echo "== building the CLI on its own"
 # Ask cargo where it put the binary rather than assuming target/debug: a
 # hardcoded path would quietly check a stale artifact after a --release build,
-# and the check would pass on the wrong file. The JSON is parsed as JSON (node
-# is already part of this dev shell for the desktop frontend) rather than with a
-# regex: a path containing a quote, or an `"executable":null` line for the
-# lib target, is not worth being clever about.
-if ! command -v node >/dev/null 2>&1; then
-    echo "FAIL: node is needed to read cargo's JSON output and is not on PATH" >&2
+# and the check would pass on the wrong file. The JSON is parsed as JSON rather
+# than with a regex: a path containing a quote, or an `"executable":null` line
+# for the lib target, is not worth being clever about.
+#
+# `python3` rather than `node`, and because of CI rather than because of this
+# shell: the CI job runs on a plain Ubuntu runner, where `python3` is part of
+# the base image but a `node` is not guaranteed to be. Reading a line of JSON is
+# not worth a toolchain dependency in either place.
+if ! command -v python3 >/dev/null 2>&1; then
+    echo "FAIL: python3 is needed to read cargo's JSON output and is not on PATH" >&2
     exit 1
 fi
 executable=$(
-    cargo build -p plainly-cli $profile_flag --message-format=json | node -e '
-        let input = "";
-        process.stdin.on("data", (chunk) => { input += chunk; });
-        process.stdin.on("end", () => {
-            let found = "";
-            for (const line of input.split("\n")) {
-                if (!line.trim()) continue;
-                let message;
-                try { message = JSON.parse(line); } catch { continue; }
-                if (message.reason === "compiler-artifact" && message.executable) {
-                    found = message.executable;
-                }
-            }
-            process.stdout.write(found);
-        });
-    '
+    cargo build -p plainly-cli $profile_flag --message-format=json | python3 -c '
+import json, sys
+
+found = ""
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    try:
+        message = json.loads(line)
+    except json.JSONDecodeError:
+        continue
+    if message.get("reason") == "compiler-artifact" and message.get("executable"):
+        found = message["executable"]
+sys.stdout.write(found)
+'
 )
 if [ -z "$executable" ]; then
     echo "FAIL: cargo did not report a built executable for plainly-cli" >&2
