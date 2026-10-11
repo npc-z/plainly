@@ -2474,7 +2474,7 @@
         };
         guiCargoDeps = pkgs.rustPlatform.fetchCargoVendor {
           src = wholeSource;
-          hash = "sha256-WvomIp8Gta6NFsL4wi+Fu1fNOshZkdFALUCMFG6iXrE=";
+          hash = "sha256-t0C7eHS6hC1jOFHbQE0XRl8uWqE+C4medbpDH1Xw854=";
         };
 
         # What the GUI package builds with. The dev shell's lists above are the

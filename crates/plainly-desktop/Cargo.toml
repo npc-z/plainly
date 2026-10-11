@@ -28,6 +28,14 @@ plainly-core.workspace = true
 # settled that — but an ordinary window is exactly what it is for.
 tauri = "2.12.1"
 
+# The same GTK3 the panel is built on, and already in this binary's closure
+# through Tauri's `tao`; the dependency is direct for one call. WebKitGTK reads
+# GDK's screen resolution to derive the device pixel ratio, GDK leaves that
+# resolution at `-1` in a session with no XSettings daemon (niri, sway), and the
+# resulting ratio lays the whole interface out on a viewport 96 times too wide
+# — see `window::screen_dpi`.
+gtk.workspace = true
+
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

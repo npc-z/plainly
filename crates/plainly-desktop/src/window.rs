@@ -62,8 +62,50 @@ pub enum Run {
     Handed,
 }
 
+/// Give GDK the DPI it needs when the session does not supply one.
+///
+/// WebKitGTK derives its device pixel ratio from GDK's screen resolution —
+/// multiplied by the GTK scale factor, over 96 — and `gdk_screen_get_resolution`
+/// answers `-1` when nothing provides one. An XSettings daemon is what normally
+/// provides one and a niri or sway session usually runs none, so on those
+/// sessions the ratio comes out at 1/48: the layout viewport becomes 96 times
+/// the window (1180×760 logical px laid out on a 113280×72960 CSS viewport), the
+/// `.win` column resolves to `height: 0`, and the interface is drawn into the
+/// window's top-left corner with the rest of it blank. Nothing the frontend can
+/// ask would recover from that — `100vh`, `devicePixelRatio` and every rect are
+/// wrong — so the missing DPI is supplied here instead.
+///
+/// Only an *unset* resolution is filled in: a session that has one (a real
+/// `Xft.dpi` from an XSettings daemon, text scaling and all) keeps it, because
+/// that value is the user's and is what the ratio is meant to follow.
+///
+/// It has to happen before the webview exists. Changing the device scale factor
+/// afterwards is not applied to the live page (WebKit bug 259334), which is why
+/// this is called from the top of [`run`] rather than from a window callback.
+/// `gtk::init` here is also what makes the later one in Tauri's own backend a
+/// no-op: it returns `Ok` immediately once the main thread is initialized.
+fn screen_dpi() {
+    if gtk::init().is_err() {
+        // No display for GTK to initialize against. The window cannot open at
+        // all in that case and Tauri reports why; there is nothing to set here.
+        return;
+    }
+
+    if let Some(screen) = gtk::gdk::Screen::default()
+        && screen.resolution() < 0.0
+    {
+        // 96 is what `-1` stands in for: GTK's own fallback, and the value the
+        // ratio is defined against.
+        screen.set_resolution(96.0);
+    }
+}
+
 /// Build and run the window.
 pub fn run(mode: Mode) -> Result<Run, String> {
+    // First, before the store, the lock and the webview: it is the one thing the
+    // interface's whole layout depends on.
+    screen_dpi();
+
     let (activate, activations) = mpsc::channel::<Activation>();
 
     // Opened first, and a failure is carried rather than fatal: a store that
