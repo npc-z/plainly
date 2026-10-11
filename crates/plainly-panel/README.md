@@ -18,6 +18,11 @@ binds {
 has to be on `PATH` by name. Pressing the key again re-reads the clipboard and
 refreshes the one panel — it does not open a second one.
 
+`nix build .` puts a panel on that path whose wrapper script carries its own
+`LD_LIBRARY_PATH`, which is what a compositor's key binding needs: the spawn
+inherits the compositor's environment, not the dev shell's. `nix profile install .`
+does the same thing with the profile providing `PATH`.
+
 ## Other sessions
 
 The panel is a layer surface where the compositor publishes `data-control`, which

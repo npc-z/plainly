@@ -11,17 +11,23 @@
 
 ## 0. 准备
 
+**用装出来的二进制走这份清单，不要用 `target/debug` 的那份。** 两者的差别正是这份清单要验的东西：
+`target/debug` 的二进制靠 dev shell 的 `LD_LIBRARY_PATH` 活着，而 niri 键绑 spawn 的进程继承的是
+niri 的环境，不是那个 shell。装出来的那份把库路径写在自己的包装脚本里，所以它才是「别人装完能用」
+的那个东西。
+
 ```sh
-nix develop
-cargo build --workspace          # three binaries in target/debug/
-export PATH="$PWD/target/debug:$PATH"   # so a keybinding-spawned panel is found by name
+nix build .            # → result/bin/{plainly,plainly-panel,plainly-desktop}
+export PATH="$PWD/result/bin:$PATH"   # 键绑按名字找 plainly-panel，就靠这一行
 ```
 
-`plainly-panel` 与 `plainly-desktop` 需要 dev shell 的 `LD_LIBRARY_PATH`，所以**这些命令都在
-`nix develop` 里跑**。niri 的键绑 spawn 的进程继承的是 niri 的环境，不是这个 shell：要么把
-二进制放进一个自带库路径的包装脚本（v0 没做发布，这条留给打包），要么先按下面的 §2 手工
-跑面板 —— 键绑那一项要验的是「合成器 spawn 出来的进程能拿到剪贴板」，v0 的
-`crates/plainly-panel/README.md` 给出片段。
+（`nix profile install .` 装进 profile 也一样，只是 `PATH` 由 profile 提供。开发中要改代码时才用
+`nix develop` + `cargo build --workspace`，那时记得 §6 里那句话：dev shell 里的二进制是**另一个**
+环境。）
+
+面板从裸会话起得来这件事本身有机器判据，不用靠肉眼：`scripts/check-flake-packages.sh` 会断言
+CLI 的闭包里没有图形库、两个闭包大小不同、面板在 `env -i`（空环境）下不会报
+`error while loading shared libraries`。§1.2 的焦点与 §2.1 的键绑仍然要人按一次键。
 
 每次检查前清一份临时状态，不要碰真实配置与历史：
 
@@ -46,7 +52,7 @@ export PLAINLY_DISABLE_KEYRING=1         # 不去碰会话 keyring
 启动前把要解释的一段英文放进剪贴板（`wl-copy "…"`），然后：
 
 ```sh
-plainly-panel --clipboard
+plainly-panel --clipboard        # 装出来的那个（PATH 上是 result/bin，见 §0）
 ```
 
 | # | 检查 | 期望 |
@@ -206,6 +212,8 @@ DISPLAY=:0 env -u WAYLAND_DISPLAY sh -c 'echo "The manager had already gone to g
 - **看门狗的病态路径没有反向复现**：正常路径「从不触发」是清单 1.10（本机验过）；「渲染真的
   失败时 5 秒自退」是 1.11，本机造不出来（假 `WAYLAND_DISPLAY` 在连接前就退出，走不到绘制阶段），
   判定本身由 `crates/plainly-panel/src/watchdog.rs` 的单元测试覆盖。
+- **键绑 spawn 现在有解了**：装出来的面板（`nix build .` → `result/bin`）自带库路径，不再需要
+  §0 早期那版说的包装脚本。剩下要人做的是把 `result/bin` 放进 `PATH`，然后按 §2.1 按一次键。
 
 ## 6. 2026-10-10 的一次实际走查
 
@@ -232,9 +240,66 @@ DISPLAY=:0 env -u WAYLAND_DISPLAY sh -c 'echo "The manager had already gone to g
 | §4.7 `--clipboard` 同样报不支持 | 同一环境下 `plainly explain --clipboard` → 退出 1，stderr 里是同一句（说的是 reading the clipboard） |
 | 无会话（**改完后重测**） | 既无 `WAYLAND_DISPLAY` 也无 `DISPLAY` 时：面板退出 1，stderr 是 `plainly-panel: no Wayland session: the panel needs one`；`--clipboard` 退出 1，stderr 是 `plainly: no Wayland session: reading the clipboard needs one`——与 X11 那句不同，因为修法不同。走查当时面板走的是「连不上 Wayland」那句（库的文本）；本行是 `None` 也走 `refusal()` 之后**重新构建并重跑**的结果 |
 
-**这次没走到的**（都在上面的清单里，别当成已验）：键绑 spawn 与快捷键浮层（§2.1–2.2，v0 的面板
-要 dev shell 的库路径，键绑得靠一个包装脚本，清单 §0 写了）、Esc 用真键盘按一次（§1.4）、
-✕ 点击（§1.5，进程是用信号结束的）、第二次触发是否真的复用同一个面板进程（§1.6，`pgrep` 在这个
-沙箱里数不准）、看门狗的病态路径（§1.11）、多块与两种拒绝态（§1.13–1.15）、复制 / ⟳ / ⤢
-（§1.16–1.19）、四角各一次（§1.7）、GNOME 整节（§4.1–4.5）、主窗口与 `--watch`
-（[desktop-manual-checks.md](desktop-manual-checks.md)）。
+**装出来的那份也走了一次**（2026-10-10，`nix build .` 之后）：`result/bin/plainly-panel` 在一个
+**最小环境**里启动（只留 `WAYLAND_DISPLAY` / `XDG_RUNTIME_DIR` / `DBUS_SESSION_BUS_ADDRESS` /
+`PATH` 等会话变量，**没有** `LD_LIBRARY_PATH`、没有 `nix develop`）：niri 的 `layers` 里出现
+`plainly-panel`，焦点仍是原来的窗口，剪贴板那段经真 DeepSeek 解释并落进历史库，`result/bin/plainly`
+随即读出了那条记录。这就是「装完能用」在真会话里的证据。
+
+**这次没走到的**（都在上面的清单里，别当成已验）：键绑 spawn 与快捷键浮层（§2.1–2.2，装出来的
+面板已具备条件，缺的只是把 `result/bin` 放进 niri 的 `PATH` 并真按一次）、Esc 用真键盘按一次（§1.4）、
+✕ 点击（§1.5，进程是用信号结束的）、看门狗的病态路径（§1.11）、多块与两种拒绝态（§1.13–1.15）、
+复制 / ⟳ / ⤢（§1.16–1.19）、四角各一次（§1.7）、GNOME 整节（§4.1–4.5）、主窗口与 `--watch`
+（[desktop-manual-checks.md](desktop-manual-checks.md)）。第二次触发是否复用同一个面板进程这一项，
+**2026-10-11 补验了**（§7 的 §1.6 行；当时那句「`pgrep` 数不准」是被沙箱里的陈旧 `target/debug`
+进程骗的，看 pid 就分得清）。
+
+## 7. 2026-10-11：装出来的那一份走查（打包票据的验收）
+
+这一节存在的理由只有一个：**走的是 `nix build` 的产物，不是 `target/debug`**，而且面板是从一个
+刻意剥掉 `LD_LIBRARY_PATH` 的环境里起的——也就是 niri 键绑 spawn 时给它的那种环境。§0 的那句
+「用装出来的二进制」就是这一节立的规矩。
+
+环境：本机 niri 26.04（Wayland），产物 `nix build .` → `result/bin`，假 provider 在 8080
+（`python3 scripts/stub-provider.py --port 8080`），`HOME` 指到 `/tmp` 下的临时目录
+（真实配置、历史与 keyring 没被碰）。
+
+| 项 | 观察 |
+| --- | --- |
+| §1.1 / §1.3 上屏与不进窗口列表 | `niri msg layers` 多出 `{"namespace":"plainly-panel","layer":"Overlay","keyboard_interactivity":"None"}`；`niri msg --json windows` 的条数在面板前后都是 5，面板不在里面 |
+| §1.2 焦点不变 | 面板出现前后 `niri msg --json focused-window` 是同一条记录：id 4 `zen-twilight`，`focus_timestamp` 的 `secs`/`nanos` 一字不差——不只是同一个窗口，是**一次焦点变化都没发生** |
+| §1.6 第二次触发复用同一个进程 | 第二次 `plainly-panel --clipboard` 之后 `pgrep` 只有一个进程且 **pid 与第一次相同**（168427）；`scripts/stub-provider.requests.log` 仍是 147 行，历史库仍是 1 条——第二次既没起新进程，也没重新请求 |
+| §3.4–3.5 面板端到端与命中缓存 | 剪贴板那段落进 `$HOME/.local/share/dev.plainly.app/history.db`（`select count(*)` = 1），`plainly history` 打印出它：`1  2026-10-11T10:55:01Z  B2  llamacpp/stub-model  thinking off  v7-descriptors@de85bff8  The manager had already gone to ground.` |
+| §2.4 退出不留东西 | 面板收到 `SIGTERM`（清单里 ✕ 的等价物）后退出，`niri msg layers` 里 `plainly-panel` 消失，没有残留的 socket / 锁 |
+| §3.6 主窗口能从裸会话起来 | 同一个最小环境里 `plainly-desktop` 起来，`niri msg windows` 里是 `id 17  plainly-desktop  |  Plainly | focused: True`——标题与 `.desktop` 的 `Name=Plainly` 一致，窗口的 **app_id 是 `plainly-desktop`**，所以 `StartupWMClass` 写的是这个名字（见 §8） |
+
+三个动态链接层面的判据这轮也重跑了，它们才是「不靠 dev shell」的机器证据：
+`env -i ldd result/bin/.plainly-panel-wrapped` 与 `.plainly-desktop-wrapped` 各 67 / 156 个库、
+**0 个 `not found`**；两个 GUI 二进制在 `env -i` 下都能走到自己的参数检查（打印 `usage:` 而不是
+动态链接器的报错）；`nix profile install --profile /tmp/… .#plainly` 装出来的 `plainly --version`
+是 `plainly 0.1.0`，`ldd` 里 0 个 `not found`、闭包里 grep 不到任何图形库。这些由
+`scripts/check-flake-packages.sh` 每次重跑。
+
+**没走的**：真按一次键绑（§2.1–2.2）。§1.2 的焦点与上屏这一轮是在**比键绑更苛刻**的环境里验的
+（`env -i`，连 `PATH` 与 `XDG_DATA_DIRS` 都只剩手写的那几个；niri 的 `spawn` 给的是它自己的继承
+环境），缺的只是把 `result/bin` 放进 niri 的 `PATH`、把那一行 `binds` 写进去、然后真按一下；
+`hotkey-overlay-title` 那一项只能人看。其余没走的：✕ 的鼠标点击（§1.5，用的是信号）、Esc（§1.4）、
+复制 / ⟳ / ⤢（§1.16–1.19）、四角（§1.7）、自动消失（§1.8–1.9，§6 记过一次）。
+
+## 8. `.desktop` 的身份：文件名不是窗口类
+
+`packaging/dev.plainly.app.desktop` 同时带着两个名字，它们不是同一个东西：
+
+- **`dev.plainly.app`**：文件名与 `Icon=`。这是仓库的 identifier（`plainly_core::paths::IDENTIFIER`），
+  配置目录、数据目录与 D-Bus 名都跟着它。启动器按文件名与 `Icon` 找到图标与名字。
+- **`plainly-desktop`**：`StartupWMClass=`。这是窗口的 **Wayland app_id**，而它不是 identifier：
+  `tao` 用**没有 application ID** 的 `gtk::Application`（`event_loop.rs` 的 `new_gtk`），GTK 于是
+  公布程序名。2026-10-11 在 niri 上实测 `niri msg --json windows` 的 `app_id` 就是
+  `plainly-desktop`。
+
+要让 app_id 变成 identifier 得打开 Tauri 的 `app.enableGTKAppId`，**这一版故意不打开**：它会让
+GTK 用那个 ID 在会话总线上注册，第二个实例的启动就由 D-Bus 激活接管——而 `--watch` 的交接
+（`crates/plainly-desktop/src/single.rs` 的锁文件 + socket）正是要亲手处理第二次启动的请求
+（「把窗口带到前面」），两条单实例机制撞在一起会把后者短路。所以这一版选的是：**让
+`.desktop` 说出窗口真实的 app_id**，而不是让窗口去够 identifier。桌面按 `StartupWMClass`
+把窗口与启动器里的那一条配对；配不上时启动器会把窗口归到一个没有名字、没有图标的第二组里。

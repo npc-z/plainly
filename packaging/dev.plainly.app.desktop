@@ -1,0 +1,20 @@
+[Desktop Entry]
+Type=Application
+Name=Plainly
+GenericName=Explain difficult English
+Comment=Press a key and the Passage on the clipboard comes back as leveled English, glosses and a translation
+Exec=plainly-desktop
+Icon=dev.plainly.app
+Terminal=false
+Categories=Education;Utility;
+# The file name and `Icon` are the identifier (`dev.plainly.app`, the one the
+# config and data directories are named after), but this line is the window's
+# *Wayland app_id*, and that is not the identifier: `tao` builds its
+# `gtk::Application` with no application ID, so GTK publishes the program name,
+# `plainly-desktop`. With Tauri's `enableGTKAppId` off — the default, and the
+# one this app needs, because the built-in single-instance it turns on would take
+# the launch over before `--watch`'s handover socket sees it — the app_id cannot
+# be made to say `dev.plainly.app`, so the launcher has to be told what it
+# actually is or it groups the window under a second, nameless icon.
+StartupWMClass=plainly-desktop
+Keywords=English;gloss;translation;clipboard;
