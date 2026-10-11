@@ -21,9 +21,9 @@ pub const CSS: &str = "
     opacity: 0.8;
     padding: 6px 10px;
 }
-.plainly-message {
-    padding: 10px;
-}
+/* The one-sentence states carry no padding of their own: the body they sit in
+   has the panel's margin, and a second inset inside it would put a refusal at a
+   different distance from the edge than the Explanation it replaces. */
 /* The skeleton bar while an Explanation is being made: a trough, not a progress
    readout — GTK pulses the filled part, and nothing here claims to know how far
    along a request is. */

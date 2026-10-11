@@ -203,6 +203,14 @@ pub struct App {
     pub show_translation: bool,
     pub panel_corner: PanelCorner,
     pub panel_display: String,
+    /// How wide the panel is, in pixels.
+    pub panel_width: u32,
+    /// How tall the panel may become, in pixels — including its title bar and the
+    /// note under the content.
+    ///
+    /// A ceiling rather than a size: a short Explanation still gets a short panel,
+    /// and the whole thing is held inside the screen whatever this says.
+    pub panel_height: u32,
     pub panel_autohide: bool,
     pub panel_autohide_seconds: u32,
     pub copy_auto_popup: bool,
@@ -223,6 +231,12 @@ impl Default for App {
             show_translation: true,
             panel_corner: PanelCorner::default(),
             panel_display: "current".to_string(),
+            // The panel's own width (spec §12: about 470px), and a ceiling of the
+            // same size: on a 1080p screen that is the third of the height the
+            // panel used to take, and it says what it means rather than leaving
+            // the panel's size to a share of a screen it cannot see.
+            panel_width: 470,
+            panel_height: 470,
             panel_autohide: false,
             panel_autohide_seconds: 20,
             copy_auto_popup: false,
@@ -481,6 +495,7 @@ enum Kind {
     Str,
     Bool,
     Seconds,
+    Pixels,
     Level,
     ExportFormat,
     PanelCorner,
@@ -505,6 +520,7 @@ impl KeySpec {
             "app.export_format" => Kind::ExportFormat,
             "app.panel_corner" => Kind::PanelCorner,
             "app.panel_autohide_seconds" => Kind::Seconds,
+            "app.panel_width" | "app.panel_height" => Kind::Pixels,
             "app.show_original"
             | "app.show_comprehensible"
             | "app.show_glosses"
@@ -578,6 +594,20 @@ impl KeySpec {
                     ));
                 }
                 Value::from(seconds as i64)
+            }
+            Kind::Pixels => {
+                let pixels = raw.parse::<u32>().map_err(|_| {
+                    invalid(format!("expected a whole number of pixels; got {raw:?}"))
+                })?;
+                if pixels == 0 {
+                    // The bound is the panel's, not this crate's: how *large* a
+                    // panel may be is the panel's business (and the settings
+                    // screen's), while a zero is nobody's.
+                    return Err(invalid(
+                        "a size of 0 is not a size: the panel would be invisible".to_string(),
+                    ));
+                }
+                Value::from(pixels as i64)
             }
             Kind::Level => Value::from(raw.parse::<Level>().map_err(invalid)?.as_str()),
             Kind::ExportFormat => {

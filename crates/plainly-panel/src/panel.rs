@@ -35,22 +35,28 @@ use crate::watchdog::{self, RenderWatchdog};
 use crate::worker::{self, Event, Recall};
 use crate::{clipboard, css, document, open, plan, position};
 
-/// The panel's width (spec §12: about 470px).
-const WIDTH: i32 = 470;
 /// The gap between a layer surface and the screen edge.
 const MARGIN: i32 = 12;
+/// The panel's own margin, on every piece of text in it.
+///
+/// A layer surface has no window frame to inset its content, and the panel is a
+/// note rather than a screen: text against the very edge of the display is text
+/// nobody meant to put there. Matches the padding the note's own style gives it
+/// (`css::CSS`), so the one line below the body does not sit at a different
+/// inset from the body above it.
+const PANEL_PADDING: i32 = 10;
+/// The gap between one section of an Explanation and the next, and between the
+/// stacked Passages of a split one.
+const SECTION_GAP: i32 = 14;
+/// The gap between the things in the title bar — the name, the chip, the status
+/// line and the four controls — which are read as a row rather than as one
+/// sentence.
+const HEADER_GAP: i32 = 8;
 /// How tall the panel is before its first allocation: the title bar and its
 /// separator. Only the fallback window's first placement uses it, and any positive
 /// number does — what matters is that a bottom corner is measured from the
 /// window's bottom edge rather than from a height nobody chose.
 const HEADER_HEIGHT: i32 = 44;
-
-/// How much of a screen's height the panel takes before its body scrolls.
-///
-/// A third, so the panel never becomes a full-screen overlay: it is a note beside
-/// what a person is reading, and a note that covers everything is the
-/// interruption the panel exists to avoid.
-const HEIGHT_SHARE: i32 = 3;
 
 /// How the panel reads the clipboard, which is the same question as its shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -103,6 +109,20 @@ enum Action {
     Quit,
 }
 
+/// The size the panel is laid out at: the width the body's text wraps at, and the
+/// most the body itself may be.
+///
+/// The panel's height is a ceiling on the *whole* thing — title bar and note
+/// included — so what the body gets is that ceiling less the chrome, which is what
+/// [`Panel::chrome_height`] measures. It travels with [`Surface`] rather than being
+/// asked of the panel because the body states its height from paths that only have
+/// the body in hand.
+#[derive(Debug, Clone, Copy, Default)]
+struct Wanted {
+    width: i32,
+    body: i32,
+}
+
 /// The widgets one future is allowed to touch, and nothing else.
 ///
 /// Cloned per future rather than captured as the whole `Rc<Panel>`: a future
@@ -113,6 +133,20 @@ struct Surface {
     generation: Rc<Cell<u64>>,
     trigger: Rc<RefCell<Trigger>>,
     body: gtk::Box,
+    /// The scroller the body sits in, held so a body that has just changed can
+    /// state how tall it is — see [`Surface::state_body_height`].
+    scroller: Rc<gtk::ScrolledWindow>,
+    /// How tall the body was last said to be, so that a body which changes at the
+    /// height it already has does not say it again.
+    body_height: Cell<i32>,
+    /// The size the panel is laid out at, as `Panel::apply_geometry` last worked
+    /// it out.
+    ///
+    /// Shared with the clones of this value that the worker's callbacks hold: a
+    /// run states the body's height when its Explanation lands, and the layout may
+    /// have been re-applied since that run started — a monitor event, or the next
+    /// key press.
+    wanted: Rc<Cell<Wanted>>,
     provenance: gtk::Label,
     /// The status line: what an action just did — `已复制`, `复制失败`, or the
     /// sentence `open.rs` gives when ⤢ cannot start the window — because a layer
@@ -138,6 +172,12 @@ pub struct Panel {
     /// in the settings screen has to be in effect on the next key press, not at the
     /// next monitor event.
     scroller: Rc<gtk::ScrolledWindow>,
+    /// Everything the panel draws — the title bar, the body's scroller and the note.
+    ///
+    /// Held to be measured, and only that: the panel's height is a ceiling on the
+    /// whole thing, and what is left for the body is this box's height less the
+    /// scroller's. `Surface` holds the body itself.
+    root: gtk::Box,
     /// The application, held rather than asked for later.
     ///
     /// Every exit path goes through `g_application_quit()`, and there are three of
@@ -181,28 +221,54 @@ impl Panel {
     pub fn new(app: &gtk::Application, presentation: Presentation) -> Rc<Self> {
         css::install();
 
+        // The position, the timer, the section switches and the provider facts
+        // are four questions about one document, so they travel together as one
+        // value; `Panel::start` replaces it from the file at every trigger. Read
+        // before the window because the width is the file's (spec §12's "about
+        // 470px" is a default now, not a constant).
+        let prefs = Rc::new(RefCell::new(Prefs::read()));
+
         let window = gtk::ApplicationWindow::new(app);
         window.set_title(strings::TITLE);
         window.set_decorated(false);
-        window.set_default_size(WIDTH, -1);
-        window.set_size_request(WIDTH, -1);
+        window.set_default_size(prefs.borrow().panel_width as i32, -1);
+        window.set_size_request(prefs.borrow().panel_width as i32, -1);
 
         let reader = present(&window, presentation);
-        // The position, the timer, the section switches and the provider facts
-        // are four questions about one document, so they travel together as one
-        // value; `Panel::start` replaces it from the file at every trigger.
-        let prefs = Rc::new(RefCell::new(Prefs::read()));
-        let body = gtk::Box::new(gtk::Orientation::Vertical, 9);
+        // The gap between one Passage's stack and the next, and between the
+        // sections inside one: wide enough that a section break reads as one
+        // rather than as a long paragraph with headings in it.
+        let body = gtk::Box::new(gtk::Orientation::Vertical, SECTION_GAP);
+        // The panel's own margin, on the text that scrolls: the surface has no
+        // window frame to inset it, so without this every line of the body is
+        // flush against the edge of the screen. The header gets the same inset
+        // below, and the note carries it in its own style.
+        body.set_margin_top(PANEL_PADDING);
+        body.set_margin_bottom(PANEL_PADDING);
+        body.set_margin_start(PANEL_PADDING);
+        body.set_margin_end(PANEL_PADDING);
+
         let scroller = Rc::new(
             gtk::ScrolledWindow::builder()
                 .hscrollbar_policy(gtk::PolicyType::Never)
+                // The body is a stack of Passages that has to be as tall as its
+                // content, and a scrolled window does not do that on its own: left
+                // to itself it reports the scrollbar's own minimum as its height,
+                // and the panel comes out a title bar over one line.
+                // `Surface::state_body_height` is what states the height instead.
+                .propagate_natural_height(true)
                 .child(&body)
                 .build(),
         );
 
+        // Built before the panel, which measures it, and filled in below — the
+        // title bar is built from the panel, so the box has to exist first.
+        let root = gtk::Box::new(gtk::Orientation::Vertical, 6);
+
         let panel = Rc::new(Self {
             window,
             scroller: Rc::clone(&scroller),
+            root: root.clone(),
             app: app.clone(),
             reader,
             surface: Surface {
@@ -212,6 +278,9 @@ impl Panel {
                     Prefs::default(),
                 ))),
                 body,
+                scroller: Rc::clone(&scroller),
+                body_height: Cell::new(0),
+                wanted: Rc::new(Cell::new(Wanted::default())),
                 provenance: provenance_label(strings::PROVENANCE_PENDING),
                 status: status_label(),
                 copy: action_button(strings::COPY, strings::COPY_LABEL),
@@ -230,7 +299,17 @@ impl Panel {
         panel.surface.note.set_visible(false);
 
         let header = panel.header(app);
-        let root = gtk::Box::new(gtk::Orientation::Vertical, 6);
+
+        // The panel's own margin, on everything that is text: the surface has no
+        // window frame to inset it, so without this the title and every line of
+        // the body are flush against the edge of the screen. The separator is
+        // deliberately left out of it — a rule that stops short of the edges
+        // reads as an underline rather than as the line between title and body.
+        header.set_margin_top(PANEL_PADDING);
+        header.set_margin_bottom(PANEL_PADDING / 2);
+        header.set_margin_start(PANEL_PADDING);
+        header.set_margin_end(PANEL_PADDING);
+
         root.pack_start(&header, false, false, 0);
         root.pack_start(
             &gtk::Separator::new(gtk::Orientation::Horizontal),
@@ -289,7 +368,7 @@ impl Panel {
     /// an error has the same ✕ as a finished Explanation, so "a panel that cannot
     /// be closed" is not a state this layout can produce.
     fn header(self: &Rc<Self>, app: &gtk::Application) -> gtk::Box {
-        let header = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        let header = gtk::Box::new(gtk::Orientation::Horizontal, HEADER_GAP);
 
         let title = gtk::Label::new(Some(strings::TITLE));
         title.set_xalign(0.0);
@@ -664,15 +743,50 @@ impl Panel {
     fn apply_geometry(&self) {
         let (anchors, pin, measure) = self.geometry();
 
+        // The width and the height are the file's (spec §12): the first is what the
+        // text wraps at, the second a ceiling on the whole panel. Read here rather
+        // than kept, because every trigger re-reads the file (`reread_prefs`) and
+        // this is the one path every layout change goes through.
+        let (width, height) = {
+            let prefs = self.prefs.borrow();
+            (prefs.panel_width as i32, prefs.panel_height as i32)
+        };
+
         apply_place(
             &self.window,
             self.reader,
             &anchors,
             pin.as_ref(),
             measure.as_ref(),
+            width,
         );
-        self.scroller
-            .set_max_content_height(cap_for(measure.as_ref()));
+
+        // The body's share of the panel's ceiling, and then the body's own height
+        // against it. The ceiling is held inside the screen whatever the file says:
+        // a panel taller than the display is a panel whose ✕ cannot be reached.
+        let ceiling = cap_for(measure.as_ref(), height);
+        let body = (ceiling - self.chrome_height(width)).max(0);
+
+        // The width can change between triggers, so the request is restated; the
+        // height never is — the surface is as tall as its minimum, and the body's
+        // minimum is what `state_body_height` states.
+        self.window.set_size_request(width, -1);
+        self.surface.set_wanted(width, body);
+        self.surface.state_body_height();
+    }
+
+    /// Everything in the panel that is not the body: the title bar, the rule under
+    /// it, and the note under the content — at this width, because the note wraps.
+    ///
+    /// Measured by difference rather than widget by widget: the root's height for a
+    /// width is the chrome plus whatever the scroller reports, so the subtraction
+    /// is exactly the height left for a body, and no list of widgets has to be kept
+    /// in step with the layout above.
+    fn chrome_height(&self, width: i32) -> i32 {
+        let (_, root) = self.root.preferred_height_for_width(width);
+        let (_, scroller) = self.scroller.preferred_height_for_width(width);
+
+        (root - scroller).max(0)
     }
 
     /// The fixed note under the content, from the provider facts (spec §12).
@@ -695,10 +809,12 @@ impl Panel {
     ///
     /// Two screen answers, not one, because two callers want different things and
     /// conflating them produced a real bug: the **layer surface** must be told
-    /// `None` for "跟随当前显示器" (naming the primary would be the opposite of
-    /// following), while the **height cap** and the fallback window's corner need a
-    /// screen to measure against. `None` there meant `set_max_content_height(0)` —
-    /// no cap at all on the default setting.
+    /// `None` for "跟随当前显示器" (naming a screen would be the opposite of
+    /// following), while the body's height cap and the fallback window's corner
+    /// need a screen to measure against. `None` there meant no cap and no corner,
+    /// so the panel was one line tall on the default setting — see
+    /// [`measuring_screen`] for why "the primary" is not a screen that always
+    /// exists.
     fn geometry(&self) -> (Anchors, Option<gdk::Monitor>, Option<gdk::Monitor>) {
         let prefs = self.prefs.borrow();
         let anchors = Anchors::of(prefs.corner, MARGIN);
@@ -718,8 +834,8 @@ impl Panel {
             }
             // "跟随当前显示器": the compositor places the panel on the output the
             // session is working on, so the panel deliberately names none. It
-            // still measures the primary — the closest thing to a screen that is
-            // always there.
+            // still measures a screen — the one the body's cap and the fallback
+            // corner are read from — because neither can be answered without one.
             //
             // Known limit, recorded rather than hidden: once a surface *has* been
             // pinned, this arm does not unpin it. `gtk_layer_set_monitor` has no
@@ -730,7 +846,7 @@ impl Panel {
             // resident). Doing better would mean tearing the surface down and
             // remapping it, which is a visible flicker for a setting the person
             // changes once.
-            None => (None, display.primary_monitor()),
+            None => (None, measuring_screen(&display)),
         };
 
         (anchors, pin, measure)
@@ -782,6 +898,39 @@ impl Surface {
         generation == self.generation.get()
     }
 
+    /// State how tall the body is now: how tall its content is at the panel's
+    /// width, and no more than the cap the scroller already carries.
+    ///
+    /// Stated from every path that changes the body, because nothing else would:
+    /// the surface is as tall as the window's **minimum** size — that, and not the
+    /// natural one, is what gtk-layer-shell asks the compositor for — and a scrolled
+    /// window's minimum is the scrollbar's, which neither the content nor an
+    /// allocation changes. So a body that has just been filled says its height out
+    /// loud, and the panel is that tall.
+    ///
+    /// The cap is read back from the scroller rather than recomputed here:
+    /// `Panel::apply_geometry` owns it (it depends on the screen, and on the
+    /// settings, which are the panel's business rather than the body's), and it is
+    /// set before any of this runs.
+    ///
+    /// Measured *for this width*: the Passage wraps at 470px, and a measure taken
+    /// at the width the labels would like reports fewer lines than the panel then
+    /// draws, which cut the last one in half at the surface's edge.
+    fn state_body_height(&self) {
+        let Wanted { width, body } = self.wanted.get();
+        let (_, content) = self.body.preferred_height_for_width(width);
+        let stated = content.min(body);
+
+        if self.body_height.replace(stated) != stated {
+            self.scroller.set_min_content_height(stated);
+        }
+    }
+
+    /// The size the next height statement is measured against.
+    fn set_wanted(&self, width: i32, body: i32) {
+        self.wanted.set(Wanted { width, body });
+    }
+
     /// One sentence in the body: a refusal, a wait, an error.
     ///
     /// The note under the content is **not** touched here: it hangs off the
@@ -796,6 +945,7 @@ impl Surface {
         container.pack_start(&body_label(text), false, false, 0);
         self.body.pack_start(&container, false, false, 0);
         self.body.show_all();
+        self.state_body_height();
     }
 
     /// The whole stack, with every Passage waiting.
@@ -820,13 +970,14 @@ impl Surface {
                     0,
                 );
             }
-            let slot = gtk::Box::new(gtk::Orientation::Vertical, 6);
+            let slot = gtk::Box::new(gtk::Orientation::Vertical, SECTION_GAP);
             slot.set_widget_name(&slot_name(index));
             fill_loading(&slot, passage);
             self.body.pack_start(&slot, false, false, 0);
         }
 
         self.body.show_all();
+        self.state_body_height();
     }
 
     /// One slot, by index.
@@ -881,6 +1032,7 @@ impl Surface {
         }
 
         slot.show_all();
+        self.state_body_height();
     }
 
     /// Replace the state with one of the sentence states and draw it.
@@ -998,6 +1150,7 @@ fn apply_place(
     anchors: &Anchors,
     pin: Option<&gdk::Monitor>,
     measure: Option<&gdk::Monitor>,
+    width: i32,
 ) {
     match reader {
         Reader::DataControl => {
@@ -1038,7 +1191,7 @@ fn apply_place(
                     geometry.width(),
                     geometry.height(),
                 ),
-                (WIDTH, height_of(window)),
+                (width, height_of(window)),
             );
             window.move_(x, y);
         }
@@ -1072,14 +1225,33 @@ fn corner_of(anchors: &Anchors) -> plainly_core::PanelCorner {
     }
 }
 
-/// How tall the panel's body may become, from the screen it is on.
-fn cap_for(monitor: Option<&gdk::Monitor>) -> i32 {
+/// How tall the whole panel may become: what the settings ask for, held inside the
+/// screen it will be drawn on.
+///
+/// The ceiling is the file's (`app.panel_height`), because the panel is a note
+/// beside what a person is reading and how much of the screen it may cover is that
+/// person's call — with one bound that is not: a panel taller than the screen's
+/// workarea would put its own ✕ off the display, and ✕ is the only way out
+/// (spec §12). No screen to measure means no bound to apply (`gdk` can answer
+/// `None` on a session that has not told us about its outputs yet), which leaves
+/// the file's number standing.
+fn cap_for(monitor: Option<&gdk::Monitor>, preferred: i32) -> i32 {
     monitor
-        .map(|monitor| {
-            let geometry = monitor.workarea();
-            (geometry.height() - 2 * MARGIN).max(0) / HEIGHT_SHARE
-        })
-        .unwrap_or(0)
+        .map(|monitor| preferred.min((monitor.workarea().height() - 2 * MARGIN).max(0)))
+        .unwrap_or(preferred)
+}
+
+/// The screen the panel measures against when it is not pinned to one.
+///
+/// The primary monitor is the natural answer and is **not** one that always
+/// exists: Wayland has no primary output, niri reports its outputs with
+/// `is_primary` false, and GDK's Wayland backend answers `None` for
+/// `gdk_display_get_primary_monitor` on a session that has a screen right there.
+/// Measuring nothing is what [`cap_for`] turns into "no cap", and what leaves the
+/// fallback window's corner unplaced, so the first screen stands in — a display
+/// with any output at all has one at index 0.
+fn measuring_screen(display: &gdk::Display) -> Option<gdk::Monitor> {
+    display.primary_monitor().or_else(|| display.monitor(0))
 }
 
 /// A Passage waiting for its Explanation: the original first, then a skeleton bar

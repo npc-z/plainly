@@ -626,6 +626,22 @@
         <select id="display">${outputs}</select>
       </div>
       <div class="field">
+        <label>${esc(s.panel_width)}</label>
+        <div class="inline">
+          <input id="panel-width" type="number" min="${b.panel_width_min}" max="${b.panel_width_max}" value="${b.panel_width}">
+          <span>${esc(s.pixels)}</span>
+        </div>
+        <p class="note">${esc(s.panel_width_note)}</p>
+      </div>
+      <div class="field">
+        <label>${esc(s.panel_height)}</label>
+        <div class="inline">
+          <input id="panel-height" type="number" min="${b.panel_height_min}" max="${b.panel_height_max}" value="${b.panel_height}">
+          <span>${esc(s.pixels)}</span>
+        </div>
+        <p class="note">${esc(s.panel_height_note)}</p>
+      </div>
+      <div class="field">
         <label>${esc(s.panel_autohide)}</label>
         <div class="inline">
           <input id="autohide" type="checkbox" ${b.panel_autohide ? "checked" : ""}>
@@ -698,6 +714,8 @@
     on("copy-auto", "onchange", (event) => patch({ copy_auto_popup: event.target.checked }));
     on("corner", "onchange", (event) => patch({ panel_corner: event.target.value }));
     on("display", "onchange", (event) => patch({ panel_display: event.target.value }));
+    on("panel-width", "onchange", (event) => patch({ panel_width: Number(event.target.value) }));
+    on("panel-height", "onchange", (event) => patch({ panel_height: Number(event.target.value) }));
     on("autohide", "onchange", (event) => patch({ panel_autohide: event.target.checked }));
     on("autohide-seconds", "onchange", (event) => patch({ panel_autohide_seconds: Number(event.target.value) }));
 

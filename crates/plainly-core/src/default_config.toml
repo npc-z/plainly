@@ -42,6 +42,15 @@ show_translation = true
 panel_corner = "top-left"
 panel_display = "current"
 
+# How wide the panel is, and how tall it may become, in pixels. The width is the
+# panel's width; the height is a ceiling rather than a size, because the panel is
+# a note and not a window: a short Passage still gets a short panel, and what
+# this caps is the long one, which then scrolls its body. Both are held inside
+# the screen whatever they say, and the settings screen refuses anything outside
+# 320..900 wide and 240..1200 tall.
+panel_width = 470
+panel_height = 470
+
 # Auto-dismiss is two independent keys on purpose. Never express "off" as a
 # duration of 0: "off" already has a switch, and two spellings drift apart.
 panel_autohide = false

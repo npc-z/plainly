@@ -184,6 +184,11 @@ pub struct SettingsStrings {
     pub panel_corner: &'static str,
     pub panel_corner_note: &'static str,
     pub panel_display: &'static str,
+    pub panel_width: &'static str,
+    pub panel_height: &'static str,
+    pub pixels: &'static str,
+    pub panel_width_note: &'static str,
+    pub panel_height_note: &'static str,
     pub panel_autohide: &'static str,
     pub seconds: &'static str,
     pub panel_autohide_note: &'static str,
@@ -248,6 +253,11 @@ pub const SETTINGS: SettingsStrings = SettingsStrings {
     panel_corner: "面板位置",
     panel_corner_note: "角是分辨率无关的——换分辨率或换显示器不会把面板丢到屏幕外。不做自由拖动。",
     panel_display: "面板跟随哪块显示器",
+    panel_width: "面板宽度",
+    panel_height: "面板高度上限",
+    pixels: "px",
+    panel_width_note: "面板是固定宽度的一栏：原文按这个宽度折行，所以它决定一行有多长。下一次按键生效。",
+    panel_height_note: "上限而不是固定值——内容短时面板仍然短。内容超过它就在面板里滚动；标题栏与底部说明始终可见。",
     panel_autohide: "面板自动消失",
     seconds: "秒",
     panel_autohide_note: "默认关。打开后面板会在设定秒数后自己消失；关着的时候它一直留着，直到你关掉它（面板不接收键盘，Esc 无效）。",
@@ -305,6 +315,15 @@ pub const KEY_NO_PROVIDER: &str = "模型要先有 provider 才能设置";
 /// and two spellings of one thing eventually disagree.
 pub fn auto_hide_out_of_range(low: u32, high: u32) -> String {
     format!("自动消失时长要在 {low} 到 {high} 秒之间（关掉用开关，不要用 0）")
+}
+
+/// A panel size outside what the number input accepts.
+///
+/// The label travels with the numbers because the two sizes are refused by the
+/// same rule and a sentence that named neither would leave a person looking at two
+/// inputs and one complaint.
+pub fn panel_size_out_of_range(label: &str, low: u32, high: u32) -> String {
+    format!("{label}要在 {low} 到 {high} px 之间")
 }
 
 /// What one export did, for the sentence in the banner.

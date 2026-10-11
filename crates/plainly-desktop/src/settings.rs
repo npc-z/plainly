@@ -36,6 +36,18 @@ use crate::view::is_local;
 /// agree about what "reasonable" means.
 pub const AUTO_HIDE_RANGE: (u32, u32) = (5, 300);
 
+/// The panel sizes the number inputs accept, in pixels.
+///
+/// The panel keeps its own copy of these numbers (`plainly-panel`'s
+/// `PANEL_WIDTH_RANGE`) rather than importing them: the two are separate
+/// processes that happen to read one file, and the file is the contract. What the
+/// panel does with a value outside them and what this screen does are different
+/// answers to the same question — the screen refuses it, the panel clamps it,
+/// because a panel of the wrong size is still a panel somebody can read and
+/// close, while a *value* the screen would not write must not be written.
+pub const PANEL_WIDTH_RANGE: (u32, u32) = (320, 900);
+pub const PANEL_HEIGHT_RANGE: (u32, u32) = (240, 1200);
+
 /// The whole settings screen.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SettingsView {
@@ -177,6 +189,12 @@ pub struct BehaviorView {
     pub panel_display: String,
     pub outputs: Vec<OutputOption>,
 
+    pub panel_width: u32,
+    pub panel_width_min: u32,
+    pub panel_width_max: u32,
+    pub panel_height: u32,
+    pub panel_height_min: u32,
+    pub panel_height_max: u32,
     pub panel_autohide: bool,
     pub panel_autohide_seconds: u32,
     pub autohide_min: u32,
@@ -489,6 +507,12 @@ fn behavior(app: &App, facts: &Facts) -> BehaviorView {
         .collect(),
         panel_display: app.panel_display.clone(),
         outputs,
+        panel_width: app.panel_width,
+        panel_width_min: PANEL_WIDTH_RANGE.0,
+        panel_width_max: PANEL_WIDTH_RANGE.1,
+        panel_height: app.panel_height,
+        panel_height_min: PANEL_HEIGHT_RANGE.0,
+        panel_height_max: PANEL_HEIGHT_RANGE.1,
         panel_autohide: app.panel_autohide,
         panel_autohide_seconds: app.panel_autohide_seconds,
         autohide_min: AUTO_HIDE_RANGE.0,

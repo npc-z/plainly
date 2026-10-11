@@ -172,6 +172,8 @@ pub struct SettingsPatch {
     pub panel_display: Option<String>,
     pub panel_autohide: Option<bool>,
     pub panel_autohide_seconds: Option<u32>,
+    pub panel_width: Option<u32>,
+    pub panel_height: Option<u32>,
     pub copy_auto_popup: Option<bool>,
     pub export_format: Option<ExportFormat>,
     pub show_original: Option<bool>,
@@ -589,6 +591,32 @@ impl SettingsPatch {
                 });
             }
             put("app.panel_autohide_seconds", seconds.to_string());
+        }
+        if let Some(width) = self.panel_width {
+            let (low, high) = crate::settings::PANEL_WIDTH_RANGE;
+            if !(low..=high).contains(&width) {
+                return Err(WindowError::Value {
+                    message: crate::strings::panel_size_out_of_range(
+                        crate::strings::SETTINGS.panel_width,
+                        low,
+                        high,
+                    ),
+                });
+            }
+            put("app.panel_width", width.to_string());
+        }
+        if let Some(height) = self.panel_height {
+            let (low, high) = crate::settings::PANEL_HEIGHT_RANGE;
+            if !(low..=high).contains(&height) {
+                return Err(WindowError::Value {
+                    message: crate::strings::panel_size_out_of_range(
+                        crate::strings::SETTINGS.panel_height,
+                        low,
+                        high,
+                    ),
+                });
+            }
+            put("app.panel_height", height.to_string());
         }
         if let Some(copy) = self.copy_auto_popup {
             put("app.copy_auto_popup", copy.to_string());

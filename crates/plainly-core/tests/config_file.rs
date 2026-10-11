@@ -53,6 +53,8 @@ fn a_partial_file_falls_back_to_defaults_key_by_key() {
     // Everything the file does not mention keeps its default.
     assert_eq!(config.app.provider, Config::default().app.provider);
     assert_eq!(config.app.panel_autohide_seconds, 20);
+    assert_eq!(config.app.panel_width, Config::default().app.panel_width);
+    assert_eq!(config.app.panel_height, Config::default().app.panel_height);
 }
 
 #[test]
@@ -112,6 +114,8 @@ fn values_are_coerced_by_the_type_of_the_key() {
     file.set("app.show_grammar", "false").expect("boolean");
     file.set("app.panel_autohide_seconds", "45")
         .expect("seconds");
+    file.set("app.panel_width", "620").expect("width");
+    file.set("app.panel_height", "540").expect("height");
     file.set("providers.deepseek.thinking", "on")
         .expect("thinking");
     file.set("providers.deepseek.model", "deepseek-flash")
@@ -124,6 +128,8 @@ fn values_are_coerced_by_the_type_of_the_key() {
     let config = file.config().expect("the edited document parses");
     assert_eq!(config.app.level, Level::A2);
     assert_eq!(config.app.panel_autohide_seconds, 45);
+    assert_eq!(config.app.panel_width, 620);
+    assert_eq!(config.app.panel_height, 540);
     assert!(!config.app.show_grammar);
     assert_eq!(config.providers["deepseek"].thinking, Thinking::On);
     assert_eq!(
@@ -165,6 +171,8 @@ fn a_value_of_the_wrong_shape_is_refused() {
         ("app.panel_corner", "middle"),
         ("app.show_grammar", "maybe"),
         ("app.panel_autohide_seconds", "soon"),
+        ("app.panel_width", "wide"),
+        ("app.panel_height", "-40"),
         ("providers.deepseek.thinking", "unsupported"),
         ("prompts.level_descriptors.Z9", "whatever"),
     ] {
@@ -188,6 +196,19 @@ fn a_zero_duration_is_refused_and_points_at_the_switch() {
         .expect_err("zero is not a duration");
 
     assert!(error.to_string().contains("app.panel_autohide"), "{error}");
+}
+
+/// A size of zero is nobody's: the panel would be a surface with nothing in it,
+/// and the key would read as written while doing nothing at all.
+#[test]
+fn a_zero_size_is_refused() {
+    let dir = TempDir::new("config-zero-pixels");
+    let mut file = ConfigFile::open(dir.join("config.toml")).expect("a missing file opens");
+
+    for key in ["app.panel_width", "app.panel_height"] {
+        let error = file.set(key, "0").expect_err("zero is not a size");
+        assert!(error.to_string().contains("invisible"), "{key}: {error}");
+    }
 }
 
 #[test]
@@ -285,6 +306,8 @@ fn the_effective_configuration_fills_in_every_default() {
     assert!(effective.contains("level = \"A1\""));
     assert!(effective.contains("provider = \"deepseek\""));
     assert!(effective.contains("panel_autohide_seconds = 20"));
+    assert!(effective.contains("panel_width = 470"), "{effective}");
+    assert!(effective.contains("panel_height = 470"), "{effective}");
     for section in ["[app]", "[providers]", "[prompts]"] {
         assert!(
             effective.contains(section),

@@ -207,8 +207,14 @@ echo "== the CLI reads a Passage with no environment"
 # `HOME` is set and everything else is not: the CLI needs a home to look for a
 # store in, and pointing it at the cache directory keeps it from touching the
 # real config while still exercising the no-key path.
+#
+# The keyring is *disabled* rather than merely unmentioned: it is reached over
+# the session bus, which `env -i` does not take away, so on a machine where one
+# is unlocked and holds a key this check would explain a Passage for real — it
+# would spend that key's quota to answer a dynamic-linker question, and it would
+# fail, because the refusal it is looking for is then never printed.
 echo "The manager had already gone to ground." \
-    | env -i HOME="$NIX_CACHE_HOME" "$out_cli/bin/plainly" \
+    | env -i HOME="$NIX_CACHE_HOME" PLAINLY_DISABLE_KEYRING=1 "$out_cli/bin/plainly" \
         >"$NIX_CACHE_HOME/cli.out" 2>"$NIX_CACHE_HOME/cli.err" || true
 note "stderr: $(head -1 "$NIX_CACHE_HOME/cli.err")"
 if grep -q "error while loading shared libraries" "$NIX_CACHE_HOME/cli.err"; then

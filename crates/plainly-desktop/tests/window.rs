@@ -650,6 +650,8 @@ fn an_update_writes_the_configuration_file_and_leaves_the_rest_of_it_alone() {
         panel_corner: Some(PanelCorner::BottomRight),
         panel_autohide: Some(true),
         panel_autohide_seconds: Some(45),
+        panel_width: Some(620),
+        panel_height: Some(540),
         show_grammar: Some(false),
         ..SettingsPatch::default()
     };
@@ -661,6 +663,8 @@ fn an_update_writes_the_configuration_file_and_leaves_the_rest_of_it_alone() {
     assert_eq!(settings.behavior.panel_corner, "bottom-right");
     assert!(settings.behavior.panel_autohide);
     assert_eq!(settings.behavior.panel_autohide_seconds, 45);
+    assert_eq!(settings.behavior.panel_width, 620);
+    assert_eq!(settings.behavior.panel_height, 540);
     assert!(!settings.behavior.sections.grammar);
 
     // The file is the source of truth, not the in-memory document: re-reading it
@@ -668,6 +672,8 @@ fn an_update_writes_the_configuration_file_and_leaves_the_rest_of_it_alone() {
     let text = std::fs::read_to_string(dir.paths().config_file()).expect("the config is readable");
     assert!(text.contains("level = \"A2\""), "{text}");
     assert!(text.contains("panel_autohide_seconds = 45"), "{text}");
+    assert!(text.contains("panel_width = 620"), "{text}");
+    assert!(text.contains("panel_height = 540"), "{text}");
     assert!(
         text.contains("native_language = \"Chinese\""),
         "an untouched key keeps its value: {text}"
@@ -689,6 +695,30 @@ fn a_duration_outside_the_range_is_refused_rather_than_written() {
             desktop.update(&patch).is_err(),
             "{seconds} should not be accepted"
         );
+    }
+
+    assert!(
+        !dir.paths().config_file().exists(),
+        "a refused setting writes nothing at all"
+    );
+}
+
+#[test]
+fn a_panel_size_outside_the_range_is_refused_rather_than_written() {
+    let dir = TempDir::new("window-panel-size");
+    let desktop = window(&dir, &[]);
+
+    // Both ends of both ranges, and the zero that no size may be: the screen
+    // names the range in the sentence it refuses with, so a value it would show
+    // and a value it would write cannot disagree.
+    for (width, height) in [(319, 470), (901, 470), (470, 239), (470, 1201), (0, 470), (470, 0)] {
+        let patch = SettingsPatch {
+            panel_width: Some(width),
+            panel_height: Some(height),
+            ..SettingsPatch::default()
+        };
+        let error = desktop.update(&patch).expect_err("out of range");
+        assert!(error.to_string().contains("px"), "{width}x{height}: {error}");
     }
 
     assert!(

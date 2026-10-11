@@ -58,11 +58,28 @@ pub const DEFAULT_AUTOHIDE_SECONDS: u32 = 20;
 /// part of the file's contract.
 pub const AUTOHIDE_RANGE: (u32, u32) = (5, 300);
 
+/// The bounds a panel size read from the file has to be inside.
+///
+/// The same ranges the settings screen refuses outside of, repeated as literals
+/// for the same reason as [`AUTOHIDE_RANGE`]: the file is the contract between two
+/// separate processes, and neither crate is the other's place to keep a number.
+/// A width narrower than the first is a column of one word per line; a height
+/// shorter than the second is a title bar with no room under it.
+pub const PANEL_WIDTH_RANGE: (u32, u32) = (320, 900);
+pub const PANEL_HEIGHT_RANGE: (u32, u32) = (240, 1200);
+
 /// What a trigger reads out of the configuration.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Prefs {
     pub corner: PanelCorner,
     pub display: Display,
+    /// How wide the panel is, in pixels.
+    pub panel_width: u32,
+    /// The most of the screen the whole panel may take, in pixels.
+    ///
+    /// A ceiling, not a size: how much of it the content uses is the content's
+    /// business, and how much of *that* fits before scrolling is this.
+    pub panel_height: u32,
     /// When the panel dismisses itself, in seconds — `None` when it does not.
     ///
     /// One value rather than the switch and the duration travelling separately:
@@ -105,6 +122,8 @@ impl Prefs {
         Self {
             corner: app.panel_corner,
             display: Display::of(&app.panel_display),
+            panel_width: size(app.panel_width, PANEL_WIDTH_RANGE),
+            panel_height: size(app.panel_height, PANEL_HEIGHT_RANGE),
             autohide: autohide(app.panel_autohide, app.panel_autohide_seconds),
             provider,
             cloud,
@@ -208,6 +227,17 @@ fn autohide(enabled: bool, seconds: u32) -> Option<u32> {
     )
 }
 
+/// A size read from the file, held inside the range the settings screen writes.
+///
+/// Clamped to the nearest bound rather than replaced by the default, which is what
+/// [`autohide`] does with a duration and deliberately not what happens here: a
+/// panel larger or smaller than the range is still a panel somebody can read and
+/// close, so the closest thing to what the file asked for is the friendly answer,
+/// where a duration outside its range is one no surface should honour at all.
+fn size(pixels: u32, range: (u32, u32)) -> u32 {
+    pixels.clamp(range.0, range.1)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -235,6 +265,49 @@ mod tests {
         assert_eq!(prefs.display, Display::Current);
         assert!(prefs.shows(SectionKind::Original));
         assert!(prefs.shows(SectionKind::Translation));
+    }
+
+    #[test]
+    fn the_panel_gets_the_size_the_file_asks_for() {
+        let prefs = Prefs::of(
+            &config(App {
+                panel_width: 620,
+                panel_height: 540,
+                ..App::default()
+            }),
+            &none(),
+        );
+
+        assert_eq!(prefs.panel_width, 620);
+        assert_eq!(prefs.panel_height, 540);
+    }
+
+    /// A hand-edited size is clamped to the range the settings screen accepts,
+    /// not replaced by the default: a panel of the wrong size is still a panel
+    /// somebody can read and close, so the nearest bound is the friendly answer.
+    #[test]
+    fn a_size_outside_the_range_is_clamped_to_the_nearest_bound() {
+        let squeezed = Prefs::of(
+            &config(App {
+                panel_width: 10,
+                panel_height: 1,
+                ..App::default()
+            }),
+            &none(),
+        );
+        assert_eq!(squeezed.panel_width, PANEL_WIDTH_RANGE.0);
+        assert_eq!(squeezed.panel_height, PANEL_HEIGHT_RANGE.0);
+
+        let enormous = Prefs::of(
+            &config(App {
+                panel_width: 9_999,
+                panel_height: 9_999,
+                ..App::default()
+            }),
+            &none(),
+        );
+        assert_eq!(enormous.panel_width, PANEL_WIDTH_RANGE.1);
+        assert_eq!(enormous.panel_height, PANEL_HEIGHT_RANGE.1);
     }
 
     #[test]
