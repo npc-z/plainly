@@ -272,13 +272,18 @@ DISPLAY=:0 env -u WAYLAND_DISPLAY sh -c 'echo "The manager had already gone to g
 | §3.4–3.5 面板端到端与命中缓存 | 剪贴板那段落进 `$HOME/.local/share/dev.plainly.app/history.db`（`select count(*)` = 1），`plainly history` 打印出它：`1  2026-10-11T10:55:01Z  B2  llamacpp/stub-model  thinking off  v7-descriptors@de85bff8  The manager had already gone to ground.` |
 | §2.4 退出不留东西 | 面板收到 `SIGTERM`（清单里 ✕ 的等价物）后退出，`niri msg layers` 里 `plainly-panel` 消失，没有残留的 socket / 锁 |
 | §3.6 主窗口能从裸会话起来 | 同一个最小环境里 `plainly-desktop` 起来，`niri msg windows` 里是 `id 17  plainly-desktop  |  Plainly | focused: True`——标题与 `.desktop` 的 `Name=Plainly` 一致，窗口的 **app_id 是 `plainly-desktop`**，所以 `StartupWMClass` 写的是这个名字（见 §8） |
+| §1.10 看门狗正常路径（装出来的那份） | 面板在最小环境里活着到 7 秒（`timeout` 把它结束，退出码 124），stderr 只有一条 AT-SPI 找不到辅助功能总线的警告——看门狗没有误开枪 |
 
 三个动态链接层面的判据这轮也重跑了，它们才是「不靠 dev shell」的机器证据：
 `env -i ldd result/bin/.plainly-panel-wrapped` 与 `.plainly-desktop-wrapped` 各 67 / 156 个库、
 **0 个 `not found`**；两个 GUI 二进制在 `env -i` 下都能走到自己的参数检查（打印 `usage:` 而不是
-动态链接器的报错）；`nix profile install --profile /tmp/… .#plainly` 装出来的 `plainly --version`
-是 `plainly 0.1.0`，`ldd` 里 0 个 `not found`、闭包里 grep 不到任何图形库。这些由
-`scripts/check-flake-packages.sh` 每次重跑。
+动态链接器的报错）。**这两条是 `scripts/check-flake-packages.sh` 会重跑的**（它还断言 CLI 的
+闭包与 derivation 输入里 grep 不到图形库、两个闭包大小不同）。
+
+`nix profile install --profile /tmp/… .#plainly` 与 CLI 的 `ldd` 是**这一轮一次性的**观察，不在
+那个脚本里：装出来的 `plainly --version` 打出 `plainly 0.1.0`，`env -i ldd` 0 个 `not found`，
+profile 的闭包同样 grep 不到图形库。要重跑就照上面那条命令，用 `--profile` 指到一个临时
+profile，不要去动真实的 profile。
 
 **没走的**：真按一次键绑（§2.1–2.2）。§1.2 的焦点与上屏这一轮是在**比键绑更苛刻**的环境里验的
 （`env -i`，连 `PATH` 与 `XDG_DATA_DIRS` 都只剩手写的那几个；niri 的 `spawn` 给的是它自己的继承

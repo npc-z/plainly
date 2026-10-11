@@ -12,10 +12,10 @@
 - [x] flake 暴露 `packages.<system>.default`：三个二进制 + `.desktop` + 图标（`symlinkJoin`），两个 GUI 二进制**wrap 过运行时库路径**
 - [x] `nix run . -- "一段英文"`（或 `echo … | nix run .`）直接出解释；`nix run .#plainly -- --version` 也通
 - [x] `nix build .#plainly` 的闭包与 `nix build` 的闭包**不同**：前者 `nix path-info -r` 里 grep 不到 gtk/webkit（拆包是否真成立，用这个判据，不靠包名）
-- [x] **裸 niri 键绑**：`spawn "…/bin/plainly-panel" "--clipboard"` 在**没有** `nix develop`、没有手写 `LD_LIBRARY_PATH` 的会话里出面板（这是本票据成不成立的那一条）
-- [x] 主窗口同样能从裸会话启动，并且有 `.desktop` + `icons/icon.png`，在应用启动器里显示为 Plainly
-- [x] `nix profile install .#plainly` 在一台没有 GTK 的机器上装出来的 `plainly` 能跑（`ldd` 里没有 `not found`，也没有 gtk/webkit）
-- [x] 一次真机验收：按 [docs/manual-checks.md](../../../docs/manual-checks.md) §0/§1 的路径，用**装出来的**面板而不是 `target/debug` 的那份走一遍（至少：键绑 spawn、焦点不变、✕ 可关、结果态）
+- [ ] **裸 niri 键绑**：`spawn "…/bin/plainly-panel" "--clipboard"` 在**没有** `nix develop`、没有手写 `LD_LIBRARY_PATH` 的会话里出面板（这是本票据成不成立的那一条）——**等价环境已验，真按键未验**：2026-10-11 用 `env -i`（只剩 `WAYLAND_DISPLAY` / `XDG_RUNTIME_DIR` / `DBUS_SESSION_BUS_ADDRESS` / `HOME` / `PATH`）起了装出来的面板，niri 的 `layers` 里出现 `plainly-panel` 且焦点一字未动（docs/manual-checks.md §7），但**没有**把 `result/bin` 放进 niri 的 `PATH`、写进 `binds`、真按一次键。差的是那一下。
+- [x] 主窗口同样能从裸会话启动，并且有 `.desktop` + `icons/icon.png`，在应用启动器里显示为 Plainly（`StartupWMClass` 见下面第 3 条：写的是窗口真实的 app_id `plainly-desktop`，不是 identifier）
+- [x] `nix profile install .#plainly` 在一台没有 GTK 的机器上装出来的 `plainly` 能跑（`ldd` 里没有 `not found`，也没有 gtk/webkit）——2026-10-11 用 `nix profile install --profile /tmp/… .#plainly` 验过（隔离 profile，不动真实 profile）
+- [ ] 一次真机验收：按 [docs/manual-checks.md](../../../docs/manual-checks.md) §0/§1 的路径，用**装出来的**面板而不是 `target/debug` 的那份走一遍（至少：键绑 spawn、焦点不变、✕ 可关、结果态）——焦点、结果态、退出都验了（§7），**键绑 spawn 与 ✕ 的鼠标点击没验**（退出用的是信号）。这条要等真按一次键、真点一次 ✕ 才算完
 
 ## 为什么现在做不到
 
@@ -44,7 +44,7 @@ CLI 那条能跑是**顺带**的结果（`rusqlite` 的 `bundled` + rustls 让�
 
 1. **CLI 与 GUI 拆成两个包**：`packages.plainly` 只含 `plainly`（给服务器 / CI / 没图形栈的机器），`packages.default` 是 `symlinkJoin` 出来的三件套（面板 + 主窗口 + CLI）+ `.desktop` + 图标。合成一个包会让「装个 CLI」把 WebKit 一起拖进闭包，而 CLI 不依赖图形库正是 workspace 拆 crate 的全部理由（规格 §2）。
 2. **`checks` 保持空，但理由要重写**。本票据一旦有了 `packages`，`nix flake check` 就会去构建它们——现在 flake 里那句「checks 空着是为了不让 `nix flake check` 变成一次完整发布构建」就**默默失效**了：它挡不住了。保留空 `checks`，把注释改成说清「要验的是 `nix build` / `nix profile install`，不是 flake check」。
-3. **`.desktop` 的 identifier 跟 `dev.plainly.app` 走**（票据 01 定的 identifier）：desktop entry 的文件名与 `StartupWMClass` 都与它一致，这样配置目录、D-Bus 名与启动器里的一条是同一个身份。
+3. **`.desktop` 的 identifier 跟 `dev.plainly.app` 走**（票据 01 定的 identifier）：desktop entry 的文件名与 `StartupWMClass` 都与它一致，这样配置目录、D-Bus 名与启动器里的一条是同一个身份。**2026-10-11 修正**：文件名与 `Icon` 仍是 identifier，`StartupWMClass` 改成 `plainly-desktop`——实机测出来窗口的 Wayland app_id 是它，不是 identifier（`tao` 用没有 application ID 的 `gtk::Application`，GTK 便公布程序名）。让 app_id 说 identifier 得打开 Tauri 的 `enableGTKAppId`，而那会启用基于会话总线的单实例，抢在 `--watch` 的交接 socket 之前接管第二次启动。选的是「让 `.desktop` 说出窗口真实的 app_id」；完整理由在 `docs/manual-checks.md` §8。
 
 ## 不在本票据里
 

@@ -166,6 +166,15 @@
         # manifest into a checkout of the two crates, delete `Cargo.lock` and run
         # `cargo generate-lockfile`, then paste the result into `cliLock` (and take
         # the new hash Nix reports).
+        #
+        # It is kept, rather than the root workspace built with `--package
+        # plainly-cli`, because of one word in the sentence above: *panics*. Built
+        # inside the sandbox, that path does run `libdbus-sys`'s build script and
+        # fails on `explicit panic` (observed 2026-10-11); a `cargo build -p
+        # plainly-cli` in the dev shell does *not*, because the shell has
+        # `dbus-1.pc` and a compiler for the probe the script runs. The dev shell
+        # is the one place the question cannot be asked, which is exactly why this
+        # copy exists.
         cliManifest = pkgs.writeText "plainly-cli-Cargo.toml" ''
           [workspace]
           resolver = "3"
@@ -2468,18 +2477,11 @@
           hash = "sha256-WvomIp8Gta6NFsL4wi+Fu1fNOshZkdFALUCMFG6iXrE=";
         };
 
-        # What the packages build with. The dev shell's lists above are the same
-        # set for the same reasons, and `dbus` is the one addition:
+        # What the GUI package builds with. The dev shell's lists above are the
+        # same set for the same reasons, and `dbus` is the one addition:
         # `plainly-desktop` reaches `tauri` → `libdbus-sys`, which probes for
         # `dbus-1.pc` and panics without it. The command line's package is built
         # from `cliSource` and never sees this list.
-        packageTools = with pkgs; [
-          pkg-config
-          clang
-          python3
-          patchelf
-          makeWrapper
-        ];
         packageInputs = libraries ++ (with pkgs; [ dbus ]);
 
         # What the two wrapped binaries need on their search path at run time, and

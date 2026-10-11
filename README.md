@@ -14,18 +14,30 @@ so a headless machine can build and run the CLI.
 
 ## Build
 
-The development environment is the flake at the repository root:
+Install it — the flake builds the binaries a compositor's key binding can spawn,
+with their library paths written into the wrappers, and puts them on `PATH`:
+
+```
+nix build .                       # → result/bin/{plainly,plainly-panel,plainly-desktop}
+nix profile install .             # the same three, into a profile
+```
+
+`nix profile install .#plainly` installs the command line alone, on a machine
+with no graphics stack: that package's closure reaches no GTK, WebKit or Wayland.
+
+The development environment is the flake at the repository root, and it is for
+people changing the code rather than for running it:
 
 ```
 nix develop
 cargo build --workspace
 ```
 
-That gives three binaries: `plainly` (the CLI), `plainly-panel` (the panel the
-compositor spawns) and `plainly-desktop` (history, search and settings). They
-end up in `target/debug/`; the panel and the main window need the dev shell's
-`LD_LIBRARY_PATH`, so run them from inside `nix develop` or from a shell that has
-it.
+That gives the same three binaries in `target/debug/`, but they are *not* the
+ones a key binding can spawn: the panel and the main window need the dev shell's
+`LD_LIBRARY_PATH`, so they only run from inside `nix develop` or a shell that
+sets it. Use the built ones from `result/bin` to check behaviour, and this shell
+to rebuild after an edit.
 
 A machine without a graphics stack needs none of it:
 

@@ -127,9 +127,14 @@ for unwanted in plainly-panel plainly-desktop; do
     [ ! -e "$out_cli/bin/$unwanted" ] \
         || fail "plainly ($out_cli) carries $unwanted: the split did not happen"
 done
-# The words are the libraries a graphics stack arrives as in nixpkgs, and the
-# names its *sources* have: `wayland` catches both the C library and the
-# `wayland-1.26.0` package, which a `libwayland` pattern would miss.
+# The words a graphics stack arrives as in nixpkgs, plus the names its *sources*
+# have: `wayland` catches both the C library and the `wayland-1.26.0` package,
+# which a `libwayland` pattern would miss. `dbus` is not graphics, it is the
+# session bus: the CLI talks to no session, and a package that pulled it in would
+# have to substitute it on a machine that has none. `scripts/check-headless-cli.sh`
+# asks the same question of the dependency graph; its list is narrower because it
+# sees the graph rather than the store paths, so neither list is the other's source
+# of truth.
 graphical='gtk|webkit|gdk|cairo|pango|at-spi|wayland|layer-shell|soup|glib-|dbus'
 cli_closure=$(nix path-info -r "$out_cli")
 if echo "$cli_closure" | grep -Ei "$graphical" >/dev/null; then

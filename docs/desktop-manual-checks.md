@@ -4,7 +4,9 @@
 的公共 API 与 CLI 二进制两条缝；窗口自己的决定由 `crates/plainly-desktop/tests/window.rs` 驱动）。
 下面这些必须在真机上走一遍，因为它们要的是一块屏、一个合成器和一个真的剪贴板。
 
-启动：`nix develop` 之后 `cargo run -p plainly-desktop`。
+启动：`nix build .` 之后用 `result/bin/plainly-desktop`（或 `nix profile install .` 装出来的那个）。
+这样它的库路径在自己的包装脚本里，与别人装完拿到的那个一致；`nix develop` 里的
+`cargo run -p plainly-desktop` 是**另一个**环境，只在改代码时用（见 `docs/manual-checks.md` §0）。
 
 ## 结构与导航
 
