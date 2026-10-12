@@ -52,7 +52,7 @@ pub use probe::{
 };
 pub use prompt::{FACTORY_PROMPT, PROMPT_LABEL, Prompt, factory_descriptor};
 pub use provider::{ExplainRequest, Provider, ProviderError, ProviderErrorKind};
-pub use render::{Section, SectionKind};
+pub use render::{Body, Section, SectionKind};
 pub use retry::{Failure, FailureKind, Stopped};
 pub use secrets::{
     Cleared, EnvSecrets, KeySource, KeyringSecrets, MemorySecrets, ResolvedKey, SecretError,

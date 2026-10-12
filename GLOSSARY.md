@@ -75,8 +75,12 @@ Something in the Passage that blocks this learner's comprehension — an unusual
 _Avoid_: difficult word, unknown term, vocabulary item
 
 **Gloss**:
-One plain-English line explaining a single Blocker; never harder than the expression it explains.
+One plain-English explanation of a single Blocker, together with the Example that shows the expression in use; never harder than the expression it explains.
 _Avoid_: definition, note, annotation
+
+**Example**:
+The sentence a Gloss carries: a new one, not the Passage's own, using the expression in the sense the Passage gives it. It is built from the learner's Level's own vocabulary — the expression is the only hard thing in it — and what surrounds it is what makes the meaning plain.
+_Avoid_: sample sentence, usage note, illustration
 
 **Comprehensible English**:
 The paraphrase: the Passage's meaning restated in more frequent, familiar English at the learner's Level, keeping tense, aspect, modality, negation and logical links.

@@ -145,7 +145,7 @@ def validate(obj):
         for i, item in enumerate(glosses):
             if not isinstance(item, dict):
                 errs.append(f"glosses[{i}]: not an object")
-            elif set(item) != {"expression", "gloss"}:
+            elif set(item) != {"expression", "gloss", "example"}:
                 errs.append(f"glosses[{i}]: keys are {sorted(item)}")
             elif not all(isinstance(v, str) and v.strip() for v in item.values()):
                 errs.append(f"glosses[{i}]: empty value")

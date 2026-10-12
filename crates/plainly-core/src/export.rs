@@ -137,13 +137,25 @@ pub fn raw_csv(records: &[Record]) -> String {
     document
 }
 
-/// The Glosses as the raw export's caller sees them in one cell: `expression →
-/// gloss`, one per line, in the model's order.
+/// The Glosses as the raw export's caller sees them in one cell: the
+/// expression, its explanation and its Example, one per line and the Glosses one
+/// after another, in the model's order.
+///
+/// The same three lines the document and the card draw, and deliberately without
+/// the document's block quote around the Example: a spreadsheet cell is not a
+/// document (see [`plainly_core::render`]), and a `>` in a data cell is noise. A
+/// Gloss stored before Examples existed (ADR 0002) is two lines.
 fn glosses_text(explanation: &Explanation) -> String {
     explanation
         .glosses
         .iter()
-        .map(|gloss| format!("{} → {}", gloss.expression, gloss.gloss))
+        .map(|gloss| {
+            let mut block = format!("{}\n  {}", gloss.expression, gloss.gloss);
+            if !gloss.example.trim().is_empty() {
+                block.push_str(&format!("\n  {}", gloss.example));
+            }
+            block
+        })
         .collect::<Vec<_>>()
         .join("\n")
 }

@@ -6,6 +6,9 @@ Labels: ready-for-agent
 > 由 `.scratch/plainly/` 的 wayfinder 地图与 18 张票据坍缩而成（票据 11 明确出界，规格由 `/to-spec` 产出）。
 > 领域词一律按仓库根 `GLOSSARY.md`；`docs/adr/0001` 是 Explanation schema 的硬约束。
 > 本规格的实现决策**逐条可追溯到票据**，见文末溯源表。
+>
+> **2026-10-12 变更**：每条 Gloss 新增 `example`（一句 AI 生成、随用户 Level 的英文例句），关键帮助一节从「一行 + 箭头」改成三行（表达 / 释义 / 例句）；存储引入本仓库第一个迁移步骤，`ARTIFACT_VERSION` 由 1 升到 2。§3 的 `[{expression, gloss}]`、§4 的一行式渲染、§9 的 `glosses(record_id, ord, expression, gloss)` 与 raw CSV 的单元格形状由 [`.scratch/gloss-examples/spec.md`](../gloss-examples/spec.md) 取代，取舍记在 [ADR-0002](../../docs/adr/0002-the-example-is-required-but-not-backfilled.md)。
+> 同一天，搜索框下那行小字从「中文翻译暂不可搜」改成**「中文翻译与例句暂不可搜」**（§3 的 §54、§9 的搜索说明里钉的是旧文案）：例句不进 FTS，界面就该把这条限制说全。
 
 ## Problem Statement
 

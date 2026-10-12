@@ -272,9 +272,17 @@
 
   function detailView(record) {
     const t = app.strings;
+    /* One Gloss is three lines — the expression, its explanation and the Example
+     *  — and a Gloss with no Example (a Record generated before Examples existed,
+     *  or one whose model left it out) is two: the card never draws an empty
+     *  third line, and never explains the gap. */
     const glosses = record.glosses.length
-      ? record.glosses.map((gloss) =>
-          `<p class="gl"><code>${esc(gloss.expression)}</code> → ${esc(gloss.gloss)}</p>`).join("")
+      ? record.glosses.map((gloss) => `
+        <div class="gl">
+          <div class="ex"><code>${esc(gloss.expression)}</code></div>
+          <div class="gloss">${esc(gloss.gloss)}</div>
+          ${gloss.example.trim() ? `<div class="eg">${esc(gloss.example)}</div>` : ""}
+        </div>`).join("")
       : `<p class="note">${esc(t.glosses_empty)}</p>`;
 
     return `

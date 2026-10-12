@@ -98,7 +98,7 @@ fn the_history_lists_records_newest_first_with_everything_a_row_shows() {
     );
     // A row that did not carry the prompt version would read as a duplicate of
     // the same Passage under another prompt (ticket 09, spec §13).
-    assert_eq!(newest.prompt_label, "v7-descriptors");
+    assert_eq!(newest.prompt_label, "v8-examples");
     assert_eq!(newest.prompt_short.len(), 8);
     assert!(newest.prompt_version.starts_with(&newest.prompt_short));
     assert_eq!(newest.provider, "deepseek");
@@ -210,6 +210,10 @@ fn the_detail_carries_the_five_sections_and_the_markdown_export_of_one_record() 
     );
     assert!(!detail.comprehensible.is_empty());
     assert!(!detail.glosses.is_empty());
+    assert!(
+        !detail.glosses[0].example.is_empty(),
+        "the card's third line has something to draw"
+    );
     assert_eq!(
         detail.translation,
         "委员会对此事进行了彻底调查，但那位经理已经躲了起来。"
@@ -234,6 +238,7 @@ fn the_detail_carries_the_five_sections_and_the_markdown_export_of_one_record() 
                     .map(|gloss| plainly_core::Gloss {
                         expression: gloss.expression.clone(),
                         gloss: gloss.gloss.clone(),
+                        example: gloss.example.clone(),
                     })
                     .collect(),
                 grammar: detail.grammar.clone(),

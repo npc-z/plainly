@@ -45,6 +45,7 @@ ANSWER = json.dumps(
             {
                 "expression": "go to ground",
                 "gloss": "hide so that nobody can find you",
+                "example": "The reporter went to ground until the trial was over.",
             }
         ],
         "grammar": None,

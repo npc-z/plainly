@@ -20,8 +20,8 @@ const BOTTLED: &str = "He bottled it at the last minute.";
 const BOTTLED_ANSWER: &str = r#"{
   "comprehensible": "He lost his nerve right at the end.",
   "glosses": [
-    { "expression": "bottle it", "gloss": "lose your nerve" },
-    { "expression": "at the last minute", "gloss": "at the very end" }
+    { "expression": "bottle it", "gloss": "lose your nerve", "example": "He was going to ask for a raise but he bottled it." },
+    { "expression": "at the last minute", "gloss": "at the very end", "example": "She changed her mind at the last minute." }
   ],
   "grammar": null,
   "translation": "他在最后一刻怯场了。"
@@ -126,13 +126,13 @@ fn the_markdown_export_gives_every_record_a_heading_and_the_five_sections() {
 
     assert!(
         document.contains(&format!(
-            "## {FIRST_DAY} · B2 · deepseek/deepseek-flash · v7-descriptors\n"
+            "## {FIRST_DAY} · B2 · deepseek/deepseek-flash · v8-examples\n"
         )),
         "the heading carries the date, the Level, the profile and the prompt label:\n{document}"
     );
     assert!(
         document.contains(&format!(
-            "## {SECOND_DAY} · B2 · deepseek/deepseek-flash · v7-descriptors\n"
+            "## {SECOND_DAY} · B2 · deepseek/deepseek-flash · v8-examples\n"
         )),
         "{document}"
     );
@@ -159,7 +159,7 @@ fn a_markdown_export_shows_the_five_sections_in_order() {
         "### Comprehensible English",
         "The committee tried hard to find out what had happened",
         "### Key Help",
-        "- `go to ground` → hide so that nobody can find you",
+        "- `go to ground`\n  hide so that nobody can find you\n\n  > The manager went to ground when the reporters arrived.",
         "### Translation",
         "委员会对此事进行了彻底调查",
     ] {
@@ -235,7 +235,7 @@ const AWKWARD: &str = "First line.\nSecond line.";
 const AWKWARD_ANSWER: &str = r#"{
   "comprehensible": "Two lines, said again.",
   "glosses": [
-    { "expression": "well, \"yes\"", "gloss": "line one\nline two" }
+    { "expression": "well, \"yes\"", "gloss": "line one\nline two", "example": "He said, \"yes\" at last." }
   ],
   "grammar": null,
   "translation": "两行。"
@@ -278,7 +278,7 @@ fn the_raw_export_gives_every_record_one_row_and_every_column() {
     assert_eq!(table[1][column("provider")], "deepseek");
     assert_eq!(table[1][column("model")], "deepseek-flash");
     assert_eq!(table[1][column("thinking")], "off");
-    assert_eq!(table[1][column("prompt_label")], "v7-descriptors");
+    assert_eq!(table[1][column("prompt_label")], "v8-examples");
     assert_eq!(table[1][column("prompt_version")], support::PROMPT_VERSION);
     assert_eq!(table[1][column("tags")], "work");
     assert_eq!(table[1][column("passage")], BOTTLED);
@@ -309,8 +309,10 @@ fn the_raw_export_puts_the_glosses_in_one_cell_as_several_lines() {
         .expect("a glosses column");
 
     assert_eq!(
-        table[1][glosses], "bottle it → lose your nerve\nat the last minute → at the very end",
-        "one cell, one line per Gloss"
+        table[1][glosses],
+        "bottle it\n  lose your nerve\n  He was going to ask for a raise but he bottled it.\n\
+         at the last minute\n  at the very end\n  She changed her mind at the last minute.",
+        "one cell, one Gloss to three lines"
     );
 }
 
@@ -342,7 +344,7 @@ fn a_csv_field_with_a_comma_a_quote_or_a_line_break_is_quoted_and_escaped() {
     );
     assert_eq!(
         table[1][column("glosses")],
-        "well, \"yes\" → line one\nline two",
+        "well, \"yes\"\n  line one\nline two\n  He said, \"yes\" at last.",
         "a Gloss that quotes and breaks lines reads back as one cell"
     );
 }

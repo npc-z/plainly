@@ -35,8 +35,16 @@ fn a_good_answer_becomes_an_explanation() {
         "try to find out what happened"
     );
     assert_eq!(
+        explanation.glosses[0].example,
+        "The police conducted a thorough investigation into the theft."
+    );
+    assert_eq!(
         explanation.glosses[2].gloss,
         "hide so that nobody can find you"
+    );
+    assert_eq!(
+        explanation.glosses[2].example,
+        "The manager went to ground when the reporters arrived."
     );
     assert_eq!(
         explanation.translation,
@@ -134,6 +142,43 @@ fn a_missing_field_is_a_schema_failure() {
 }
 
 #[test]
+fn a_gloss_without_an_example_is_a_schema_failure() {
+    // `example` is required where `grammar` is nullable: "no Example" is not a
+    // decision the model gets to make (ADR 0002).
+    let problems = problems_with(
+        r#"{
+            "comprehensible": "c",
+            "glosses": [{ "expression": "e", "gloss": "g" }],
+            "grammar": null,
+            "translation": "t"
+        }"#,
+    );
+
+    assert_eq!(
+        problems,
+        ["output.glosses[0]: missing required field \"example\""]
+    );
+}
+
+#[test]
+fn an_empty_example_is_a_string_not_a_broken_contract() {
+    // ADR-0001 keeps `minLength` out of the schema, so "never leave it empty" is
+    // a prompt rule — the same regime the Gloss count lives in. A surface answers
+    // for it by not drawing the line: a three-line Gloss with no third line.
+    let explanation = Explanation::parse(
+        r#"{
+            "comprehensible": "c",
+            "glosses": [{ "expression": "e", "gloss": "g", "example": "" }],
+            "grammar": null,
+            "translation": "t"
+        }"#,
+    )
+    .expect("the shapes hold");
+
+    assert_eq!(explanation.glosses[0].example, "");
+}
+
+#[test]
 fn a_gloss_of_the_wrong_type_is_a_schema_failure() {
     let problems = problems_with(
         r#"{
@@ -152,7 +197,7 @@ fn a_number_where_a_string_belongs_is_a_schema_failure() {
     let problems = problems_with(
         r#"{
             "comprehensible": "c",
-            "glosses": [{ "expression": "e", "gloss": 7 }],
+            "glosses": [{ "expression": "e", "gloss": 7, "example": "x" }],
             "grammar": null,
             "translation": "t"
         }"#,
@@ -190,7 +235,9 @@ fn the_number_of_glosses_is_advisory_not_a_bound() {
     // to five glosses" is a prompt rule, enforced by validation and retry.
     for count in [0, 1, 12] {
         let glosses: Vec<String> = (0..count)
-            .map(|index| format!(r#"{{"expression":"e{index}","gloss":"g{index}"}}"#))
+            .map(|index| {
+                format!(r#"{{"expression":"e{index}","gloss":"g{index}","example":"x{index}"}}"#)
+            })
             .collect();
         let answer = format!(
             r#"{{"comprehensible":"c","glosses":[{}],"grammar":null,"translation":"t"}}"#,
@@ -253,13 +300,17 @@ fn the_wire_schema_is_the_contract_the_spec_records() {
     let glosses = &schema["properties"]["glosses"];
     assert_eq!(glosses["type"], "array");
     assert_eq!(glosses["items"]["type"], "object");
-    assert_eq!(glosses["items"]["required"], json!(["expression", "gloss"]));
+    assert_eq!(
+        glosses["items"]["required"],
+        json!(["expression", "gloss", "example"])
+    );
     assert_eq!(glosses["items"]["additionalProperties"], false);
     assert_eq!(
         glosses["items"]["properties"]["expression"]["type"],
         "string"
     );
     assert_eq!(glosses["items"]["properties"]["gloss"]["type"], "string");
+    assert_eq!(glosses["items"]["properties"]["example"]["type"], "string");
 
     // The root cannot be a union (ADR-0001).
     for union in ["anyOf", "oneOf", "allOf", "not"] {

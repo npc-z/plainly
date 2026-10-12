@@ -25,7 +25,8 @@ use gtk::{gdk, glib};
 use gtk_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
 use plainly_core::clipboard::Clipboard;
 use plainly_core::desktop::Presentation;
-use plainly_core::render::SectionKind;
+use plainly_core::render::{Body, SectionKind};
+use plainly_core::Gloss;
 
 use crate::position::Anchors;
 use crate::prefs::Prefs;
@@ -48,6 +49,24 @@ const PANEL_PADDING: i32 = 10;
 /// The gap between one section of an Explanation and the next, and between the
 /// stacked Passages of a split one.
 const SECTION_GAP: i32 = 14;
+/// The gap between one Gloss of the Key Help and the next.
+///
+/// A Gloss is a block now — expression, meaning, Example — and two of them at the
+/// panel's ordinary section spacing read as one block of six lines. This is the
+/// space that says where one ends; [`GLOSS_PART_GAP`] is the closer one inside a
+/// single Gloss.
+const GLOSS_GAP: i32 = 12;
+/// The gap between a Gloss's own parts: closer than [`GLOSS_GAP`], because they
+/// belong together.
+const GLOSS_PART_GAP: i32 = 3;
+/// How wide the rule beside an Example is drawn, and how far the sentence sits
+/// from it.
+///
+/// The width is the card's (`style.css` draws the same 2px beside an Example);
+/// the colour is not, because a layer surface gets no palette to borrow — GTK
+/// draws this one out of the panel's own theme.
+const EXAMPLE_RULE: i32 = 2;
+const EXAMPLE_GAP: i32 = 8;
 /// The gap between the things in the title bar — the name, the chip, the status
 /// line and the four controls — which are read as a row rather than as one
 /// sentence.
@@ -1008,7 +1027,7 @@ impl Surface {
                     // first, and a panel that arrived folded would hide the very
                     // thing the person pressed a key for.
                     expander.set_expanded(true);
-                    expander.add(&body_label(&section.body));
+                    expander.add(&body_widget(&section.body));
                     slot.pack_start(&expander, false, false, 0);
                 }
             }
@@ -1341,6 +1360,80 @@ fn heading(text: &str) -> gtk::Label {
     label
 }
 
+/// A section's body as the widget the panel draws it in.
+///
+/// The Key Help is not a string any more (core keeps a Gloss's three parts
+/// apart), so it is drawn as three widgets per Gloss rather than shown as the
+/// document's markdown. That is the whole point of the split: the panel used to
+/// print `-`, backticks and `_` because a surface that is handed a document and
+/// asked to display it has nothing else to print.
+fn body_widget(body: &Body) -> gtk::Widget {
+    match body {
+        Body::Prose(text) => body_label(text).upcast(),
+        Body::Glosses(glosses) => glosses_widget(glosses).upcast(),
+    }
+}
+
+/// The Key Help: one block per Gloss, spaced so two of them do not read as one.
+fn glosses_widget(glosses: &[Gloss]) -> gtk::Widget {
+    let list = gtk::Box::new(gtk::Orientation::Vertical, GLOSS_GAP);
+    list.set_halign(gtk::Align::Fill);
+
+    for gloss in glosses {
+        list.pack_start(&gloss_widget(gloss), false, false, 0);
+    }
+
+    list.upcast()
+}
+
+/// One Gloss: the expression in a chip, its meaning under it, and its Example
+/// under a rule of its own.
+fn gloss_widget(gloss: &Gloss) -> gtk::Widget {
+    let block = gtk::Box::new(gtk::Orientation::Vertical, GLOSS_PART_GAP);
+
+    // The expression is quoted from the Passage, so it keeps the document's
+    // markdown chip — as a chip, not as backticks.
+    let expression = gtk::Label::new(None);
+    expression.set_markup(&glib::markup_escape_text(&gloss.expression));
+    expression.set_xalign(0.0);
+    expression.set_selectable(true);
+    expression.style_context().add_class("plainly-expression");
+
+    let chip = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    chip.set_halign(gtk::Align::Start);
+    chip.style_context().add_class("plainly-expression-chip");
+    chip.pack_start(&expression, false, false, 0);
+    block.pack_start(&chip, false, false, 0);
+
+    // The meaning is the answer, so it is the panel's ordinary body text.
+    block.pack_start(&body_label(&gloss.gloss), false, false, 0);
+
+    if !gloss.example.trim().is_empty() {
+        block.pack_start(&example_widget(&gloss.example), false, false, 0);
+    }
+
+    block.upcast()
+}
+
+/// An Example: a rule down its left side, the sentence beside it — and nothing
+/// when the Gloss has no Example, which is what an old Record looks like.
+fn example_widget(example: &str) -> gtk::Widget {
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, EXAMPLE_GAP);
+
+    let rule = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    rule.set_size_request(EXAMPLE_RULE, -1);
+    rule.style_context().add_class("plainly-example-rule");
+    // `fill` and not `expand`: the rule is as tall as the sentence beside it, and
+    // a rule that expanded would run down the rest of the panel.
+    row.pack_start(&rule, false, true, 0);
+
+    let text = body_label(example);
+    text.style_context().add_class("plainly-example");
+    row.pack_start(&text, true, true, 0);
+
+    row.upcast()
+}
+
 /// A section's body: wrapped, selectable, and starting at the left edge.
 fn body_label(text: &str) -> gtk::Label {
     let label = gtk::Label::new(Some(text));
@@ -1349,3 +1442,103 @@ fn body_label(text: &str) -> gtk::Label {
     label.set_selectable(true);
     label
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every label in a widget tree, in the order the tree is walked.
+    fn labels(widget: &gtk::Widget, found: &mut Vec<String>) {
+        if let Some(label) = widget.downcast_ref::<gtk::Label>() {
+            found.push(label.text().to_string());
+        }
+        if let Some(container) = widget.downcast_ref::<gtk::Container>() {
+            for child in container.children() {
+                labels(&child, found);
+            }
+        }
+    }
+
+    /// Whether GTK is up, initializing it once for every test that needs it.
+    ///
+    /// `gtk::init` may only ever be called on one thread: a second caller panics
+    /// inside `assert_initialized_main_thread!` instead of returning `Err`, so
+    /// two tests each calling it would fail in whatever order the harness
+    /// happened to run them. One [`OnceLock`] is what every future GTK test
+    /// shares.
+    ///
+    /// GTK cannot come up without a display, and a skip that says nothing turns
+    /// a test into a no-op on exactly the machines where nobody is watching. A
+    /// headless run has to say so out loud, the way `PLAINLY_DISABLE_KEYRING`
+    /// makes a machine say it has no keyring — hence `PLAINLY_TEST_NO_DISPLAY`,
+    /// named for the test that reads it rather than for an application switch.
+    fn gtk_ready() -> bool {
+        static READY: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+
+        *READY.get_or_init(|| {
+            if gtk::init().is_ok() {
+                return true;
+            }
+
+            const ACCEPTED: [&str; 4] = ["1", "true", "yes", "on"];
+            let accepted = std::env::var("PLAINLY_TEST_NO_DISPLAY")
+                .is_ok_and(|value| ACCEPTED.contains(&value.as_str()));
+
+            assert!(
+                accepted,
+                "no display: GTK stayed uninitialized, so neither the stylesheet nor the widget \
+                 tree was checked. Set PLAINLY_TEST_NO_DISPLAY=1 to accept that."
+            );
+            false
+        })
+    }
+
+    /// The Key Help reaches the screen as text, never as the document's markup.
+    ///
+    /// This is the regression the split into [`Body`] exists for: the panel used
+    /// to display the markdown it was handed, so a person saw the bullet, the
+    /// backticks and the underscores. Two things have to hold, and they are
+    /// checked together because GTK can only be initialized from one thread —
+    /// the stylesheet that gives each part its own voice has to parse, and the
+    /// widget tree has to hold the three parts and nothing else.
+    #[test]
+    fn the_key_help_reaches_the_screen_without_markup() {
+        if !gtk_ready() {
+            return;
+        }
+
+        gtk::CssProvider::new()
+            .load_from_data(css::CSS.as_bytes())
+            .expect("the panel's stylesheet parses: a typo would silently drop the panel's look");
+
+        let glosses = vec![
+            Gloss {
+                expression: "go to ground".to_string(),
+                gloss: "hide so that nobody can find you".to_string(),
+                example: "The manager went to ground.".to_string(),
+            },
+            // A Gloss with no Example — an old Record — is two parts.
+            Gloss {
+                expression: "the matter".to_string(),
+                gloss: "the situation being discussed".to_string(),
+                example: String::new(),
+            },
+        ];
+
+        let mut found = Vec::new();
+        labels(&glosses_widget(&glosses), &mut found);
+
+        assert_eq!(
+            found,
+            [
+                "go to ground",
+                "hide so that nobody can find you",
+                "The manager went to ground.",
+                "the matter",
+                "the situation being discussed",
+            ],
+            "three parts per Gloss and no markup; a Gloss without an Example is two"
+        );
+    }
+}
+

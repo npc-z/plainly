@@ -18,12 +18,15 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-/// One Gloss: the expression that blocked the Passage, and a plain-English line
-/// that must not be harder than the expression it explains.
+/// One Gloss: the expression that blocked the Passage, a plain-English line
+/// that must not be harder than the expression it explains, and one Example —
+/// a sentence of the model's own that uses the expression in the sense the
+/// Passage gives it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Gloss {
     pub expression: String,
     pub gloss: String,
+    pub example: String,
 }
 
 /// What the model returns: the four content fields, and nothing else.
@@ -60,10 +63,11 @@ pub fn wire_schema() -> Value {
                 "items": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["expression", "gloss"],
+                    "required": ["expression", "gloss", "example"],
                     "properties": {
                         "expression": { "type": "string" },
-                        "gloss": { "type": "string" }
+                        "gloss": { "type": "string" },
+                        "example": { "type": "string" }
                     }
                 }
             },

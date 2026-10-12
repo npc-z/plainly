@@ -21,7 +21,7 @@ const PASSAGE: &str = "The committee conducted a thorough investigation into the
 const ANSWER: &str = r#"{
   "comprehensible": "The committee tried hard to find out what had happened, but the manager had already gone into hiding.",
   "glosses": [
-    { "expression": "go to ground", "gloss": "hide so that nobody can find you" }
+    { "expression": "go to ground", "gloss": "hide so that nobody can find you", "example": "The manager went to ground when the reporters arrived." }
   ],
   "grammar": null,
   "translation": "委员会对此事进行了彻底调查，但那位经理已经躲了起来。"
@@ -69,7 +69,7 @@ fn a_second_identical_run_is_answered_from_the_store_and_sends_nothing() {
         message.contains("reusing"),
         "a hit says where the answer came from: {message}"
     );
-    for provenance in ["stub/stub-model", "thinking off", "B2", "v7-descriptors@"] {
+    for provenance in ["stub/stub-model", "thinking off", "B2", "v8-examples@"] {
         assert!(
             message.contains(provenance),
             "a hit carries the provenance of what it reuses ({provenance}): {message}"
@@ -213,7 +213,7 @@ fn the_listing_carries_the_provenance_of_every_record() {
         "stub/stub-model",
         "thinking off",
         "B2",
-        "v7-descriptors@",
+        "v8-examples@",
         "The committee conducted a thorough investigation",
     ] {
         assert!(row.contains(expected), "missing {expected} in: {row}");
@@ -311,7 +311,7 @@ const SECOND: &str = "She was told to keep her cards close to her chest.";
 const SECOND_ANSWER: &str = r#"{
   "comprehensible": "She was told not to say what she was planning.",
   "glosses": [
-    { "expression": "keep your cards close to your chest", "gloss": "not tell anyone your plans" }
+    { "expression": "keep your cards close to your chest", "gloss": "not tell anyone your plans", "example": "She kept her cards close to her chest until the deal was signed." }
   ],
   "grammar": null,
   "translation": "有人让她不要把计划说出去。"
@@ -584,7 +584,7 @@ fn export_writes_the_product_to_stdout_and_nothing_else() {
     assert_eq!(code(&markdown), SUCCESS, "{}", stderr(&markdown));
     let product = stdout(&markdown);
     assert!(
-        product.contains(" · B2 · stub/stub-model · v7-descriptors"),
+        product.contains(" · B2 · stub/stub-model · v8-examples"),
         "the section is headed with what tells two Records apart:\n{product}"
     );
     for heading in [
@@ -608,7 +608,7 @@ fn export_writes_the_product_to_stdout_and_nothing_else() {
         "{table}"
     );
     assert!(
-        table.contains("go to ground → hide so that nobody can find you"),
+        table.contains("go to ground\n  hide so that nobody can find you\n  The manager went to ground when the reporters arrived."),
         "the Glosses are in one cell:\n{table}"
     );
     assert!(

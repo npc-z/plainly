@@ -53,8 +53,8 @@ const LEDGERS: &str = "The auditors examined the ledgers twice.";
 const LEDGERS_ANSWER: &str = r#"{
   "comprehensible": "The accountants checked the books again.",
   "glosses": [
-    { "expression": "pored over", "gloss": "studied something very carefully" },
-    { "expression": "the ledgers", "gloss": "the company's account books" }
+    { "expression": "pored over", "gloss": "studied something very carefully", "example": "She pored over the letters for hours." },
+    { "expression": "the ledgers", "gloss": "the company's account books", "example": "The clerk kept the ledgers in a locked drawer." }
   ],
   "grammar": null,
   "translation": "审计人员把账目检查了两遍。"
@@ -365,7 +365,7 @@ fn a_record_carries_its_provenance() {
     assert_eq!(found.artifact.model, "deepseek-flash");
     assert_eq!(found.artifact.thinking, Thinking::Off);
     assert_eq!(found.artifact.prompt_version, support::PROMPT_VERSION);
-    assert_eq!(found.artifact.prompt_label, "v7-descriptors");
+    assert_eq!(found.artifact.prompt_label, "v8-examples");
     assert_eq!(found.artifact.level, Level::B2);
     assert_eq!(found.artifact.source_language, "en");
     assert!(store.show(saved.id + 1).expect("readable").is_none());
@@ -525,6 +525,21 @@ fn search_finds_a_record_by_a_gloss_expression_and_by_a_gloss_gloss() {
         found(&store, "studied"),
         vec![record.id],
         "the Gloss's own words"
+    );
+}
+
+#[test]
+fn a_word_that_appears_only_in_an_example_is_not_searchable() {
+    // Deliberate: the Examples are generated scaffolding, full of the commonest
+    // words in English, and indexing them would only make the history search
+    // noisier. The search scope the interface states — the Passage, the
+    // Comprehensible English and the Glosses — stays true.
+    let mut store = store();
+    keep(&mut store, LEDGERS, ledgers());
+
+    assert!(
+        found(&store, "letters").is_empty(),
+        "the word is in the first Gloss's Example and nowhere else"
     );
 }
 
@@ -959,6 +974,166 @@ fn clearing_an_empty_history_removes_nothing() {
     let mut store = store();
 
     assert_eq!(store.clear().expect("there is nothing to clear"), 0);
+}
+
+/// A history as the release before Examples wrote it: the `glosses` table with no
+/// `example` column, and `user_version` still 0.
+///
+/// Written out in full rather than derived from the schema, because the point of
+/// the test is what an *old* file looks like — deriving it would ask today's code
+/// to describe a shape it has already moved past.
+fn write_a_history_from_before_examples(path: &std::path::Path) {
+    let conn = rusqlite::Connection::open(path).expect("the test can make the file");
+    conn.execute_batch(
+        "CREATE TABLE records (
+             id               INTEGER PRIMARY KEY,
+             lookup_key       TEXT NOT NULL UNIQUE,
+             passage          TEXT NOT NULL,
+             level            TEXT NOT NULL,
+             source_language  TEXT NOT NULL,
+             native_language  TEXT NOT NULL,
+             provider         TEXT NOT NULL,
+             model            TEXT NOT NULL,
+             thinking         TEXT NOT NULL,
+             artifact_version INTEGER NOT NULL,
+             prompt_version   TEXT NOT NULL,
+             prompt_label     TEXT NOT NULL,
+             comprehensible   TEXT NOT NULL,
+             grammar          TEXT,
+             translation      TEXT NOT NULL,
+             created_at       TEXT NOT NULL,
+             generated_at     TEXT NOT NULL,
+             last_seen        TEXT NOT NULL
+         );
+         CREATE TABLE glosses (
+             record_id  INTEGER NOT NULL REFERENCES records(id) ON DELETE CASCADE,
+             ord        INTEGER NOT NULL,
+             expression TEXT NOT NULL,
+             gloss      TEXT NOT NULL,
+             PRIMARY KEY (record_id, ord)
+         );
+         INSERT INTO records VALUES (
+             1, 'lookup-from-before-examples', 'The manager had gone to ground.',
+             'B2', 'en', 'Chinese', 'deepseek', 'deepseek-flash', 'off', 1,
+             'a-prompt-hash', 'v7-descriptors', 'The manager had hidden.', NULL,
+             '经理已经躲了起来。', '2025-10-09T08:53:20Z',
+             '2025-10-09T08:53:20Z', '2025-10-09T08:53:20Z'
+         );
+         INSERT INTO glosses VALUES (
+             1, 0, 'go to ground', 'hide so that nobody can find you'
+         );",
+    )
+    .expect("the old history is writable");
+}
+
+#[test]
+fn a_history_written_before_examples_existed_opens_and_reads_without_one() {
+    // ADR 0002: the Example is required from the model and absent from an older
+    // Record. "Absent" has to be a read that works, not a read that fails.
+    let dir = TempDir::new("store-before-examples");
+    let path = dir.join("history.db");
+    write_a_history_from_before_examples(&path);
+
+    let store = Store::open(&path).expect("an old history opens");
+
+    let record = store
+        .show(1)
+        .expect("the store is readable")
+        .expect("the old Record is there");
+    assert_eq!(record.artifact.artifact_version, 1, "the row keeps its own version");
+    assert_eq!(record.artifact.explanation.glosses.len(), 1);
+    assert_eq!(
+        record.artifact.explanation.glosses[0].expression,
+        "go to ground"
+    );
+    assert_eq!(
+        record.artifact.explanation.glosses[0].example, "",
+        "no Example rather than a broken read"
+    );
+}
+
+#[test]
+fn the_migration_adds_the_column_once_and_records_that_it_did() {
+    let dir = TempDir::new("store-migration");
+    let path = dir.join("history.db");
+    write_a_history_from_before_examples(&path);
+
+    {
+        let store = Store::open(&path).expect("the first open migrates the file");
+        assert_eq!(
+            store
+                .show(1)
+                .expect("readable")
+                .expect("there")
+                .artifact
+                .explanation
+                .glosses[0]
+                .example,
+            ""
+        );
+    }
+
+    let version: i64 = rusqlite::Connection::open(&path)
+        .expect("the file opens")
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .expect("the file records its shape version");
+    assert_eq!(version, 1, "the step is written down, not inferred");
+
+    // And a second open is not a second migration: `ALTER TABLE` on a column that
+    // is already there would be an error, and a history that cannot be opened
+    // twice is not a history.
+    let store = Store::open(&path).expect("the second open is a no-op");
+    assert_eq!(
+        store
+            .show(1)
+            .expect("readable")
+            .expect("there")
+            .artifact
+            .explanation
+            .glosses[0]
+            .example,
+        ""
+    );
+}
+
+#[test]
+fn a_file_whose_version_claims_the_step_ran_but_did_not_still_gets_the_column() {
+    // The guard is the column, not the number. A history restored from a partial
+    // backup can say `user_version = 1` and still hold the old table, and it has
+    // to open and read like any other rather than failing on every read with
+    // "no such column" and never repairing itself.
+    let dir = TempDir::new("store-lying-version");
+    let path = dir.join("history.db");
+    write_a_history_from_before_examples(&path);
+    rusqlite::Connection::open(&path)
+        .expect("the file opens")
+        .pragma_update(None, "user_version", 1)
+        .expect("the test can write the version");
+
+    let store = Store::open(&path).expect("a history whose version lies still opens");
+
+    let record = store
+        .show(1)
+        .expect("the store is readable")
+        .expect("the old Record is there");
+    assert_eq!(record.artifact.explanation.glosses[0].example, "");
+}
+
+#[test]
+fn a_fresh_store_is_already_at_the_current_shape() {
+    // The `CREATE TABLE` in the schema is what a new file gets; the migration runs
+    // on it too and does nothing. Nothing about that may depend on which of the
+    // two happened first.
+    let dir = TempDir::new("store-fresh-version");
+    let path = dir.join("history.db");
+
+    Store::open(&path).expect("a new store opens");
+
+    let version: i64 = rusqlite::Connection::open(&path)
+        .expect("the file opens")
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .expect("the pragma reads");
+    assert_eq!(version, 1);
 }
 
 #[test]

@@ -44,7 +44,12 @@ const BUSY_TIMEOUT_MS: u32 = 5_000;
 
 /// The schema, created on open. One version of Plainly ships one shape; the
 /// `artifact_version` on every row is what tells a later reader how to read an
-/// old row, so this file needs no version of its own yet.
+/// old row.
+///
+/// It creates the *current* shape, and a file written by an older Plainly stays
+/// at the older one: `CREATE TABLE IF NOT EXISTS` creates nothing in a file that
+/// already has the table. That is what [`migrate`] is for, and `user_version` is
+/// the file's own record of how far along it is.
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS records (
     id               INTEGER PRIMARY KEY,
@@ -71,6 +76,7 @@ CREATE TABLE IF NOT EXISTS glosses (
     ord        INTEGER NOT NULL,
     expression TEXT NOT NULL,
     gloss      TEXT NOT NULL,
+    example    TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (record_id, ord)
 );
 CREATE TABLE IF NOT EXISTS tags (
@@ -94,6 +100,63 @@ CREATE VIRTUAL TABLE IF NOT EXISTS gloss_fts USING fts5(
 );
 ";
 
+/// The step that gave a Gloss its Example, and the `user_version` it leaves
+/// behind (ADR 0002).
+///
+/// Every step is named for the version it produces, and [`STORE_VERSION`] is the
+/// last of them. The step is guarded by the column it adds rather than by a
+/// version comparison — see [`migrate`].
+const GLOSS_EXAMPLE_STEP: i64 = 1;
+
+/// The store's own shape version, kept in SQLite's `user_version`: the version
+/// the last step produces.
+///
+/// [`SCHEMA`] above creates the current shape in a new file, and [`migrate`]
+/// brings an old file up to it; this number is what says which of the two a file
+/// is, so the steps run once.
+const STORE_VERSION: i64 = GLOSS_EXAMPLE_STEP;
+
+/// Bring a store written by an older Plainly up to the current shape.
+///
+/// `CREATE TABLE IF NOT EXISTS` creates nothing in a file that already has the
+/// table, so a column added to [`SCHEMA`] reaches an old history only through an
+/// explicit step. Two things keep this honest: a step is guarded by the thing it
+/// creates — the column's presence, not the version number that claims it — so a
+/// file that predates `user_version` ever being written is handled, and so is one
+/// whose version lies; and a step that is guarded that way is safe to run again.
+fn migrate(conn: &Connection) -> Result<(), rusqlite::Error> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+
+    // A Gloss written before Examples existed has none. Empty is how that is
+    // stored, and every reader treats an empty Example as "no Example line"
+    // (ADR 0002) — nothing backfills one.
+    //
+    // The column's presence is the whole guard, not `version < GLOSS_EXAMPLE_STEP`:
+    // the `ALTER` is idempotent once it is written this way, and a history whose
+    // `user_version` says this step ran while the column is missing — restored
+    // from a partial backup, or edited by hand — would otherwise fail on every
+    // read with "no such column" and never repair itself.
+    if !has_column(conn, "glosses", "example")? {
+        conn.execute_batch("ALTER TABLE glosses ADD COLUMN example TEXT NOT NULL DEFAULT ''")?;
+    }
+
+    if version < STORE_VERSION {
+        conn.pragma_update(None, "user_version", STORE_VERSION)?;
+    }
+
+    Ok(())
+}
+
+/// Whether `table` has a column called `name`.
+fn has_column(conn: &Connection, table: &str, name: &str) -> Result<bool, rusqlite::Error> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info(?1) WHERE name = ?2",
+        params![table, name],
+        |row| row.get::<_, i64>(0),
+    )
+    .map(|count| count > 0)
+}
+
 /// One Record, joined to its Glosses: one row per Gloss, or a single row with
 /// NULL Gloss columns when there are none.
 ///
@@ -105,7 +168,8 @@ const READ: &str = "SELECT r.id, r.lookup_key, r.passage, r.level, r.source_lang
                     r.artifact_version, r.prompt_version, r.prompt_label, \
                     r.comprehensible, r.grammar, r.translation, r.created_at, \
                     r.generated_at, r.last_seen, \
-                    g.expression AS gloss_expression, g.gloss AS gloss_gloss \
+                    g.expression AS gloss_expression, g.gloss AS gloss_gloss, \
+                    g.example AS gloss_example \
                     FROM records r LEFT JOIN glosses g ON g.record_id = r.id";
 
 /// Everything that would make two lookups the same question (spec §9).
@@ -312,6 +376,7 @@ impl Store {
         conn.pragma_update(None, "foreign_keys", "ON")
             .map_err(unusable)?;
         conn.execute_batch(SCHEMA).map_err(unusable)?;
+        migrate(&conn).map_err(unusable)?;
         // A store written before the search tables existed has none of their
         // rows. They are derived data — every row in them is a copy of text that
         // lives in `records` or `glosses` — so "empty while the history is not"
@@ -409,13 +474,20 @@ impl Store {
         tx.execute("DELETE FROM gloss_fts WHERE record_id = ?1", [id])?;
         {
             let mut insert = tx.prepare(
-                "INSERT INTO glosses (record_id, ord, expression, gloss) VALUES (?1, ?2, ?3, ?4)",
+                "INSERT INTO glosses (record_id, ord, expression, gloss, example) \
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
             )?;
             let mut index = tx.prepare(
                 "INSERT INTO gloss_fts (expression, gloss, record_id) VALUES (?1, ?2, ?3)",
             )?;
             for (ord, gloss) in artifact.explanation.glosses.iter().enumerate() {
-                insert.execute(params![id, ord as i64, &gloss.expression, &gloss.gloss])?;
+                insert.execute(params![
+                    id,
+                    ord as i64,
+                    &gloss.expression,
+                    &gloss.gloss,
+                    &gloss.example
+                ])?;
                 index.execute(params![&gloss.expression, &gloss.gloss, id])?;
             }
         }
@@ -727,6 +799,10 @@ struct Raw {
     /// The joined Gloss, when this row has one.
     gloss_expression: Option<String>,
     gloss_gloss: Option<String>,
+    /// Empty for a Gloss stored before Examples existed (ADR 0002): the column
+    /// has an empty default, so an old row reads back as "no Example" rather
+    /// than as a missing column.
+    gloss_example: Option<String>,
 }
 
 impl Raw {
@@ -752,6 +828,7 @@ impl Raw {
             last_seen: row.get("last_seen")?,
             gloss_expression: row.get("gloss_expression")?,
             gloss_gloss: row.get("gloss_gloss")?,
+            gloss_example: row.get("gloss_example")?,
         })
     }
 
@@ -761,6 +838,9 @@ impl Raw {
         Some(Gloss {
             expression: self.gloss_expression.clone()?,
             gloss: self.gloss_gloss.clone()?,
+            // `gloss.example` is NOT NULL in the table, so this is only ever the
+            // old row's empty default.
+            example: self.gloss_example.clone().unwrap_or_default(),
         })
     }
 

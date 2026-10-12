@@ -24,7 +24,7 @@ const PASSAGE: &str = "The committee had already gone to ground.";
 const ANSWER: &str = r#"{
   "comprehensible": "The committee had already hidden.",
   "glosses": [
-    { "expression": "go to ground", "gloss": "hide so that nobody can find you" }
+    { "expression": "go to ground", "gloss": "hide so that nobody can find you", "example": "The manager went to ground when the reporters arrived." }
   ],
   "grammar": null,
   "translation": "委员会已经躲了起来。"

@@ -9,10 +9,11 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["expression", "gloss"],
+        "required": ["expression", "gloss", "example"],
         "properties": {
           "expression": { "type": "string" },
-          "gloss": { "type": "string" }
+          "gloss": { "type": "string" },
+          "example": { "type": "string" }
         }
       }
     },

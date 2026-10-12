@@ -83,7 +83,7 @@ pub fn artifact(seconds: i64, passage: &str) -> Artifact {
         artifact_version: ARTIFACT_VERSION,
         prompt_version:
             "9f2c1d4b6a8e0f3c5d7b9a1e2f4c6d8b0a2e4f6c8d0b2a4e6f8c0d2b4a6e8f0c".to_string(),
-        prompt_label: "v7-descriptors".to_string(),
+        prompt_label: "v8-examples".to_string(),
         created_at: now,
         generated_at: now,
         explanation: Explanation {
@@ -92,6 +92,7 @@ pub fn artifact(seconds: i64, passage: &str) -> Artifact {
                 Gloss {
                     expression: "go to ground".to_string(),
                     gloss: "hide so that nobody can find you".to_string(),
+                    example: "The manager went to ground when the reporters arrived.".to_string(),
                 },
             ],
             grammar: None,

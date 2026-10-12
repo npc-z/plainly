@@ -188,9 +188,9 @@ fn the_json_document_is_the_artifact() {
     assert_eq!(value["provider"], "deepseek");
     assert_eq!(value["model"], "deepseek-flash");
     assert_eq!(value["thinking"], "off");
-    assert_eq!(value["artifact_version"], 1);
+    assert_eq!(value["artifact_version"], 2);
     assert_eq!(value["prompt_version"], support::PROMPT_VERSION);
-    assert_eq!(value["prompt_label"], "v7-descriptors");
+    assert_eq!(value["prompt_label"], "v8-examples");
     assert_eq!(value["created_at"], "2025-10-09T08:53:20Z");
     assert_eq!(value["generated_at"], "2025-10-09T08:53:20Z");
 
@@ -203,6 +203,10 @@ fn the_json_document_is_the_artifact() {
     assert_eq!(
         value["glosses"][2]["gloss"],
         "hide so that nobody can find you"
+    );
+    assert_eq!(
+        value["glosses"][2]["example"],
+        "The manager went to ground when the reporters arrived."
     );
     assert_eq!(value["grammar"], Value::Null);
     assert_eq!(
@@ -268,6 +272,7 @@ fn the_grammar_note_is_null_not_missing_when_there_is_none() {
 
 #[test]
 fn the_artifact_version_is_the_one_v0_records() {
-    assert_eq!(ARTIFACT_VERSION, 1);
+    // 1 is the v0 shape; 2 adds the Gloss Example (ADR 0002).
+    assert_eq!(ARTIFACT_VERSION, 2);
     assert_eq!(example().artifact_version, ARTIFACT_VERSION);
 }

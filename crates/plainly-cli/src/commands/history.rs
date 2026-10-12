@@ -35,10 +35,12 @@ const SNIPPET: usize = 72;
 /// A limit stated is a fact about v0; the same limit discovered is a bug report.
 /// The Translation is not indexed — it is not English, and FTS5 tokenizes per
 /// table — so a search that found nothing because the word was Chinese and a
-/// search that is broken have to be told apart by the person reading.
+/// search that is broken have to be told apart by the person reading. A Gloss's
+/// Example is not indexed either: it is generated scaffolding, full of the
+/// commonest words in English, and it is not a search target.
 const NOT_SEARCHABLE: &str =
     "search covers the Passage, the Comprehensible English and the Glosses; \
-     the Translation is not searchable in v0";
+     the Translation and the Examples are not searchable in v0";
 
 pub fn run(command: Option<HistoryCommand>) -> Result<u8, CommandError> {
     match command.unwrap_or(HistoryCommand::List { tag: None }) {

@@ -139,6 +139,7 @@ impl DetailView {
                 .map(|gloss| GlossView {
                     expression: gloss.expression.clone(),
                     gloss: gloss.gloss.clone(),
+                    example: gloss.example.clone(),
                 })
                 .collect(),
             grammar: explanation.grammar.clone(),
@@ -164,11 +165,17 @@ impl DetailView {
     }
 }
 
-/// One Gloss, as the detail lists it: the expression, then its explanation.
+/// One Gloss, as the detail lists it: the expression, its explanation, and the
+/// Example under them.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct GlossView {
     pub expression: String,
     pub gloss: String,
+    /// Empty for a Record generated before Examples existed (ADR 0002) — and for
+    /// one whose model left the Example empty. The frontend draws an example line
+    /// only when there is one, which is why this is a plain string rather than an
+    /// `Option`: "no line" is the same picture either way.
+    pub example: String,
 }
 
 /// Where an export was written.

@@ -112,6 +112,7 @@ mod tests {
             vec![Gloss {
                 expression: "go to ground".to_string(),
                 gloss: "hide so nobody can find you".to_string(),
+                example: "The manager went to ground for a week.".to_string(),
             }],
         );
 
@@ -123,7 +124,9 @@ mod tests {
         );
         assert!(text.contains("### 改写\nThe manager had hidden."), "{text}");
         assert!(
-            text.contains("### 关键词\n- `go to ground` → hide so nobody can find you"),
+            text.contains(
+                "### 关键帮助\n- `go to ground`\n  hide so nobody can find you\n\n  > The manager went to ground for a week."
+            ),
             "{text}"
         );
         assert!(text.contains("### 语法\n本段不需要"), "{text}");
@@ -141,7 +144,7 @@ mod tests {
         let text = markdown(&artifact, &prefs());
 
         assert!(
-            text.contains("### 关键词\n本段没有需要解释的表达"),
+            text.contains("### 关键帮助\n本段没有需要解释的表达"),
             "{text}"
         );
         assert!(text.contains("### 语法\n本段不需要"), "{text}");

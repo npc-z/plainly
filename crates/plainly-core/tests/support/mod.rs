@@ -65,9 +65,9 @@ pub const PASSAGE_WITH_GRAMMAR: &str =
 pub const ANSWER: &str = r#"{
   "comprehensible": "The committee tried hard to find out what had happened, but the manager had already gone into hiding.",
   "glosses": [
-    { "expression": "conduct an investigation", "gloss": "try to find out what happened" },
-    { "expression": "the matter", "gloss": "the situation being discussed" },
-    { "expression": "go to ground", "gloss": "hide so that nobody can find you" }
+    { "expression": "conduct an investigation", "gloss": "try to find out what happened", "example": "The police conducted a thorough investigation into the theft." },
+    { "expression": "the matter", "gloss": "the situation being discussed", "example": "The manager refused to discuss the matter with reporters." },
+    { "expression": "go to ground", "gloss": "hide so that nobody can find you", "example": "The manager went to ground when the reporters arrived." }
   ],
   "grammar": null,
   "translation": "委员会对此事进行了彻底调查，但那位经理已经躲了起来。"
@@ -78,8 +78,8 @@ pub const ANSWER: &str = r#"{
 pub const ANSWER_WITH_GRAMMAR: &str = r#"{
   "comprehensible": "The manager admitted that the figures had been changed dishonestly — but only after the auditors had gone.",
   "glosses": [
-    { "expression": "doctored", "gloss": "changed dishonestly" },
-    { "expression": "auditors", "gloss": "people who check a company's accounts" }
+    { "expression": "doctored", "gloss": "changed dishonestly", "example": "The accounts had been doctored to hide the missing money." },
+    { "expression": "auditors", "gloss": "people who check a company's accounts", "example": "The auditors found that the figures did not add up." }
   ],
   "grammar": "`Not until … did the manager admit …` — starting a sentence with `Not until` moves the auxiliary in front of the subject (`did the manager admit`), the same word order as a question. The meaning is that the admission came only after the auditors had gone.",
   "translation": "直到审计人员离开，经理才承认账目被人做了手脚。"
@@ -97,7 +97,7 @@ pub fn request(passage: &str) -> ExplainRequest {
         thinking: Thinking::Off,
         system_prompt: plainly_core::Prompt::factory().system_prompt(Level::B2, "Chinese"),
         prompt_version: PROMPT_VERSION.to_string(),
-        prompt_label: "v7-descriptors".to_string(),
+        prompt_label: "v8-examples".to_string(),
     }
 }
 
@@ -120,7 +120,7 @@ pub fn artifact_at(passage: &str, explanation: Explanation, seconds: i64) -> Art
         thinking: Thinking::Off,
         artifact_version: ARTIFACT_VERSION,
         prompt_version: PROMPT_VERSION.to_string(),
-        prompt_label: "v7-descriptors".to_string(),
+        prompt_label: "v8-examples".to_string(),
         created_at: now,
         generated_at: now,
         explanation,

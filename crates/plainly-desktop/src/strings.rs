@@ -85,7 +85,7 @@ pub const STRINGS: Strings = Strings {
     tab_history: "历史",
     tab_settings: "设置",
     search_placeholder: "搜索英文原文、改写、expression…",
-    search_scope_note: "中文翻译暂不可搜",
+    search_scope_note: "中文翻译与例句暂不可搜",
     filter_all: "全部",
     group_today: "今天",
     group_yesterday: "昨天",

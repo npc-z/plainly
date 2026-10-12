@@ -176,7 +176,7 @@ pub fn section(kind: SectionKind) -> &'static str {
     match kind {
         SectionKind::Original => "原文",
         SectionKind::ComprehensibleEnglish => "改写",
-        SectionKind::KeyHelp => "关键词",
+        SectionKind::KeyHelp => "关键帮助",
         SectionKind::Grammar => "语法",
         SectionKind::Translation => "翻译",
     }

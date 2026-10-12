@@ -2,7 +2,16 @@
 
 mod support;
 
-use plainly_core::{Explanation, SectionKind, render};
+use plainly_core::{Body, Explanation, SectionKind, render};
+
+/// The prose a body holds, for the tests that are about a sentence rather than
+/// about the Key Help's Glosses.
+fn prose(body: &Body) -> &str {
+    match body {
+        Body::Prose(text) => text,
+        Body::Glosses(glosses) => panic!("expected prose, got {} Glosses", glosses.len()),
+    }
+}
 
 /// The panel's copy for a Grammar section the model left out. It is interface
 /// text, which tickets/15 keeps with the rest of the strings, so the renderer is
@@ -34,9 +43,20 @@ The committee conducted a thorough investigation into the matter, but the manage
 The committee tried hard to find out what had happened, but the manager had already gone into hiding.
 
 ### Key Help
-- `conduct an investigation` → try to find out what happened
-- `the matter` → the situation being discussed
-- `go to ground` → hide so that nobody can find you
+- `conduct an investigation`
+  try to find out what happened
+
+  > The police conducted a thorough investigation into the theft.
+
+- `the matter`
+  the situation being discussed
+
+  > The manager refused to discuss the matter with reporters.
+
+- `go to ground`
+  hide so that nobody can find you
+
+  > The manager went to ground when the reporters arrived.
 
 ### Translation
 委员会对此事进行了彻底调查，但那位经理已经躲了起来。
@@ -55,8 +75,15 @@ Not until the auditors had gone did the manager admit that the figures had been 
 The manager admitted that the figures had been changed dishonestly — but only after the auditors had gone.
 
 ### Key Help
-- `doctored` → changed dishonestly
-- `auditors` → people who check a company's accounts
+- `doctored`
+  changed dishonestly
+
+  > The accounts had been doctored to hide the missing money.
+
+- `auditors`
+  people who check a company's accounts
+
+  > The auditors found that the figures did not add up.
 
 ### Grammar
 `Not until … did the manager admit …` — starting a sentence with `Not until` moves the auxiliary in front of the subject (`did the manager admit`), the same word order as a question. The meaning is that the admission came only after the auditors had gone.
@@ -68,6 +95,54 @@ The manager admitted that the figures had been changed dishonestly — but only 
     assert_eq!(
         render::markdown(support::PASSAGE_WITH_GRAMMAR, &structural()),
         expected
+    );
+}
+
+#[test]
+fn a_gloss_with_no_example_renders_two_lines() {
+    // A Record generated before Examples existed (ADR 0002) and a model that left
+    // the Example empty are the same picture: no third line, not an empty one.
+    let explanation = Explanation::parse(
+        r#"{
+            "comprehensible": "c",
+            "glosses": [
+                { "expression": "go to ground", "gloss": "hide", "example": "" },
+                { "expression": "the matter", "gloss": "the situation", "example": "The matter is closed." }
+            ],
+            "grammar": null,
+            "translation": "t"
+        }"#,
+    )
+    .expect("the fixture holds the contract");
+
+    assert_eq!(
+        render::markdown("Original text.", &explanation),
+        "### Original\nOriginal text.\n\n### Comprehensible English\nc\n\n### Key Help\n\
+         - `go to ground`\n  hide\n\n- `the matter`\n  the situation\n\n  > The matter is closed.\n\n### Translation\nt\n"
+    );
+}
+
+#[test]
+fn an_example_the_model_wrapped_over_two_lines_stays_one_quote() {
+    // Model output is not trusted to be one line. A second line left at column
+    // zero would end the list item, and the rest of the Key Help would fall out
+    // of the list as a paragraph of its own.
+    let explanation = Explanation::parse(
+        r#"{
+            "comprehensible": "c",
+            "glosses": [
+                { "expression": "go to ground", "gloss": "hide", "example": "He went to ground.\nNobody found him." }
+            ],
+            "grammar": null,
+            "translation": "t"
+        }"#,
+    )
+    .expect("the fixture holds the contract");
+
+    assert_eq!(
+        render::markdown("Original text.", &explanation),
+        "### Original\nOriginal text.\n\n### Comprehensible English\nc\n\n### Key Help\n\
+         - `go to ground`\n  hide\n\n  > He went to ground.\n  > Nobody found him.\n\n### Translation\nt\n"
     );
 }
 
@@ -105,8 +180,8 @@ fn the_panel_keeps_the_grammar_section_and_says_it_is_not_needed() {
         .iter()
         .find(|section| section.kind == SectionKind::Grammar)
         .expect("the panel has the section");
-    assert_eq!(grammar.body, NOT_NEEDED);
-    assert_eq!(grammar.body, "本段不需要");
+    assert_eq!(prose(&grammar.body), NOT_NEEDED);
+    assert_eq!(prose(&grammar.body), "本段不需要");
 }
 
 #[test]
@@ -123,8 +198,9 @@ fn the_panel_shows_the_grammar_note_when_there_is_one() {
         .iter()
         .find(|section| section.kind == SectionKind::Grammar)
         .expect("the panel has the section");
-    assert_eq!(grammar.body, explanation.grammar.clone().unwrap());
-    assert_ne!(grammar.body, NOT_NEEDED);
+    let note = explanation.grammar.clone().expect("the fixture has a note");
+    assert_eq!(prose(&grammar.body), note);
+    assert_ne!(prose(&grammar.body), NOT_NEEDED);
 }
 
 #[test]
@@ -187,9 +263,10 @@ fn an_empty_key_help_is_left_out_of_the_document_and_said_on_the_panel() {
         .iter()
         .find(|section| section.kind == SectionKind::KeyHelp)
         .expect("the panel has the section");
-    assert_eq!(key_help.body, NO_GLOSSES);
+    assert_eq!(prose(&key_help.body), NO_GLOSSES);
     assert_ne!(
-        key_help.body, NOT_NEEDED,
+        prose(&key_help.body),
+        NOT_NEEDED,
         "the two empty sections do not say the same thing"
     );
 }
@@ -208,10 +285,26 @@ fn the_panel_and_the_document_carry_the_same_bodies() {
     );
 
     for section in sections {
-        assert!(
-            document.contains(&section.body),
-            "{:?} is missing from the document",
-            section.kind
-        );
+        match &section.body {
+            Body::Prose(text) => assert!(
+                document.contains(text),
+                "{:?} is missing from the document",
+                section.kind
+            ),
+            Body::Glosses(glosses) => {
+                for gloss in glosses {
+                    assert!(
+                        document.contains(&gloss.expression),
+                        "a Gloss expression of {:?} is missing from the document",
+                        section.kind
+                    );
+                    assert!(
+                        document.contains(&gloss.gloss),
+                        "a Gloss meaning of {:?} is missing from the document",
+                        section.kind
+                    );
+                }
+            }
+        }
     }
 }

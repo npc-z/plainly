@@ -11,10 +11,16 @@ use crate::{Explanation, Level, Thinking};
 
 /// The version of the Explanation data model, stamped on every Artifact.
 ///
-/// v0 is `1`. It is deliberately not part of the Lookup Key: a change of shape
-/// does not make an old answer wrong, so bumping it must not throw the cache
-/// away (spec §9).
-pub const ARTIFACT_VERSION: u32 = 1;
+/// `1` is the v0 shape; **`2` adds the Gloss Example** — a Gloss carries
+/// `expression`, `gloss` and `example`, and a row stamped `1` is a Gloss without
+/// one. Reading such a row is not an error: its Example is empty, and a surface
+/// shows no Example line ([ADR 0002]).
+///
+/// It is deliberately not part of the Lookup Key: a change of shape does not make
+/// an old answer wrong, so bumping it must not throw the cache away (spec §9).
+///
+/// [ADR 0002]: ../../../docs/adr/0002-the-example-is-required-but-not-backfilled.md
+pub const ARTIFACT_VERSION: u32 = 2;
 
 /// An instant, to the second, in UTC.
 ///

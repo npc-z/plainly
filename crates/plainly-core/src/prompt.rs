@@ -11,6 +11,13 @@
 //!   original structure": that sentence fought the prompt's own rule ("it must
 //!   be a real restatement") and lost, which is the likely reason B2 and C1 were
 //!   indistinguishable.
+//!
+//!   **v8 adds the Gloss Example** (`v8-examples`): every gloss carries a
+//!   sentence the model writes itself, in the same sense the Passage gives the
+//!   expression and in the Level's own words. The accuracy rules had to say so
+//!   out loud — the Example is the one thing in an Explanation that is *not* on
+//!   the page — and the calibration that came with it is in
+//!   `bench/FINDINGS.md` (12/12 cloud, both at B2 and at A2, no empty examples).
 //! - **The user's appendix**, appended after every factory rule. Append-only is
 //!   structural, not a promise in a document: nothing here prepends it or merges
 //!   it into the factory text, so no appendix can delete a factory rule. The
@@ -39,7 +46,7 @@ use crate::retry::FailureKind;
 /// The hash from [`Prompt::version`] is the real version; this is the label for
 /// humans, and the two are stored together. It names the *factory* prompt: an
 /// appendix changes the hash without changing which factory prompt it extends.
-pub const PROMPT_LABEL: &str = "v7-descriptors";
+pub const PROMPT_LABEL: &str = "v8-examples";
 
 /// The shipped system prompt, with its placeholders unreplaced.
 ///
@@ -51,13 +58,21 @@ pub const FACTORY_PROMPT: &str = r#"You explain hard English to a learner whose 
 Return a single JSON object with exactly these four keys.
 
 - "comprehensible": the passage's meaning restated in more frequent, familiar English. Keep the original's meaning, tense and aspect, modality, negation and logical links: nothing added, nothing dropped. Keep subordinate and relative clauses, conditionals, passive voice and discourse links; simplify vocabulary first, and reach for syntax only when vocabulary alone leaves the meaning out of reach. The result must read as natural adult English pitched at {{LEVEL}}. It must be a real restatement: never return the passage unchanged.
-- "glosses": one plain-English line for each expression that actually blocks comprehension: an unusual meaning, a phrasal verb, an idiom, a meaning-bearing collocation. Each entry is {"expression": "<the expression, quoted from the passage>", "gloss": "<plain-English explanation>"}. Gloss chunks, not single tokens: "go to ground" is one unit. Use an empty array when nothing blocks it. Never write a gloss that is harder than the expression it explains.
+- "glosses": one plain-English explanation and one example sentence for each expression that actually blocks comprehension: an unusual meaning, a phrasal verb, an idiom, a meaning-bearing collocation. Each entry is {"expression": "<the expression, quoted from the passage>", "gloss": "<plain-English explanation>", "example": "<one English sentence that uses the expression>"}. Gloss chunks, not single tokens: "go to ground" is one unit. Use an empty array when nothing blocks it. Never write a gloss that is harder than the expression it explains.
 - "grammar": a plain-English explanation of a structural obstacle. Use this whenever the shape of the sentence is part of what blocks comprehension: inversion, a clause whose attachment is unclear, a construction whose difficulty is structural rather than lexical. If an expression is hard because of where it sits in the sentence rather than because of its own meaning, explain it here rather than under "glosses". Use null only when the sentence's shape is genuinely not an obstacle.
 - "translation": the passage's meaning in natural {{NATIVE}}. Carry the meaning; do not map word for word.
 
+Rules for an "example":
+
+- It is a sentence of your own, never a sentence from the passage, and it uses the expression in the sense the passage gives it.
+- Write it in words {{LEVEL}} knows, so that the expression is the only hard thing in it.
+- Let the words around the expression make its meaning plain: a reader should be able to guess the gloss from the example alone.
+- Inflect the expression when the sentence needs it ("go to ground" may appear as "went to ground"), as long as it is still recognisable.
+- Never leave it empty.
+
 Accuracy rules, which outrank brevity:
 
-- Never add detail the passage does not contain. Do not invent a cause, an agent, or an object that is not on the page.
+- Never add detail the passage does not contain. Do not invent a cause, an agent, or an object that is not on the page. This governs what you say about the passage itself — the paraphrase, the glosses and the translation. An "example" is your own sentence and may have its own subject and situation; what it must not do is change what the expression means.
 - If you are not confident what an idiom, a title, or a technical term means, describe what it does in this sentence instead of asserting a meaning. A hedged gloss is better than a confident wrong one.
 - Keep the passage's register and its proper nouns: "the Continent" is not "a continent".
 - Understatement and irony block comprehension as much as an idiom does. When a phrase signals that the reality is stronger than the words ("to put it mildly", "not best pleased"), gloss that phrase itself and carry its force into the paraphrase, instead of smoothing it away.

@@ -21,7 +21,7 @@ const FAILURE: i32 = 1;
 const ANSWER: &str = r#"{
   "comprehensible": "The committee tried hard to find out what had happened, but the manager had already gone into hiding.",
   "glosses": [
-    { "expression": "go to ground", "gloss": "hide so that nobody can find you" }
+    { "expression": "go to ground", "gloss": "hide so that nobody can find you", "example": "The manager went to ground when the reporters arrived." }
   ],
   "grammar": null,
   "translation": "委员会对此事进行了彻底调查，但那位经理已经躲了起来。"

@@ -164,3 +164,63 @@ and "two levels produced identical bytes" is not sampling noise — but the dire
 not a law. The takeaway is not "level does nothing"; it is **"level is a hint, not a contract, and it
 has to ship with its descriptor"**.
 
+
+## v8-examples — the Example field, cloud only (2026-10-12)
+
+Measured for the Gloss Example change (`.scratch/gloss-examples/spec.md`). This run is **cloud only**:
+the question is whether a required `example` per Gloss survives the one provider that cannot enforce a
+schema at all, and it is the same question ticket 14 answered for the four content fields.
+
+All four Levels, because the feature's promise is "an Example at the Level you chose" and two of the
+four would have left it half-checked. Every run: `prompts/v8-examples.txt` (the shipped text),
+`api.deepseek.com` / `deepseek-flash`, thinking **off**, temperature 0, `max_tokens` 2048
+(= `completion_budget(thinking=off)`), twelve passages.
+
+| level | contract | first-attempt | Glosses | empty Examples | Example length | latency mean |
+|---|---|---|---|---|---|---|
+| A1 | **12/12** | 12/12 | 40 | **0** | 12.1 words (7–24) | 2.23 s |
+| A2 | **12/12** | 12/12 | 39 | **0** | 12.6 words (7–21) | 2.03 s |
+| B2 (app default) | **12/12** | 12/12 | 36 | **0** | 13.0 words (6–19) | 2.07 s |
+| C1 | **12/12** | 12/12 | 35 | **0** | 13.0 words (6–24) | 2.13 s |
+
+Examples that turned out to be a sentence of the passage: **0**, in every level.
+
+Raw runs: `results/deepseek/v8-examples.json`, `…-levelA1.json`, `…-levelA2.json`, `…-levelC1.json`.
+
+**The Example is the first field the model writes about something not on the page, and it holds.** The
+accuracy rule that forbids inventing detail had to be explicitly scoped to the paraphrase, the glosses
+and the translation — in the shipped prompt it now ends "An «example» is your own sentence and may have
+its own subject and situation; what it must not do is change what the expression means." Without that
+sentence the new instruction and the old rule contradict each other, and the measured compliance would
+not be evidence about anything.
+
+**Inflection happens and reads naturally**, which is why the UI does not highlight the expression:
+`taken for` came back as "She took the quiet man for a fool". A substring match would have missed it.
+
+**The Level reaches the Example.** Same passage, same expression, all four levels:
+
+- A1 `indemnify` — "to protect someone from loss or damage by paying for it" / "The insurance company
+  will indemnify you if your car is stolen."
+- A2 `indemnify` — "to protect someone from loss or damage by paying for it" / "The company will
+  indemnify you if your phone is stolen while you are at work."
+- B2 `indemnify` — "to protect someone from loss or damage by agreeing to pay for it" / "The company
+  promised to indemnify its employees if they were sued for doing their jobs."
+- C1 `indemnify` — "to protect someone from loss or damage by agreeing to pay for it" / "The company
+  agreed to indemnify its clients against any legal costs."
+
+Two facts from the four runs, both weak but both worth keeping: mean Example length climbs with the
+level (12.1 / 12.6 / 13.0 / 13.0 words), and **A1 and A2 do not collapse into each other** — they share
+one descriptor ("very common words, short sentences, concrete"), so the only difference in the prompt is
+the label, yet only **6 of 40** whole entries are byte-identical between the two runs. Ticket 14 found a
+bare label close to sending nothing for the *paraphrase*; for the *Example* the label alone demonstrably
+moves the words. One model, one run, temperature 0 — a tendency, not a law.
+
+**What this run does not say.** One model, one run per level, twelve passages; temperature 0 makes it
+reproducible, not general. Nothing here judges whether an Example is *pedagogically* good — only that it
+exists, is not the passage's own sentence, and carries the sense its gloss gives. And the **local 4B was
+not run**: ticket 14's table above already has it failing on the easier task, so the Example's cost on
+the local path is an unmeasured risk, not a cleared one.
+
+The harness validator is deliberately stricter than the contract here: it rejects an **empty** example,
+which the wire schema cannot do without `minLength` (ADR-0001). That is where the "never leave it empty"
+acceptance criterion lives — prompt and harness, never the schema.

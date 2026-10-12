@@ -36,6 +36,7 @@ fn the_prompt_asks_for_json_and_names_every_field_in_words() {
         "JSON",
         "comprehensible",
         "glosses",
+        "example",
         "grammar",
         "translation",
     ] {

@@ -146,8 +146,10 @@ plainly config set providers.llamacpp.model stub-model
 | 3.3 | 历史即缓存 | `plainly history` 列出刚才那条；**同一段再跑一次**：provider 不收到第二次请求（stub 的终端没有新增行），记录也不增加 |
 | 3.4 | 面板端到端 | `wl-copy` 放一段英文 → `plainly-panel --clipboard`：面板从「正在解释…」走到结果态，正文与上面 CLI 的 markdown 同源；`sqlite3 … 'select count(*) from records;'` 增加 1 |
 | 3.5 | 面板命中缓存 | 关掉面板，再对**同一段**触发：provider 不收到新请求，面板立刻出结果 |
-| 3.6 | 主窗口 | `plainly-desktop` 打开后历史页有 3.x 的记录；搜索原文片段命中，搜译文里的中文命中 0 条，且搜索框下写着「中文翻译暂不可搜」 |
+| 3.6 | 主窗口 | `plainly-desktop` 打开后历史页有 3.x 的记录；搜索原文片段命中，搜译文里的中文命中 0 条，且搜索框下写着「中文翻译与例句暂不可搜」 |
 | 3.7 | 主窗口的 ⤢ 交接 | 面板里点 ⤢：只有一个窗口，第二次启动把它带到前面（单实例）；窗口已经开着且停在设置页时它**不会**切回历史——这是已知缺口，见 §5 |
+| 3.8 | 关键帮助是 bullet + 引文块 | 上面那条 stdout 里每条 Gloss 是 `- \`expression\`` + 缩进一行释义 + **空行 + `  > 例句`**；条目之间空行（松列表）。`glow` 那条命令下例句会画成内缩的引用块，**不再**和释义挤成一段。stub 的例句是 `The reporter went to ground until the trial was over.` |
+| 3.9 | raw 导出无 markdown 记号 | `plainly history export raw`：`glosses` 单元格里每条三行——表达 / 缩进释义 / 缩进例句，**没有箭头、没有 `_`、没有 `>`**（电子表格单元格不是文档）；仍是一个单元格、仍按 CSV 规则转义 |
 
 ## 4. 降级与不支持
 

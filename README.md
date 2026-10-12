@@ -148,6 +148,8 @@ Honest limits, from the spec's "必须传达到实现阶段的诚实记录":
   Glosses. Searching a Chinese word you remember from a translation finds
   nothing, and the history window says so rather than letting it look like a
   failed search. Adding a trigram table is the upgrade path; v0 does not have it.
+  A Gloss's Example is not indexed either — it is generated scaffolding, not a
+  search target — so a word that appears only in one is not findable.
 - **Under the default settings the panel's only way out is ✕.** Auto-dismiss is
   off by default, and "click outside to close" is not implementable for a Wayland
   layer surface — the client cannot see clicks that land elsewhere. That is why

@@ -33,6 +33,31 @@ pub const CSS: &str = "
 .plainly-skeleton progress {
     min-height: 4px;
 }
+
+/* ── the Key Help ──────────────────────────────────────────────────────
+   A Gloss has three parts with three different jobs, and the panel gives each
+   its own voice rather than printing the document's markup: the expression in a
+   chip (it is quoted from the Passage), its meaning as ordinary body text, and
+   its Example beside a rule in a serif italic — a sample of prose, not more
+   definition. The panel showed the literal `-`, backticks and `_` until the
+   renderer started handing it a structure instead of a document. */
+.plainly-expression-chip {
+    background-color: rgba(0, 0, 0, 0.06);
+    border-radius: 4px;
+    padding: 1px 6px;
+}
+.plainly-expression {
+    font-family: monospace;
+    font-size: 0.95em;
+}
+.plainly-example-rule {
+    background-color: rgba(0, 0, 0, 0.18);
+}
+.plainly-example {
+    font-family: serif;
+    font-style: italic;
+    opacity: 0.75;
+}
 ";
 
 /// Install the styles on the display the panel is drawn on.

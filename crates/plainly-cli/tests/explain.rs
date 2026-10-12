@@ -24,7 +24,7 @@ const PASSAGE: &str = "The committee conducted a thorough investigation into the
 const ANSWER: &str = r#"{
   "comprehensible": "The committee tried hard to find out what had happened, but the manager had already gone into hiding.",
   "glosses": [
-    { "expression": "go to ground", "gloss": "hide so that nobody can find you" }
+    { "expression": "go to ground", "gloss": "hide so that nobody can find you", "example": "The manager went to ground when the reporters arrived." }
   ],
   "grammar": null,
   "translation": "委员会对此事进行了彻底调查，但那位经理已经躲了起来。"
@@ -74,7 +74,7 @@ fn a_passage_on_stdin_comes_back_as_the_five_sections() {
         "the Original section:\n{product}"
     );
     assert!(
-        product.contains("- `go to ground` → hide so that nobody can find you"),
+        product.contains("- `go to ground`\n  hide so that nobody can find you\n\n  > The manager went to ground when the reporters arrived."),
         "the Key Help section:\n{product}"
     );
 
@@ -209,8 +209,8 @@ fn the_json_format_is_one_document_with_the_metadata() {
     assert_eq!(document["provider"], "stub");
     assert_eq!(document["model"], "stub-model");
     assert_eq!(document["thinking"], "off");
-    assert_eq!(document["artifact_version"], 1);
-    assert_eq!(document["prompt_label"], "v7-descriptors");
+    assert_eq!(document["artifact_version"], 2);
+    assert_eq!(document["prompt_label"], "v8-examples");
     assert_eq!(
         document["prompt_version"]
             .as_str()
@@ -841,7 +841,7 @@ fn a_prompt_that_fails_the_contract_offers_the_factory_one() {
         document["prompt_version"],
         plainly_core::Prompt::factory().version()
     );
-    assert_eq!(document["prompt_label"], "v7-descriptors");
+    assert_eq!(document["prompt_label"], "v8-examples");
 
     let both_runs = server.chat_requests();
     let retried = both_runs.last().expect("the retry was sent").body["messages"][0]["content"]
@@ -892,7 +892,7 @@ fn a_record_carries_the_hash_and_the_label_but_not_the_prompt() {
         plainly_core::Prompt::factory().version(),
         "the appended prompt is a different prompt"
     );
-    assert_eq!(document["prompt_label"], "v7-descriptors");
+    assert_eq!(document["prompt_label"], "v8-examples");
     assert!(
         !product.contains(appendix) && !product.contains("You explain hard English"),
         "the prompt body is not stored in the record: {product}"
