@@ -119,12 +119,27 @@ impl TempDir {
             .spawn()
             .expect("the plainly binary is built alongside its tests");
 
-        child
+        // A run that refuses before it reads stdin — no key, an unknown provider
+        // — can exit while this write is still in flight, and the write then
+        // fails with `BrokenPipe`. That is not the harness failing: it is the
+        // binary not waiting for input it will never use, which one of these
+        // tests asserts on purpose
+        // (`a_missing_key_is_reported_without_waiting_for_stdin_to_end`). A
+        // release build makes the child that fast, so this used to fail only in
+        // `nix build`. Every other write error is still a failure.
+        let written = child
             .stdin
             .as_mut()
             .expect("stdin is piped")
-            .write_all(stdin.as_bytes())
-            .expect("stdin accepts the test's input");
+            .write_all(stdin.as_bytes());
+        if let Err(error) = written {
+            assert_eq!(
+                error.kind(),
+                std::io::ErrorKind::BrokenPipe,
+                "the test's input reaches stdin unless the child has already exited: {error:?}"
+            );
+        }
+
         child.wait_with_output().expect("the process is waitable")
     }
 

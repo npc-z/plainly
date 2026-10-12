@@ -2537,6 +2537,17 @@
           cargoDeps = guiCargoDeps;
           nativeBuildInputs = rustTools ++ [ pkgs.makeWrapper ];
           buildInputs = packageInputs;
+          # The check phase runs the workspace's tests, which include the
+          # panel's, and a build sandbox has no display for GTK to initialize
+          # against. `PLAINLY_TEST_NO_DISPLAY` is that test's own way of being
+          # told so: without it the test fails with the message naming the
+          # variable, because a skip that nobody announces is a test that
+          # checked nothing while looking green. The name says "test" on
+          # purpose — nothing in the application reads it — and it means the
+          # green check here does **not** cover that test: only a run with a
+          # display does. (Merged rather than assigned: `//` is shallow, so a
+          # bare `env` here would drop `common.env`'s `LIBCLANG_PATH`.)
+          env = common.env // { PLAINLY_TEST_NO_DISPLAY = "1"; };
           # Only the two GUI packages are built here. The command line it would
           # otherwise also produce is a *second* build of the same crate, so
           # `default` takes `plainly` below instead: one artifact, and the two
