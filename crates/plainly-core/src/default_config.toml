@@ -16,7 +16,7 @@ level = "B2"
 # A setting, never inferred at runtime.
 native_language = "Chinese"
 
-# Default shape for `plainly history export`: markdown, anki or raw.
+# Default shape for `plainly history export`: markdown or raw.
 export_format = "markdown"
 
 # Language of the interface itself. The Explanation's sections stay English.

@@ -752,7 +752,7 @@ fn export_name(format: ExportFormat, only: Option<i64>, now: Timestamp, attempt:
     let stamp = view::utc_text(now).replace(' ', "-").replace(':', "");
     let extension = match format {
         ExportFormat::Markdown => "md",
-        ExportFormat::Anki | ExportFormat::Raw => "csv",
+        ExportFormat::Raw => "csv",
     };
     let subject = match only {
         Some(id) => format!("record-{id}"),
@@ -760,7 +760,6 @@ fn export_name(format: ExportFormat, only: Option<i64>, now: Timestamp, attempt:
     };
 
     let stem = match format {
-        ExportFormat::Anki => format!("plainly-anki-{subject}-{stamp}"),
         ExportFormat::Raw => format!("plainly-raw-{subject}-{stamp}"),
         ExportFormat::Markdown => format!("plainly-{subject}-{stamp}"),
     };
@@ -793,8 +792,8 @@ mod tests {
             "plainly-history-2025-10-09-085320.md"
         );
         assert_eq!(
-            export_name(ExportFormat::Anki, Some(7), now, 0),
-            "plainly-anki-record-7-2025-10-09-085320.csv"
+            export_name(ExportFormat::Raw, Some(7), now, 0),
+            "plainly-raw-record-7-2025-10-09-085320.csv"
         );
         assert_eq!(
             export_name(ExportFormat::Markdown, None, now, 1),

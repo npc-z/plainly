@@ -272,18 +272,19 @@ fn an_export_writes_one_file_and_says_where_it_landed() {
     let single = desktop
         .export(ExportFormat::Markdown, Some(id))
         .expect("one record exports");
-    let anki = desktop
-        .export(ExportFormat::Anki, None)
-        .expect("the anki export runs");
+    let raw = desktop
+        .export(ExportFormat::Raw, None)
+        .expect("the raw export runs");
 
-    // Three exports of one history are three files, and the name says which is
-    // which: an export that overwrote the previous one would be a silent loss.
+    // Two exports of one history are two files, and the name says which is
+    // which: an export that overwrote the other would be a silent loss.
     assert_ne!(whole.path, single.path);
-    assert_ne!(whole.path, anki.path);
+    assert_ne!(whole.path, raw.path);
     assert!(whole.path.ends_with(".md"));
-    assert!(anki.path.ends_with(".csv"));
+    assert!(raw.path.ends_with(".csv"));
     assert!(std::path::Path::new(&whole.path).exists());
     assert!(std::path::Path::new(&single.path).exists());
+    assert!(std::path::Path::new(&raw.path).exists());
 
     // The single-record export has the one Record in it and not the other.
     let single_text = std::fs::read_to_string(&single.path).expect("the export is readable");
@@ -389,9 +390,9 @@ fn the_settings_screen_is_five_sections_in_the_documented_order() {
             .iter()
             .map(|export| export.value.as_str())
             .collect::<Vec<_>>(),
-        vec!["markdown", "anki", "raw"]
+        vec!["markdown", "raw"]
     );
-    assert_eq!(settings.data.exports.len(), 3);
+    assert_eq!(settings.data.exports.len(), 2);
     assert_eq!(
         settings
             .data
@@ -399,7 +400,7 @@ fn the_settings_screen_is_five_sections_in_the_documented_order() {
             .iter()
             .map(|export| export.label.as_str())
             .collect::<Vec<_>>(),
-        vec!["Markdown", "Anki CSV", "原始 CSV"],
+        vec!["Markdown", "原始 CSV"],
         "each export button carries its own label"
     );
 }

@@ -75,3 +75,7 @@ Blocked by:
 原型 `.scratch/plainly/ui/main-window-ia.html`。
 **注意一处容易误读的地方**：原型里的面板**可以拖动**，那是 **mock-only** 的——为的是让人**在做决定之前先感受**这个交互，**它不表示自由拖动会被实现**（决定是"位置可配置"）。
 渲染产物 `mw-*.png` / `hist-3.png` / `rest-3.png` **不入库**（`.scratch/plainly/ui/.gitignore` 已覆盖 `*.png`，与票据 02/06 的"截图不保留"一致）。
+
+## Comments
+
+- **🗑️ 2026-10-12 Anki 导出移除**：设置的"数据"节从三条全局导出减为**两条**（Markdown / 原始 CSV），原型 `.scratch/plainly/ui/main-window-ia.html` 里的「全部导出为 Anki CSV」按钮已删。详情页的"复制 markdown / 导出这一条"与其余信息架构不变。

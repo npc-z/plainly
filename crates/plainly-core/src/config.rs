@@ -79,23 +79,17 @@ impl FromStr for Level {
 pub enum ExportFormat {
     #[default]
     Markdown,
-    Anki,
     Raw,
 }
 
 impl ExportFormat {
     /// Every format, in the order a surface should offer them.
-    pub const ALL: [ExportFormat; 3] = [
-        ExportFormat::Markdown,
-        ExportFormat::Anki,
-        ExportFormat::Raw,
-    ];
+    pub const ALL: [ExportFormat; 2] = [ExportFormat::Markdown, ExportFormat::Raw];
 
     /// The label as it is written in configuration.
     pub fn as_str(self) -> &'static str {
         match self {
             ExportFormat::Markdown => "markdown",
-            ExportFormat::Anki => "anki",
             ExportFormat::Raw => "raw",
         }
     }
@@ -107,9 +101,8 @@ impl FromStr for ExportFormat {
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
             "markdown" => Ok(ExportFormat::Markdown),
-            "anki" => Ok(ExportFormat::Anki),
             "raw" => Ok(ExportFormat::Raw),
-            other => Err(format!("expected markdown, anki or raw; got {other:?}")),
+            other => Err(format!("expected markdown or raw; got {other:?}")),
         }
     }
 }

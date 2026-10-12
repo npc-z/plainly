@@ -573,7 +573,7 @@ fn a_tag_with_a_space_in_it_is_still_one_tag() {
 }
 
 // ---------------------------------------------------------------------------
-// The three exports
+// The two exports
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -599,26 +599,6 @@ fn export_writes_the_product_to_stdout_and_nothing_else() {
         );
     }
     assert_eq!(stderr(&markdown), "", "an export says nothing else");
-
-    let anki = dir.plainly_with(&["history", "export", "anki"], "", &[]);
-    assert_eq!(code(&anki), SUCCESS, "{}", stderr(&anki));
-    let product = stdout(&anki);
-    let cards: Vec<&str> = product.lines().collect();
-    assert_eq!(
-        cards.len(),
-        2,
-        "the header and the one card this Gloss makes:\n{product}"
-    );
-    assert_eq!(
-        cards[0],
-        "expression,gloss,passage,level,native_language,provider,model,prompt_label"
-    );
-    assert!(
-        cards[1].starts_with("go to ground,hide so that nobody can find you,\""),
-        "front and back are the Gloss, and the Passage follows as context: {}",
-        cards[1]
-    );
-    assert_eq!(stderr(&anki), "");
 
     let raw = dir.plainly_with(&["history", "export", "raw"], "", &[]);
     assert_eq!(code(&raw), SUCCESS, "{}", stderr(&raw));
@@ -648,18 +628,13 @@ fn export_of_an_empty_history_is_a_product_with_no_records() {
     assert_eq!(code(&markdown), SUCCESS, "{}", stderr(&markdown));
     assert_eq!(stdout(&markdown), "");
 
-    for (format, header) in [
-        ("anki", "expression,gloss,passage"),
-        ("raw", "id,created_at,generated_at"),
-    ] {
-        let export = dir.plainly_with(&["history", "export", format], "", &[]);
-        assert_eq!(code(&export), SUCCESS, "{}", stderr(&export));
-        assert!(
-            stdout(&export).lines().count() == 1 && stdout(&export).starts_with(header),
-            "the columns alone, so an import still knows what it is reading: {:?}",
-            stdout(&export)
-        );
-    }
+    let raw = dir.plainly_with(&["history", "export", "raw"], "", &[]);
+    assert_eq!(code(&raw), SUCCESS, "{}", stderr(&raw));
+    assert!(
+        stdout(&raw).lines().count() == 1 && stdout(&raw).starts_with("id,created_at,generated_at"),
+        "the columns alone, so an import still knows what it is reading: {:?}",
+        stdout(&raw)
+    );
 }
 
 #[test]

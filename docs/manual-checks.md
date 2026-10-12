@@ -193,7 +193,7 @@ DISPLAY=:0 env -u WAYLAND_DISPLAY sh -c 'echo "The manager had already gone to g
 - **规格的 Out of Scope 整张表**都是没做的（下面照 `spec.md` §Out of Scope 逐条抄，不是摘要）：web API、MCP server、截图 OCR、多设备同步、
   SRS 复习循环、macOS / Windows 桌面、Tauri 发布链路（公证 / 签名 / 自动更新）、浏览器插件、
   X11 会话支持、面板自由拖动、敏感内容的启发式判定、历史库加密、中文翻译的全文搜索、
-  自动打标、`.apkg` 导出、提示词片段注册表、**删除出厂提示词自己的规则**（附录只能追加）、
+  自动打标、卡片 / 复习式导出（Anki CSV，2026-10-12 移除）、提示词片段注册表、**删除出厂提示词自己的规则**（附录只能追加）、
   项目级配置覆盖、流式输出、**对本地模型输出正确性的任何承诺**。
 - **GNOME 那一节（§4.1–4.5）没有本地证据**：本机是 niri，清单里其余每一项都能在这里跑，
   这一节需要一台 GNOME 机器。

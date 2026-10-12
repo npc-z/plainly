@@ -77,7 +77,7 @@ fn config_set_accepts_values_without_quoting_them() {
     let dir = TempDir::new("config-set-coerce");
 
     for (key, value) in [
-        ("app.export_format", "anki"),
+        ("app.export_format", "raw"),
         ("app.panel_corner", "bottom-right"),
         ("app.show_grammar", "false"),
         ("app.panel_autohide_seconds", "45"),
@@ -88,7 +88,7 @@ fn config_set_accepts_values_without_quoting_them() {
     }
 
     let shown = stdout(&dir.plainly(&["config", "show"]));
-    assert!(shown.contains("export_format = \"anki\""));
+    assert!(shown.contains("export_format = \"raw\""));
     assert!(shown.contains("panel_corner = \"bottom-right\""));
     assert!(shown.contains("show_grammar = false"));
     assert!(shown.contains("panel_autohide_seconds = 45"));

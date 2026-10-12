@@ -103,3 +103,7 @@
 - **并发只保证到「一条记录是完整的」**：`recall` 的 bump 与随后的读是两条语句，中间插进来的写会让
   结果变成写之后的那一份（或没有了），但不会是一半旧一半新。真要在面板与 CLI 同时写同一行时更强，
   得把 recall 提到写事务里（`BEGIN IMMEDIATE`），代价是命中也要排队——v0 不值这个价。
+
+## Comments
+
+- **🗑️ 2026-10-12 Anki 导出移除**：上面"给下游"里那句 Anki CSV「每个 Gloss 一行」正对着 `glosses` 表、一条 SQL 出卡，随 Anki 导出一起作废。`Store::list()` / `show()` 的形状不变，`glosses` 表仍在（FTS5 要索引 `expression` / `gloss`）。

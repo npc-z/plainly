@@ -22,10 +22,9 @@
 //! keeps `created_at` and `last_seen`: the record is the same record, and only
 //! what it holds is new.
 //!
-//! The store is relational rather than a JSON blob because the natural unit of an
-//! Anki export is one Gloss, and one SQL query should produce the cards
-//! (tickets/10). `ord` keeps the model's order, which is the order of how much
-//! each expression blocks comprehension.
+//! The store is relational rather than a JSON blob because the Glosses are what
+//! search indexes: one row each (tickets/10). `ord` keeps the model's order,
+//! which is the order of how much each expression blocks comprehension.
 
 use std::fmt;
 use std::path::{Path, PathBuf};

@@ -179,10 +179,9 @@ Honest limits, from the spec's "必须传达到实现阶段的诚实记录":
   desktop support (v1; core stays portable for it), no release pipeline, no
   browser extension, no free-form panel dragging, no heuristic sensitive-content
   detection, no history encryption, no full-text search of translations, no
-  automatic tagging, no `.apkg` export, no prompt-fragment registry, no deleting
-  the factory prompt's own rules (an appendix can only add), no project-level
-  config overrides, no streaming, and no promise about a local model's
-  correctness.
+  automatic tagging, no prompt-fragment registry, no deleting the factory
+  prompt's own rules (an appendix can only add), no project-level config
+  overrides, no streaming, and no promise about a local model's correctness.
 
 ## Verifying it
 

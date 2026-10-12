@@ -1,18 +1,18 @@
-//! The three exports: one markdown document and two CSVs.
+//! The two exports: one markdown document and one CSV.
 //!
 //! An export is a function of Records — the history in its own order — so the
 //! fixtures come through a real (in-memory) store rather than being built by
 //! hand: what a learner exports is what the history holds.
 //!
-//! The two CSVs are read back with a small quote-aware reader, because their
-//! cells are allowed to hold commas and line breaks: counting lines would be
-//! wrong the moment a Passage has two paragraphs, and asserting the escaping by
-//! eye is how a CSV ends up broken in a spreadsheet.
+//! The CSV is read back with a small quote-aware reader, because its cells are
+//! allowed to hold commas and line breaks: counting lines would be wrong the
+//! moment a Passage has two paragraphs, and asserting the escaping by eye is how
+//! a CSV ends up broken in a spreadsheet.
 
 mod support;
 
 use plainly_core::store::Lookup;
-use plainly_core::{Artifact, Explanation, Gloss, Level, Record, Store, Thinking, export};
+use plainly_core::{Artifact, Explanation, Level, Record, Store, Thinking, export};
 
 /// A Passage and an Explanation whose fields hold no comma, quote or line break,
 /// so a row can be read in the test exactly as a spreadsheet would read it.
@@ -213,12 +213,8 @@ fn the_markdown_export_of_an_empty_history_is_empty() {
 }
 
 // ---------------------------------------------------------------------------
-// Anki CSV: one card per Gloss
+// Raw CSV: one row per Record, for a spreadsheet
 // ---------------------------------------------------------------------------
-
-/// The columns an Anki import maps onto its fields, as the spec lists them.
-const ANKI_HEADER: &str =
-    "expression,gloss,passage,level,native_language,provider,model,prompt_label";
 
 /// A Record that found nothing to gloss.
 const NOTHING_TO_GLOSS: &str = "The cat sat on the mat.";
@@ -228,6 +224,11 @@ const NOTHING_TO_GLOSS_ANSWER: &str = r#"{
   "grammar": null,
   "translation": "猫坐在垫子上。"
 }"#;
+
+/// Every column of the raw export, in the order it writes them.
+const RAW_HEADER: &str = "id,created_at,generated_at,last_seen,level,source_language,\
+                          native_language,provider,model,thinking,prompt_label,prompt_version,\
+                          artifact_version,tags,passage,comprehensible,glosses,grammar,translation";
 
 /// An Expression and a Passage holding every character CSV has to protect.
 const AWKWARD: &str = "First line.\nSecond line.";
@@ -239,101 +240,6 @@ const AWKWARD_ANSWER: &str = r#"{
   "grammar": null,
   "translation": "两行。"
 }"#;
-
-#[test]
-fn the_anki_export_gives_every_gloss_its_own_row() {
-    let record = one(&support::artifact_at(BOTTLED, bottled(), 1_760_000_000));
-
-    let document = export::anki_csv(std::slice::from_ref(&record));
-
-    assert_eq!(
-        document,
-        format!(
-            "{ANKI_HEADER}\n\
-             bottle it,lose your nerve,He bottled it at the last minute.,B2,Chinese,\
-             deepseek,deepseek-flash,v7-descriptors\n\
-             at the last minute,at the very end,He bottled it at the last minute.,B2,Chinese,\
-             deepseek,deepseek-flash,v7-descriptors\n"
-        ),
-        "front, back, context, then the provenance"
-    );
-}
-
-#[test]
-fn a_record_with_no_glosses_makes_no_cards() {
-    // The unit of review is the Gloss. A row with nothing on its front would
-    // import as a card that cannot be answered, so such a Record is in the
-    // markdown and raw exports instead.
-    let bare = one(&support::artifact_at(
-        NOTHING_TO_GLOSS,
-        Explanation::parse(NOTHING_TO_GLOSS_ANSWER).expect("the fixture holds the contract"),
-        1_760_000_000,
-    ));
-    let glossed = one(&support::artifact_at(BOTTLED, bottled(), 1_760_086_400));
-
-    let document = export::anki_csv(&[bare, glossed]);
-
-    assert_eq!(rows(&document).len(), 3, "the header and the two cards:\n{document}");
-}
-
-#[test]
-fn a_gloss_with_a_blank_expression_makes_no_card() {
-    // The schema cannot forbid an empty expression (ADR-0001: no length bounds),
-    // so a model may return one; the export is where a card that cannot be
-    // answered is left out.
-    let mut explanation = bottled();
-    explanation.glosses.push(Gloss {
-        expression: "   ".to_string(),
-        gloss: "nothing to put a question on".to_string(),
-    });
-    let record = one(&support::artifact_at(BOTTLED, explanation, 1_760_000_000));
-
-    let document = export::anki_csv(std::slice::from_ref(&record));
-
-    assert_eq!(
-        rows(&document).len(),
-        3,
-        "the header and the two real cards:\n{document}"
-    );
-}
-
-#[test]
-fn a_csv_field_with_a_comma_a_quote_or_a_line_break_is_quoted_and_escaped() {
-    let record = one(&support::artifact_at(
-        AWKWARD,
-        Explanation::parse(AWKWARD_ANSWER).expect("the fixture holds the contract"),
-        1_760_000_000,
-    ));
-
-    let document = export::anki_csv(std::slice::from_ref(&record));
-
-    assert_eq!(
-        document,
-        format!(
-            "{ANKI_HEADER}\n\
-             \"well, \"\"yes\"\"\",\"line one\nline two\",\"First line.\nSecond line.\",\
-             B2,Chinese,deepseek,deepseek-flash,v7-descriptors\n"
-        )
-    );
-    let read = rows(&document);
-    assert_eq!(read[1][0], "well, \"yes\"");
-    assert_eq!(read[1][1], "line one\nline two");
-    assert_eq!(read[1][2], AWKWARD);
-}
-
-#[test]
-fn the_anki_export_of_an_empty_history_is_the_header_alone() {
-    assert_eq!(export::anki_csv(&[]), format!("{ANKI_HEADER}\n"));
-}
-
-// ---------------------------------------------------------------------------
-// Raw CSV: one row per Record, for a spreadsheet
-// ---------------------------------------------------------------------------
-
-/// Every column of the raw export, in the order it writes them.
-const RAW_HEADER: &str = "id,created_at,generated_at,last_seen,level,source_language,\
-                          native_language,provider,model,thinking,prompt_label,prompt_version,\
-                          artifact_version,tags,passage,comprehensible,glosses,grammar,translation";
 
 fn nothing_to_gloss() -> Explanation {
     Explanation::parse(NOTHING_TO_GLOSS_ANSWER).expect("the fixture holds the contract")
@@ -405,6 +311,39 @@ fn the_raw_export_puts_the_glosses_in_one_cell_as_several_lines() {
     assert_eq!(
         table[1][glosses], "bottle it → lose your nerve\nat the last minute → at the very end",
         "one cell, one line per Gloss"
+    );
+}
+
+#[test]
+fn a_csv_field_with_a_comma_a_quote_or_a_line_break_is_quoted_and_escaped() {
+    let record = one(&support::artifact_at(
+        AWKWARD,
+        Explanation::parse(AWKWARD_ANSWER).expect("the fixture holds the contract"),
+        1_760_000_000,
+    ));
+
+    let document = export::raw_csv(std::slice::from_ref(&record));
+    let table = rows(&document);
+    let column = |name: &str| {
+        table[0]
+            .iter()
+            .position(|heading| heading == name)
+            .unwrap_or_else(|| panic!("no {name} column in {:?}", table[0]))
+    };
+
+    assert!(
+        document.contains("\"First line.\nSecond line.\""),
+        "a cell holding a line break is quoted:\n{document}"
+    );
+    assert_eq!(
+        table[1][column("passage")],
+        AWKWARD,
+        "a Passage of two lines reads back as one cell"
+    );
+    assert_eq!(
+        table[1][column("glosses")],
+        "well, \"yes\" → line one\nline two",
+        "a Gloss that quotes and breaks lines reads back as one cell"
     );
 }
 

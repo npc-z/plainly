@@ -13,9 +13,8 @@
 //! second — while `delete` takes the id it was pointed at.
 //!
 //! `export` prints the whole history as one document in the shape the caller
-//! asked for — markdown to read, an Anki CSV to review from, a raw CSV for a
-//! spreadsheet. All three are products, so all three go to stdout and nothing
-//! else does.
+//! asked for — markdown to read, a raw CSV for a spreadsheet. Both are products,
+//! so both go to stdout and nothing else does.
 //!
 //! Reading the history never touches the network and never needs a provider: the
 //! store is local, and a record is all there is.
@@ -150,7 +149,6 @@ fn write_export(format: ExportFormat) -> Result<u8, CommandError> {
         "{}",
         match format {
             ExportFormat::Markdown => export::markdown(&records),
-            ExportFormat::Anki => export::anki_csv(&records),
             ExportFormat::Raw => export::raw_csv(&records),
         }
     );

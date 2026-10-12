@@ -107,8 +107,7 @@ fn values_are_coerced_by_the_type_of_the_key() {
 
     // No quotes needed on the command line; the key's type decides.
     file.set("app.level", "A2").expect("level");
-    file.set("app.export_format", "anki")
-        .expect("export format");
+    file.set("app.export_format", "raw").expect("export format");
     file.set("app.panel_corner", "bottom-right")
         .expect("corner");
     file.set("app.show_grammar", "false").expect("boolean");
@@ -168,6 +167,9 @@ fn a_value_of_the_wrong_shape_is_refused() {
     for (key, value) in [
         ("app.level", "Z9"),
         ("app.export_format", "pdf"),
+        // Anki was a format v0 shipped and no longer does; the name is now
+        // refused like any other value the enum has no variant for.
+        ("app.export_format", "anki"),
         ("app.panel_corner", "middle"),
         ("app.show_grammar", "maybe"),
         ("app.panel_autohide_seconds", "soon"),

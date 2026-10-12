@@ -180,12 +180,11 @@ pub struct ExportOffer {
     pub summary: String,
 }
 
-/// The one renderer of an export, so that the three global exports and the
+/// The one renderer of an export, so that the two global exports and the
 /// single-record export cannot drift from the CLI's (spec §9, tickets/10).
 pub fn export_text(format: plainly_core::ExportFormat, records: &[Record]) -> String {
     match format {
         plainly_core::ExportFormat::Markdown => export::markdown(records),
-        plainly_core::ExportFormat::Anki => export::anki_csv(records),
         plainly_core::ExportFormat::Raw => export::raw_csv(records),
     }
 }

@@ -225,7 +225,7 @@ pub struct OutputOption {
 /// 数据.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct DataView {
-    /// The three global exports, each with the value the backend takes and the
+    /// The global exports, each with the value the backend takes and the
     /// label the button shows.
     pub exports: Vec<ExportAction>,
     pub data_dir: String,
@@ -256,19 +256,17 @@ pub struct Facts {
 
 /// The label of one export format.
 ///
-/// The one place the two exports that produce a CSV are told apart in words;
-/// the format's own spelling comes from [`ExportFormat::as_str`], so a format
+/// The format's own spelling comes from [`ExportFormat::as_str`], so a format
 /// added to the domain cannot be missing here by accident — the match would not
 /// compile.
 pub fn export_label(format: ExportFormat) -> &'static str {
     match format {
         ExportFormat::Markdown => "Markdown",
-        ExportFormat::Anki => "Anki CSV",
         ExportFormat::Raw => "原始 CSV",
     }
 }
 
-/// The three formats a global export offers, in the order they are offered.
+/// The formats a global export offers, in the order they are offered.
 ///
 /// [`ExportFormat::ALL`] is the domain's list; this is the same list as the
 /// screen's buttons, so the two cannot disagree about how many there are.

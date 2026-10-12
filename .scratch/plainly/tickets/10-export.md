@@ -71,3 +71,7 @@
   界面里的今天/昨天（票据 14）会把同一个瞬间读成本地时区，所以**在读者偏移量的窗口内两者会差一天**——说的是
   同一个瞬间，别把导出的日期当成本地日历日。
 - **没有 `.apkg`**：规格明确不做——写它就是实现半个 Anki 内核，而 Anki 本来就支持 CSV 字段映射。
+
+## Comments
+
+- **🗑️ 2026-10-12 Anki 导出移除**：本票据落地的 Anki CSV 导出已整条去掉——`export::anki_csv`、`ExportFormat::Anki`、`history export anki`、设置里的「Anki CSV」按钮与 `app.export_format` 的 `anki` 取值都不再存在，v0 只留 markdown 与原始 CSV 两种形态。上面正文里关于 Anki 的取舍（每个 Gloss 一张卡、没有 Gloss 的 Record 不出卡、空白 expression 不出卡、不做 `.apkg`）随功能作废，正文保留仅作决策记录。`glosses` 关系表仍在：理由从"一条 SQL 出卡"改为"Gloss 是 FTS5 要索引的字段"（见 `spec.md` §9）。

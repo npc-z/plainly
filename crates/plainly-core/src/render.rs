@@ -7,8 +7,8 @@
 //! JSON, which is the point.
 //!
 //! Rendering is a pure function of a Passage and an Explanation, and the CLI,
-//! the markdown export and the panel all go through it. The two CSVs do not:
-//! a card or a spreadsheet cell is not a document. What differs between surfaces is
+//! the markdown export and the panel all go through it. The raw CSV does not:
+//! a spreadsheet cell is not a document. What differs between surfaces is
 //! one rule: the two sections that can be empty *because the model said nothing
 //! is here* — Grammar with no structural blocker, Key Help with no Glosses —
 //! disappear from the document but are *said* on the panel, in the caller's own
