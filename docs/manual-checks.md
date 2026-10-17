@@ -29,6 +29,13 @@ export PATH="$PWD/result/bin:$PATH"   # 键绑按名字找 plainly-panel，就�
 CLI 的闭包里没有图形库、两个闭包大小不同、面板在 `env -i`（空环境）下不会报
 `error while loading shared libraries`。§1.2 的焦点与 §2.1 的键绑仍然要人按一次键。
 
+用 `nix flake update` 升级输入（nixpkgs / fenix / crane）并**提交**之后，再跑
+`scripts/check-incremental-build.sh`：它只 eval、不构建（约 10–15 s），验证「改一行 `.rs` 不会让
+crane 的依赖缓存失效」在升级后的输入上仍然成立；加 `--self-test` 会分别改两个包各自的 lock 来源
+（repo 的 `Cargo.lock` 与 flake 里的 `cliLock` 字面量），确认两处检查都还活着，否则任何一处变成
+恒真都不会被发现。它比对的是两份 `git archive HEAD` 的拷贝，所以未提交的改动不参与——这也是
+「先提交升级」的原因。
+
 每次检查前清一份临时状态，不要碰真实配置与历史：
 
 ```sh
