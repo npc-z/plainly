@@ -13,9 +13,13 @@
       url = "github:nix-community/fenix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # crane splits a cargo build into a dependency-only derivation plus the
+    # package that reuses it, which is what keeps a source edit from
+    # recompiling every crates.io dependency.
+    crane.url = "github:ipetkov/crane";
   };
 
-  outputs = { self, nixpkgs, flake-utils, fenix }:
+  outputs = { self, nixpkgs, flake-utils, fenix, crane }:
     # v0 ships Linux only. The structure is readest's (a parameterised mkShell
     # over an explicit system list) so that adding `aarch64-darwin` for v1 is a
     # two-line change — but an unverified darwin shell would rot and would read
@@ -62,6 +66,13 @@
           cargo = rustToolchain.cargo;
           rustc = rustToolchain.rustc;
         };
+
+        # crane's library, on the same release. `overrideToolchain` is how crane
+        # is told about a toolchain that is not nixpkgs' own; `minimalToolchain`
+        # is the same cargo/rustc pair `rustPlatform` above takes — one
+        # derivation, so neither binding repeats the other's list, and the
+        # analyzer, docs and formatter do not travel with a build.
+        craneLib = (crane.mkLib pkgs).overrideToolchain (_: rustToolchain.minimalToolchain);
 
         # Tools for whoever is working on the code: the frontend's package
         # manager, a C toolchain for linking, and the odds and ends the tickets
@@ -2544,13 +2555,45 @@
         # no graphics libraries something to substitute or fail on, which is the
         # opposite of what this package is for. The list is three tools long on
         # purpose; adding one is a decision, not an accident.
-        plainly = rustPlatform.buildRustPackage (common // {
+        #
+        # The build is split the way crane expects. `plainlyDeps` compiles the
+        # third-party crates against a dummified workspace (crane keeps only
+        # `Cargo.lock` and the manifests, so a `.rs` edit does not reach it), and
+        # `plainly` reuses that store output through `cargoArtifacts` and
+        # compiles only the workspace's own crates. This is the CLI half only;
+        # `gui` below still builds with nixpkgs' `buildRustPackage` until its own
+        # ticket moves it over.
+        #
+        # Two consequences of the move, both deliberate:
+        # - the old `cargoBuildFlags = [ "--package" "plainly-cli" ]` is gone: it
+        #   was a nixpkgs-only knob, and there is nothing to narrow here anyway —
+        #   the synthetic CLI workspace is `plainly-core` + `plainly-cli`, so all
+        #   of it is built, tested and installed either way.
+        # - the binary no longer carries cargo-auditable's `.dep-v0` section
+        #   (nixpkgs' `buildRustPackage` adds it by default; crane has no
+        #   equivalent). Nothing in this repo reads it. `default` still gets it
+        #   through `gui` until that package follows, so the two are mixed only
+        #   in the interim.
+        #
+        # `cargoVendorDir` is the tree cargo replaces crates.io with. nixpkgs'
+        # `fetchCargoVendor` lays the sources out under `source-registry-0/` with
+        # a `.cargo/config.toml` beside it that crane ignores unless it sits at
+        # the vendor root; the subdirectory name is that derivation's layout, not
+        # ours, so it is named here as the one place a lockfile bump lands.
+        cliVendorDir = "${cliCargoDeps}/source-registry-0";
+
+        plainlyArgs = common // {
           pname = "plainly";
           src = cliSource;
-          cargoDeps = cliCargoDeps;
+          cargoVendorDir = cliVendorDir;
           nativeBuildInputs = rustTools;
           buildInputs = [ pkgs.openssl ];
-          cargoBuildFlags = [ "--package" "plainly-cli" ];
+        };
+
+        plainlyDeps = craneLib.buildDepsOnly plainlyArgs;
+
+        plainly = craneLib.buildPackage (plainlyArgs // {
+          cargoArtifacts = plainlyDeps;
           meta = common.meta // {
             description = "Explain a Passage of hard English, from the command line";
           };
