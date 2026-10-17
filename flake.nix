@@ -2605,7 +2605,12 @@
           pname = "plainly-desktop";
           src = wholeSource;
           cargoDeps = guiCargoDeps;
-          nativeBuildInputs = rustTools ++ [ pkgs.makeWrapper ];
+          # `autoPatchelfHook` puts back the RUNPATH that nixpkgs' rustc used to
+          # give linked binaries and fenix's does not: it resolves each ELF's
+          # DT_NEEDED against the build inputs and patches the installed copies.
+          # The `.wrapped` files are the real ELFs; the `bin/` names are the
+          # `wrapProgram` scripts and are left alone.
+          nativeBuildInputs = rustTools ++ [ pkgs.makeWrapper pkgs.autoPatchelfHook ];
           buildInputs = packageInputs;
           # The check phase runs the workspace's tests, which include the
           # panel's, and a build sandbox has no display for GTK to initialize
@@ -2618,13 +2623,11 @@
           # display does. (Merged rather than assigned: `//` is shallow, so a
           # bare `env` here would drop `common.env`'s `LIBCLANG_PATH`.)
           #
-          # The runtime library path is the other half of running tests here.
-          # This package builds with fenix's rustc, which — unlike nixpkgs' —
-          # is not built with `--enable-rpath`, so a check-phase test binary
-          # that links GTK does not carry its libraries' paths and dies with
+          # The check phase's test binaries are built by cargo, so
+          # `autoPatchelfHook` never sees them (it only patches `$out`), and
+          # fenix's rustc does not give them the RUNPATH nixpkgs' rustc did.
+          # Without the library path the panel's test binary dies with
           # "libgobject-2.0.so.0: cannot open shared object file" (exit 127).
-          # This path is for *running* tests inside the sandbox only; the
-          # installed binaries get theirs from the `postFixup` wrappers below.
           env = common.env // {
             PLAINLY_TEST_NO_DISPLAY = "1";
             LD_LIBRARY_PATH = guiLibPath;

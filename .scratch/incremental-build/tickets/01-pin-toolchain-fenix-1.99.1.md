@@ -74,3 +74,11 @@ error while loading shared libraries: libgobject-2.0.so.0: cannot open shared ob
 - 注意：`.scratch/` 下的文档也是 flake source 的一部分，所以改票本身会让 source 哈希变化、触发一次它自己的重建；这是 source 过滤的性质，不是本票要解决的问题。
 - Review：Standards 轴无硬违规，采纳了评论措辞修正（"same toolchain release"、`rustToolchain`/`shellComponents` 改名、overlay 的 why 注释）；Spec 轴确认代码项全部落地，只抓到 spec §14 把 `.#gui` 说成公开输出这一处措辞错误，已修。
 - 定稿树（含本票与 spec §14 的文档改动）再跑一次确认：`nix build .` **exit 0 / 205 s**，输出 `/nix/store/wrgr6rj88256lk0vcd7nwm7x67l4nn9s-plainly-0.1.0`，`bin/` 三件齐全（`plainly`、`plainly-desktop`、`plainly-panel`）；GUI 日志仍是 34 条 `test result: ok`、0 条加载错误。
+
+**2026-10-17 — 补充：运行时 RUNPATH 回归（由 02 的验收脚本发现）**
+
+换到 fenix 工具链后，不只是 checkPhase 的 test binary 需要库路径——**装出来的** GUI 二进制也失去了 RUNPATH。旧产物（nixpkgs 的 rustc）的 RUNPATH 由链接环节产生（`glib`/`cairo`/`gdk-pixbuf`/`gtk+`/`pango`/`webkitgtk`/`libsoup`/`dbus`/glibc/gcc），fenix 的 rustc 不给；`env -i result/bin/plainly-desktop --help` 因此死于 `libgdk_pixbuf-2.0.so.0: cannot open shared object file`。
+
+修复（独立 follow-up commit）：给 `gui` 加 `autoPatchelfHook`，按 DT_NEEDED 的实际解析结果给装出来的 ELF 打 rpath；checkPhase 的 `LD_LIBRARY_PATH` 保留（测试二进制不经过 `fixup`，`autoPatchelfHook` 看不到它们）。已验证 `scripts/check-flake-packages.sh --no-build` 全绿、GUI 34 个 test target 仍过。
+
+试过但不成立的两种修法，记下来省得重走：`RUSTFLAGS = "-C rpath"` 在 1.99 上只加一条 `$ORIGIN/…/rust-1.99.1-with-std/lib` 的 sysroot rpath；`RUSTFLAGS = "-C linker=cc"` 也没有恢复 RUNPATH（cargo hook 本来就通过 `CARGO_TARGET_*_LINKER` 指向 cc）。
