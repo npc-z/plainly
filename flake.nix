@@ -2515,6 +2515,14 @@
           hash = "sha256-t0C7eHS6hC1jOFHbQE0XRl8uWqE+C4medbpDH1Xw854=";
         };
 
+        # nixpkgs' `fetchCargoVendor` lays the vendored crates out under
+        # `source-registry-0/`, with a `.cargo/config.toml` beside it that crane
+        # ignores unless it sits at the vendor root. crane hands cargo the
+        # directory it is given, so the subdirectory is what gets passed; the
+        # name is that derivation's layout, not ours, and it lives here once
+        # rather than in each package.
+        vendorDir = deps: "${deps}/source-registry-0";
+
         # What the GUI package builds with. The dev shell's lists above are the
         # same set for the same reasons, and `dbus` is the one addition:
         # `plainly-desktop` reaches `tauri` → `libdbus-sys`, which probes for
@@ -2560,32 +2568,23 @@
         # third-party crates against a dummified workspace (crane keeps only
         # `Cargo.lock` and the manifests, so a `.rs` edit does not reach it), and
         # `plainly` reuses that store output through `cargoArtifacts` and
-        # compiles only the workspace's own crates. This is the CLI half only;
-        # `gui` below still builds with nixpkgs' `buildRustPackage` until its own
-        # ticket moves it over.
+        # compiles only the workspace's own crates. `gui` below uses the same
+        # split over the real workspace.
         #
         # Two consequences of the move, both deliberate:
         # - the old `cargoBuildFlags = [ "--package" "plainly-cli" ]` is gone: it
         #   was a nixpkgs-only knob, and there is nothing to narrow here anyway —
         #   the synthetic CLI workspace is `plainly-core` + `plainly-cli`, so all
         #   of it is built, tested and installed either way.
-        # - the binary no longer carries cargo-auditable's `.dep-v0` section
+        # - the binaries no longer carry cargo-auditable's `.dep-v0` section
         #   (nixpkgs' `buildRustPackage` adds it by default; crane has no
-        #   equivalent). Nothing in this repo reads it. `default` still gets it
-        #   through `gui` until that package follows, so the two are mixed only
-        #   in the interim.
-        #
-        # `cargoVendorDir` is the tree cargo replaces crates.io with. nixpkgs'
-        # `fetchCargoVendor` lays the sources out under `source-registry-0/` with
-        # a `.cargo/config.toml` beside it that crane ignores unless it sits at
-        # the vendor root; the subdirectory name is that derivation's layout, not
-        # ours, so it is named here as the one place a lockfile bump lands.
-        cliVendorDir = "${cliCargoDeps}/source-registry-0";
+        #   equivalent). Nothing in this repo reads it, and `default` — the join
+        #   of this package and `gui` — carries none of it either.
 
         plainlyArgs = common // {
           pname = "plainly";
           src = cliSource;
-          cargoVendorDir = cliVendorDir;
+          cargoVendorDir = vendorDir cliCargoDeps;
           nativeBuildInputs = rustTools;
           buildInputs = [ pkgs.openssl ];
         };
@@ -2601,17 +2600,32 @@
 
         # The whole application: the panel a compositor's key binding spawns, the
         # main window, and the CLI, plus what a desktop needs to find them.
-        gui = rustPlatform.buildRustPackage (common // {
+        #
+        # What is specific to this package is the hook separation:
+        # `buildDepsOnly` inherits every argument it is given, and a dependency
+        # build has no binaries to wrap (it dies with "Cannot wrap
+        # .../bin/plainly-panel"), so the wrapper and the rpath hook belong to
+        # `gui` alone — `guiArgs` carries neither, which also keeps the
+        # dependency build from running auto-patchelf over an artifact tarball.
+
+        guiArgs = common // {
           pname = "plainly-desktop";
           src = wholeSource;
-          cargoDeps = guiCargoDeps;
+          cargoVendorDir = vendorDir guiCargoDeps;
+          nativeBuildInputs = rustTools;
+          buildInputs = packageInputs;
+        };
+
+        guiDeps = craneLib.buildDepsOnly guiArgs;
+
+        gui = craneLib.buildPackage (guiArgs // {
+          cargoArtifacts = guiDeps;
           # `autoPatchelfHook` puts back the RUNPATH that nixpkgs' rustc used to
           # give linked binaries and fenix's does not: it resolves each ELF's
           # DT_NEEDED against the build inputs and patches the installed copies.
           # The `.wrapped` files are the real ELFs; the `bin/` names are the
           # `wrapProgram` scripts and are left alone.
           nativeBuildInputs = rustTools ++ [ pkgs.makeWrapper pkgs.autoPatchelfHook ];
-          buildInputs = packageInputs;
           # The check phase runs the workspace's tests, which include the
           # panel's, and a build sandbox has no display for GTK to initialize
           # against. `PLAINLY_TEST_NO_DISPLAY` is that test's own way of being
@@ -2636,12 +2650,11 @@
           # otherwise also produce is a *second* build of the same crate, so
           # `default` takes `plainly` below instead: one artifact, and the two
           # packages cannot drift apart. `symlinkJoin` is where they meet.
-          cargoBuildFlags = [
-            "--package"
-            "plainly-panel"
-            "--package"
-            "plainly-desktop"
-          ];
+          # `cargoBuildExtraArgs` narrows the build phase (and therefore what is
+          # installed) to the two GUI crates; the check phase still tests the
+          # whole workspace. It must stay on `gui` and not move into `guiArgs`:
+          # `buildDepsOnly` passes whatever it is given into its own build too.
+          cargoBuildExtraArgs = "--package plainly-panel --package plainly-desktop";
           # The two GUI binaries are the ones that cannot start without their
           # libraries on the search path, and a compositor's key binding spawns the
           # panel with an environment of its own — no profile script, no
@@ -2711,10 +2724,10 @@
         };
 
         # `nix run .` runs the command line, and it runs the *joined* one: the
-        # GUI derivation builds only the panel and the window (`cargoBuildFlags`
-        # above), so pointing an app at `${gui}/bin/plainly` names a file that is
-        # not there and turns `nix run` into "No such file or directory". The
-        # joined output is where the three binaries actually meet.
+        # GUI derivation builds only the panel and the window
+        # (`cargoBuildExtraArgs` above), so pointing an app at `${gui}/bin/plainly`
+        # names a file that is not there and turns `nix run` into "No such file
+        # or directory". The joined output is where the three binaries meet.
         apps = {
           default = {
             type = "app";

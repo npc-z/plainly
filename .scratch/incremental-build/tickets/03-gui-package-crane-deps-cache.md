@@ -6,15 +6,15 @@
 
 **Spec:** [spec.md](../../plainly/spec.md) §14 开发环境（flake 输出）与 `.scratch/packaging/tickets/01-flake-package-output.md` 定下的"装完就能用"契约。没有产品行为变化。
 
-**Status:** ready-for-agent
+**Status:** done (2026-10-17)
 
-- [ ] `gui` 与 `default` 由 crane 产生，`gui` 复用 02 建立的 `craneLib`。
-- [ ] **deps 参数与最终包参数显式拆开**：`buildDepsOnly` 会继承调用方的所有钩子（包括 `postFixup`），而依赖产物里没有二进制；不拆会 `Builder called die: Cannot wrap '…/bin/plainly-panel'`（原型实测失败点）。做法是依赖阶段只吃一份不含 `postFixup` / install 钩子的 args，最终包用 `cargoArtifacts = guiDeps` 再接上 `postFixup`。
-- [ ] `nix build .` 产出 `result/bin/{plainly,plainly-panel,plainly-desktop}`；`result/bin/plainly-panel` 是 wrapper（含 `LD_LIBRARY_PATH` 与 `XDG_DATA_DIRS`），`result/share/{applications,icons}` 都在。
-- [ ] checkPhase 照跑整个 workspace 的测试（34 个 test target）；`PLAINLY_TEST_NO_DISPLAY=1` 仍生效（面板那条测试仍按它的约定被明说跳过）。
-- [ ] 改一行 `.rs` 后 `nix build .` 只重建 workspace 派生 + symlinkJoin；记录耗时并填进本票 Comments（原型：首次 351 s、改一行 105 s；现状对照约 376 s；最终数字在实现后的仓库上重测）。
-- [ ] `scripts/check-flake-packages.sh` 通过；`nix run .` 仍跑 CLI。
-- [ ] 依赖产物大小与 disk：GUI 424 MB（target 1.57 GB 压缩）、CLI 138 MB；实现时确认 store 余量，按需 `nix-collect-garbage`。
+- [x] `gui` 与 `default` 由 crane 产生，`gui` 复用 02 建立的 `craneLib`。
+- [x] **deps 参数与最终包参数显式拆开**：`buildDepsOnly` 会继承调用方的所有钩子（包括 `postFixup`），而依赖产物里没有二进制；不拆会 `Builder called die: Cannot wrap '…/bin/plainly-panel'`（原型实测失败点）。做法是依赖阶段只吃一份不含 `postFixup` / install 钩子的 args，最终包用 `cargoArtifacts = guiDeps` 再接上 `postFixup`。
+- [x] `nix build .` 产出 `result/bin/{plainly,plainly-panel,plainly-desktop}`；`result/bin/plainly-panel` 是 wrapper（含 `LD_LIBRARY_PATH` 与 `XDG_DATA_DIRS`），`result/share/{applications,icons}` 都在。
+- [x] checkPhase 照跑整个 workspace 的测试（34 个 test target）；`PLAINLY_TEST_NO_DISPLAY=1` 仍生效。注意：面板那条在无 display 下是**静默提前返回**（日志里唯一 `ignored` 是 `keyring_live`），flake 注释本身也写明这条 green 不覆盖它。
+- [x] 改一行 `.rs` 后 `nix build .` 只重建 workspace 派生 + symlinkJoin；记录耗时并填进本票 Comments（实测：GC 后冷缓存首次 330 s、热缓存首次 230 s、改一行 59–60 s；旧路径同场景 179–242 s）。
+- [x] `scripts/check-flake-packages.sh` 通过；`nix run .` 仍跑 CLI。
+- [x] 依赖产物大小与 disk：GUI **423 MB**（nar 1.1 GiB）、CLI 136 MB；store 余量在实现时确认过，必要时 `nix-collect-garbage`。
 
 ## 实现要点（来自 /tmp 原型，已验证）
 
@@ -27,3 +27,15 @@
 - 守卫脚本（[04](04-incremental-build-guard.md)）。
 - 改测试策略 / 去掉 checkPhase（Q10 已定保留）。
 - GUI 的手工验收：`docs/manual-checks.md` 那套仍按原样走一遍即可，本票据不新增清单项。
+
+**2026-10-17 — 真仓库落地与验证（提交前，最终 diff 上重测）**
+
+- 实现：`gui` 与 `plainly` 同构拆成 `guiArgs` / `guiDeps` / `gui`；vendor 目录用共享的 `vendorDir = deps: "${deps}/source-registry-0"`（两处 `fetchCargoVendor` 的输出布局收敛到一处，`plainlyArgs` 与 `guiArgs` 各调一次）。
+- **`postFixup`、`makeWrapper`、`autoPatchelfHook` 都只在 `gui` 上**，`guiArgs` 里一个都没有：`buildDepsOnly` 会继承全部参数，依赖阶段去 `wrapProgram` 不存在的二进制会直接 die（原型踩过：`Cannot wrap .../bin/plainly-panel`）；钩子留在 `gui` 也让依赖阶段不跑 auto-patchelf。
+- `cargoBuildExtraArgs = "--package plainly-panel --package plainly-desktop"` **必须留在 `gui` 而不是 `guiArgs`**：crane 的 `buildDepsOnly` 会把它传进自己的 build，放共享 args 会悄悄把依赖构建也收窄。它只收窄 build 阶段（以及由此安装的产物），check 阶段仍测整个 workspace。
+- `autoPatchelfHook` 与 checkPhase 的 `LD_LIBRARY_PATH` 原样保留（01 的运行时回归修复），在 crane 的 install/fixup 流程里仍生效。
+- 最终 diff 上的实测（GC 清空 store 后的一次冷重建）：首次 `nix build .` **exit 0 / 330 s**（含重新生成两份 `fetchCargoVendor` staging、拉 fenix 组件、整 workspace 依赖三遍 + 34 个 test target）；同一棵树在热缓存下的首次是 **230 s**。改一行 `plainly-core/src/lib.rs` 后 `nix build .`：**exit 0 / 59 s**，只建 3 个派生（CLI、GUI、`symlinkJoin`），依赖输出 `0mh60dcz…` 前后不变。旧路径同场景 179–242 s，约 3–4×。
+- 产物：`result/bin` 三件齐全；`share/applications/dev.plainly.app.desktop` 在；两个 GUI 二进制都是 wrapper；RUNPATH 存在；`env -i ldd` 0 缺失；`env -i plainly-desktop --help` 到达参数处理；`.dep-v0` 两个 GUI 二进制均为 0。
+- `scripts/check-flake-packages.sh --no-build`：**exit 0** — "buildable, split and runnable"（`nix run` 两条、三件套、GUI `env -i` 启动与 `ldd`、CLI 闭包无图形库、两个闭包大小差异全过）。
+- 依赖产物：`plainly-desktop-deps-0.1.0` 磁盘 **423 MB**（nar 1.1 GiB），与原型 424 MB 一致。
+- Review：Standards 轴 1 条硬伤（`apps` 注释仍引用已删除的 `cargoBuildFlags`）+ 4 条判断项，全部采纳（`vendorDir` 收敛、去掉 no-op `env`、删重复解释、`apps` 注释改指 `cargoBuildExtraArgs`）。Spec 轴指出证据一度过期（Standards 改动 + GC 回收了测过的路径）、`makeWrapper`/`autoPatchelfHook` 仍在 `guiArgs` 里、库存文本把 `guiVendorDir` 与测试跳过写错——均已修，上面的数字是最终 diff 上重测的。Spec 还认为 `vendorDir` helper 触碰 02 的代码算 scope creep：这是为第二个使用点引入的共享 helper；提交时若想更保守，可把它拆成 03 之前的 prefactor commit。
