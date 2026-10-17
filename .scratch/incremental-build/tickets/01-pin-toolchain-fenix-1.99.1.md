@@ -6,18 +6,18 @@
 
 **Spec:** [spec.md](../../plainly/spec.md) §14 开发环境（原文写"工具链取 `fenix.complete`"；本票据把这一句改成 pinned release，并把 build 侧也纳入同一个工具链）。没有产品行为变化。
 
-**Status:** ready-for-agent
+**Status:** done (2026-10-17)
 
-- [ ] flake 里只有一个工具链定义：`fenix.packages.${system}.toolchainOf { channel = "1.99.1"; sha256 = "sha256-+xUr6Al1wZSqX8aEsq7DpuFOK4Ve/i+qTl+K5uWQ9GM="; }`。这个 sha256 是 1.99.1 的 channel manifest（`https://static.rust-lang.org/dist/channel-rust-1.99.1.toml`）的 SRI；写错时 Nix 会在报错里给出正确值。
-- [ ] dev shell 的四件工具 + 编辑器是同一 release：`nix develop -c rustc --version` = `1.99.1`、`cargo` = 1.99.1、`clippy` = 0.1.99、`rustfmt` = 1.99.1、`rust-analyzer` = 1.99.1。
-- [ ] 编辑器不再是 fenix 的 nightly analyzer：用同一工具链的 `rust-analyzer` 组件（`toolchainOf` 的 `rust-analyzer` 属性），组件集合里按需带 `rust-src`。
-- [ ] 两个包的构建平台来自同一个工具链：判据是 `nix build` 的派生输入里出现 fenix 的 `rust-1.99.1-…`，而不是 nixpkgs 的 `rustc-1.98.1`。
-- [ ] `Cargo.toml` 的 `rust-version` = `"1.99"`；flake 内 `cliManifest` 的同一字段同步（那份是手写的第二份真源，不跟着改就会漂移）。
-- [ ] `nix build .#plainly` 与 `nix build .` 通过；checkPhase 的测试照跑（这一条是 02/03 的前置证据，不是本票据的目标）。
-- [ ] 换工具链后 GUI 的 checkPhase 仍能跑 test binary：GUI 包的 `env` 里补 `LD_LIBRARY_PATH`（见下面"换工具链带来的一个坑"），日志里 34 个 test target 全绿。
-- [ ] 裸 stable runner 的 CI 仍绿：`rust-version = "1.99"` 要求 runner 的 stable ≥ 1.99，今天 latest stable 就是 1.99.1；push 前本地用 `nix develop -c cargo test -p plainly-core -p plainly-cli` 预演 CI 跑的那一对 crate。
-- [ ] flake 的注释改成新理由：fenix 不是"为了 nightly"，而是"把 Rust 版本钉在 nixpkgs 之外、并让 dev 与 build 共用一套"；`pkgs` 上的 fenix overlay 不再需要。
-- [ ] spec §14 更新；AGENTS.md 里"开发环境是 flake"那句不受影响，不用动。
+- [x] flake 里只有一个工具链定义：`fenix.packages.${system}.toolchainOf { channel = "1.99.1"; sha256 = "sha256-+xUr6Al1wZSqX8aEsq7DpuFOK4Ve/i+qTl+K5uWQ9GM="; }`。这个 sha256 是 1.99.1 的 channel manifest（`https://static.rust-lang.org/dist/channel-rust-1.99.1.toml`）的 SRI；写错时 Nix 会在报错里给出正确值。
+- [x] dev shell 的四件工具 + 编辑器是同一 release：`nix develop -c rustc --version` = `1.99.1`、`cargo` = 1.99.1、`clippy` = 0.1.99、`rustfmt` = 1.10.0-stable（rustfmt 有自己的版本号，来自同一 1.99.1 release）、`rust-analyzer` = 1.99.1。
+- [x] 编辑器不再是 fenix 的 nightly analyzer：用同一工具链的 `rust-analyzer` 组件（`toolchainOf` 的 `rust-analyzer` 属性），组件集合里按需带 `rust-src`。
+- [x] 两个包的构建平台来自同一个工具链：判据是 `nix build` 的派生输入里出现 fenix 的 `rust-1.99.1-…`，而不是 nixpkgs 的 `rustc-1.98.1`。
+- [x] `Cargo.toml` 的 `rust-version` = `"1.99"`；flake 内 `cliManifest` 的同一字段同步（那份是手写的第二份真源，不跟着改就会漂移）。
+- [x] `nix build .#plainly` 与 `nix build .` 通过；checkPhase 的测试照跑（这一条是 02/03 的前置证据，不是本票据的目标）。
+- [x] 换工具链后 GUI 的 checkPhase 仍能跑 test binary：GUI 包的 `env` 里补 `LD_LIBRARY_PATH`（见下面"换工具链带来的一个坑"），日志里 34 个 test target 全绿。
+- [x] 裸 stable runner 的 CI 仍绿：`rust-version = "1.99"` 要求 runner 的 stable ≥ 1.99，今天 latest stable 就是 1.99.1；本地已用 `nix develop -c cargo test -p plainly-core -p plainly-cli` 预演 CI 跑的那一对 crate 并通过（真正的那次 CI 要等第一次 push）。
+- [x] flake 的注释改成新理由：fenix 不是"为了 nightly"，而是"把 Rust 版本钉在 nixpkgs 之外、并让 dev 与 build 共用一套"；`pkgs` 上的 fenix overlay 不再需要。
+- [x] spec §14 更新；AGENTS.md 里"开发环境是 flake"那句不受影响，不用动。
 
 ## 为什么不是"两边都用 nixpkgs"
 
@@ -63,3 +63,14 @@ error while loading shared libraries: libgobject-2.0.so.0: cannot open shared ob
 - 第一次 `nix build .` 在 GUI checkPhase 失败：panel 的 test binary `libgobject-2.0.so.0: cannot open shared object file`（exit status 127），根因见上面「换工具链带来的一个坑」。
 - 给 GUI 包的 `env` 加 `LD_LIBRARY_PATH = guiLibPath` 后重跑：`nix build .` **exit 0 / 209 s**，GUI 派生日志 **34 条 `test result: ok`**，没有 `error while loading shared libraries`。
 - 注意：这里的 161 s / 209 s 是 1.99.1 下的数，与"现状 121 s / ~376 s"不是同一个编译器，只作量级参考；实现后要在真仓库上重测再更新。
+
+**2026-10-17 — 真仓库落地与验证（提交前）**
+
+- 改动面：`flake.nix`（工具链 pin 到 `toolchainOf`/`withComponents`、`makeRustPlatform`、两个包改走它、编辑器用同 release 的 `rust-analyzer`、去掉 fenix overlay、GUI `env` 加 `LD_LIBRARY_PATH`）、`Cargo.toml` 与 `cliManifest` 的 `rust-version`、spec §14、以及 CI 注释里过期的 `1.85` 引用。
+- dev shell：`rustc 1.99.1 (58cf8f9c3 2026-10-13)` / `cargo 1.99.1` / `clippy 0.1.99` / `rustfmt 1.10.0-stable` / `rust-analyzer 1.99.1 (58cf8f9 2026-10-13)`。
+- CI 等价：`nix develop -c cargo test -p plainly-core -p plainly-cli` **exit 0**，29 个 `test result: ok`。
+- `nix build .#plainly`：**exit 0 / 114 s**（1.99.1 下全量）；派生输入里是 fenix 的 `rust-1.99.1-with-std` 与 `cargo-1.99.1`，不是 nixpkgs 的 `rustc-1.98.1`。
+- `nix build .`：**exit 0 / 242 s**；GUI 派生日志 **34 条 `test result: ok`**，`libgobject` / `error while loading` 各 0 条。
+- 注意：`.scratch/` 下的文档也是 flake source 的一部分，所以改票本身会让 source 哈希变化、触发一次它自己的重建；这是 source 过滤的性质，不是本票要解决的问题。
+- Review：Standards 轴无硬违规，采纳了评论措辞修正（"same toolchain release"、`rustToolchain`/`shellComponents` 改名、overlay 的 why 注释）；Spec 轴确认代码项全部落地，只抓到 spec §14 把 `.#gui` 说成公开输出这一处措辞错误，已修。
+- 定稿树（含本票与 spec §14 的文档改动）再跑一次确认：`nix build .` **exit 0 / 205 s**，输出 `/nix/store/wrgr6rj88256lk0vcd7nwm7x67l4nn9s-plainly-0.1.0`，`bin/` 三件齐全（`plainly`、`plainly-desktop`、`plainly-panel`）；GUI 日志仍是 34 条 `test result: ok`、0 条加载错误。

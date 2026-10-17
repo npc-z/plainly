@@ -27,9 +27,9 @@ jobs:
 
       # The toolchain comes from the runner's image rather than from
       # `flake.nix`: pinning it here would be a second place to keep in step, and
-      # `rust-toolchain.toml` does not exist. The workspace's own
-      # `rust-version = "1.85"` is the floor, and `stable` is what the runner
-      # has; a build that needs nightly would fail here rather than later.
+      # `rust-toolchain.toml` does not exist. The workspace's own `rust-version`
+      # is the floor, and `stable` is what the runner has; a build that needs
+      # nightly would fail here rather than later.
       #
       # No `rustfmt` component and no format step: the formatter's output for
       # this revision differs between the toolchain the flake pins and the one

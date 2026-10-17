@@ -24,18 +24,44 @@
       let
         inherit (nixpkgs) lib;
 
-        pkgs = import nixpkgs {
-          inherit system;
-          overlays = [ fenix.overlays.default ];
+        # No fenix overlay: the toolchain is addressed through
+        # `fenix.packages.${system}` below, so `pkgs` stays nixpkgs' own.
+        pkgs = import nixpkgs { inherit system; };
+
+        # The Rust toolchain, pinned to one exact release rather than to whatever
+        # rustc nixpkgs happens to ship. `channel` is a release number from
+        # static.rust-lang.org and the sha256 is that release's channel manifest,
+        # so the compiler moves only when this file does — updating nixpkgs
+        # cannot change it. (The workspace's `rust-version` floor is a separate
+        # edit: `Cargo.toml` and the hand-synced `cliManifest` below. A wrong
+        # hash is reported by the fetch with the right one.)
+        rustToolchain = fenix.packages.${system}.toolchainOf {
+          channel = "1.99.1";
+          sha256 = "sha256-+xUr6Al1wZSqX8aEsq7DpuFOK4Ve/i+qTl+K5uWQ9GM=";
         };
 
-        toolchain = with pkgs.fenix.complete; [
-          cargo
-          clippy
-          rust-src
-          rustc
-          rustfmt
+        # The components the shell puts on PATH, cut from the toolchain above
+        # with `withComponents` (not `fenix.combine`, which is for mixing
+        # components from *different* toolchains). One release means rustc,
+        # cargo, clippy and rustfmt cannot disagree; `rust-src` is the standard
+        # library source the editor's analyzer reads.
+        shellComponents = rustToolchain.withComponents [
+          "cargo"
+          "clippy"
+          "rust-src"
+          "rustc"
+          "rustfmt"
         ];
+
+        # What the two packages build with. `makeRustPlatform` is nixpkgs' way of
+        # handing its `buildRustPackage` hooks a toolchain other than its own;
+        # only `cargo` and `rustc` are needed here, and both come from the same
+        # 1.99.1 release as the shell's components, so a `cargo build` in
+        # `nix develop` and a `nix build` compile with the same rustc.
+        rustPlatform = pkgs.makeRustPlatform {
+          cargo = rustToolchain.cargo;
+          rustc = rustToolchain.rustc;
+        };
 
         # Tools for whoever is working on the code: the frontend's package
         # manager, a C toolchain for linking, and the odds and ends the tickets
@@ -70,12 +96,13 @@
         # The editor's view of the code. Not needed to build or run anything,
         # but the alternative is every developer pointing their editor at a
         # rust-analyzer of their own, which may disagree with the toolchain above
-        # and report errors the compiler does not have. Taken from fenix, not
-        # nixpkgs, so both speak the same nightly — which also makes it a separate
-        # few hundred megabytes. So it is never implied: a shell that wants it
-        # says `editors = true` (see `mkPlainlyShell` below), and no future shell
-        # inherits the download by accident.
-        rustAnalyzer = fenix.packages.${system}.rust-analyzer;
+        # and report errors the compiler does not have. This is the analyzer
+        # component of the same 1.99.1 release, not fenix's nightly analyzer, so
+        # the editor parses the same language the compiler accepts. It is still
+        # a separate few hundred megabytes, so it is never implied: a shell that
+        # wants it says `editors = true` (see `mkPlainlyShell` below), and no
+        # future shell inherits the download by accident.
+        rustAnalyzer = rustToolchain.rust-analyzer;
 
         # `glib` is here because `LD_LIBRARY_PATH` is built from this list alone,
         # and it is not transitive: gtk3's own lib dir is on the path, but the
@@ -112,7 +139,7 @@
             nativeBuildInputs = devTools
               ++ lib.optionals editors [ rustAnalyzer ]
               ++ extraTools
-              ++ [ (pkgs.fenix.combine toolchain) ];
+              ++ [ shellComponents ];
             buildInputs = libraries;
 
             env = {
@@ -186,7 +213,7 @@
           [workspace.package]
           version = "0.1.0"
           edition = "2024"
-          rust-version = "1.85"
+          rust-version = "1.99"
           license = "MIT"
 
           [workspace.dependencies]
@@ -2517,7 +2544,7 @@
         # no graphics libraries something to substitute or fail on, which is the
         # opposite of what this package is for. The list is three tools long on
         # purpose; adding one is a decision, not an accident.
-        plainly = pkgs.rustPlatform.buildRustPackage (common // {
+        plainly = rustPlatform.buildRustPackage (common // {
           pname = "plainly";
           src = cliSource;
           cargoDeps = cliCargoDeps;
@@ -2531,7 +2558,7 @@
 
         # The whole application: the panel a compositor's key binding spawns, the
         # main window, and the CLI, plus what a desktop needs to find them.
-        gui = pkgs.rustPlatform.buildRustPackage (common // {
+        gui = rustPlatform.buildRustPackage (common // {
           pname = "plainly-desktop";
           src = wholeSource;
           cargoDeps = guiCargoDeps;
@@ -2547,7 +2574,18 @@
           # green check here does **not** cover that test: only a run with a
           # display does. (Merged rather than assigned: `//` is shallow, so a
           # bare `env` here would drop `common.env`'s `LIBCLANG_PATH`.)
-          env = common.env // { PLAINLY_TEST_NO_DISPLAY = "1"; };
+          #
+          # The runtime library path is the other half of running tests here.
+          # This package builds with fenix's rustc, which — unlike nixpkgs' —
+          # is not built with `--enable-rpath`, so a check-phase test binary
+          # that links GTK does not carry its libraries' paths and dies with
+          # "libgobject-2.0.so.0: cannot open shared object file" (exit 127).
+          # This path is for *running* tests inside the sandbox only; the
+          # installed binaries get theirs from the `postFixup` wrappers below.
+          env = common.env // {
+            PLAINLY_TEST_NO_DISPLAY = "1";
+            LD_LIBRARY_PATH = guiLibPath;
+          };
           # Only the two GUI packages are built here. The command line it would
           # otherwise also produce is a *second* build of the same crate, so
           # `default` takes `plainly` below instead: one artifact, and the two
