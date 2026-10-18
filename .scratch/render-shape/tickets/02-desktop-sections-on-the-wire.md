@@ -6,12 +6,20 @@
 
 **Spec:** [spec.md](../spec.md) §Implementation Decisions §4、§6
 
-**Status:** ready-for-agent
+**Status:** done (2026-10-18)
 
-- [ ] `SectionView` / `SectionBodyView` / `GlossView` 在 `view.rs`，core 的 render 类型仍无 serde；`DetailView` 有 `sections`。
-- [ ] sections 由 `render::sections` + `EmptyNotes` 生成：五节顺序来自 core，空 Grammar / Key Help 的文案来自 `strings.rs`，kind 五值正确。
-- [ ] `example` 是 `Option<String>`：空 / 纯空白 → `null`，前后空白 → trim 后的句子；JS 此刻仍读旧的扁平字段，所以两种表示暂时并存、不冲突。
-- [ ] `DetailView.markdown` 仍等于 `render::markdown(record)`（文档政策不变，空节仍省略）。
-- [ ] `window.rs` 的 detail 测试新增 sections 断言：kind 顺序（original → comprehensible-english → key-help → grammar → translation）、空节 `Note` 文本、`example` 的 `Some` / `None`。
-- [ ] 新增 `serde_json::to_value(&detail)` 契约测试：`sections[].body.type` 为 `prose` / `note` / `glosses`，`example: null`，字段名 snake_case，kind 拼写固定。
-- [ ] `nix develop -c cargo test -p plainly-desktop`、`cargo clippy -p plainly-desktop --all-targets` 全绿；`ui/app.js` 与 `style.css` 未改。
+- [x] `SectionView` / `SectionBodyView` / `GlossView` 在 `view.rs`，core 的 render 类型仍无 serde；`DetailView` 有 `sections`。
+- [x] sections 由 `render::sections` + `EmptyNotes` 生成：五节顺序来自 core，空 Grammar / Key Help 的文案来自 `strings.rs`，kind 五值正确。
+- [x] `example` 是 `Option<String>`：空 / 纯空白 → `null`，前后空白 → trim 后的句子；JS 此刻仍读旧的扁平字段，所以两种表示暂时并存、不冲突。
+- [x] `DetailView.markdown` 仍等于 `render::markdown(record)`（文档政策不变，空节仍省略）。
+- [x] `window.rs` 的 detail 测试新增 sections 断言：kind 顺序（original → comprehensible-english → key-help → grammar → translation）、空节 `Note` 文本、`example` 的 `Some` / `None`。
+- [x] 新增 `serde_json::to_value(&detail)` 契约测试：`sections[].body.type` 为 `prose` / `note` / `glosses`，`example: null`，字段名 snake_case，kind 拼写固定。
+- [x] `nix develop -c cargo test -p plainly-desktop`、`cargo clippy -p plainly-desktop --all-targets` 全绿；`ui/app.js` 与 `style.css` 未改。
+
+## Comments
+
+实现：`view.rs` 新增 `SectionView` / `SectionBodyView`（adjacent `type` tag，snake_case）与 `GlossView.example: Option<String>`；`DetailView.sections` 由 `render::sections` + 桌面 `strings.rs` 的两句空节文案生成；title / kind 的映射在 `view.rs`。扁平字段按计划先保留，供 03 之前的模板继续使用。
+
+偏差（1 行）：扁平 `glosses[].example` 改成 `Option` 后，`app.js` 的旧卡片判断从 `gloss.example.trim()` 改为 `gloss.example`，否则 02 与 03 之间界面会坏；03 会整体替换这段模板。
+
+验证：`cargo test -p plainly-desktop` 32 passed（新增 sections 断言、`serde_json` wire 契约、`example: null` 用例）；`cargo clippy -p plainly-desktop --all-targets` 无新增警告。

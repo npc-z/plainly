@@ -17,10 +17,13 @@ mod support;
 use std::ffi::OsString;
 use std::os::unix::ffi::OsStringExt;
 
-use plainly_core::{ExportFormat, Level, PanelCorner, Prompt, Secrets, Thinking, Timestamp};
+use plainly_core::{
+    Explanation, ExportFormat, Level, PanelCorner, Prompt, Secrets, Thinking, Timestamp,
+};
 use plainly_desktop::WindowError;
 use plainly_desktop::app::{Clock, Desktop, Screen, SettingsPatch};
 use plainly_desktop::settings::availability;
+use plainly_desktop::view::{DetailView, SectionBodyView};
 
 use support::{BrokenKeyring, TempDir, artifact, desktop_with_wayland};
 
@@ -49,26 +52,42 @@ fn window(dir: &TempDir, records: &[(i64, &str)]) -> Desktop {
 /// The pairs are `(provider, key)`, and the variable name is derived the way the
 /// application derives it, so a test cannot pass by spelling one wrong.
 fn window_with_env(dir: &TempDir, records: &[(i64, &str)], keys: &[(&str, &str)]) -> Desktop {
-    window_with_secrets(
-        dir,
-        records,
-        Secrets::with_stores(
-            plainly_core::EnvSecrets::from_pairs(
-                keys.iter()
-                    .map(|(provider, key)| (plainly_core::env_var_name(provider), *key)),
-            ),
-            None,
+    window_with_secrets(dir, records, secrets_with(keys))
+}
+
+/// Environment keys as a [`Secrets`] value, with each variable name derived the
+/// way the application derives it, so a test cannot pass by spelling one wrong.
+fn secrets_with(keys: &[(&str, &str)]) -> Secrets {
+    Secrets::with_stores(
+        plainly_core::EnvSecrets::from_pairs(
+            keys.iter()
+                .map(|(provider, key)| (plainly_core::env_var_name(provider), *key)),
         ),
+        None,
     )
 }
 
 /// The same, with every secret tier supplied rather than built from strings:
 /// what a test needs to hand over a store that will not answer.
 fn window_with_secrets(dir: &TempDir, records: &[(i64, &str)], secrets: Secrets) -> Desktop {
+    let artifacts: Vec<_> = records
+        .iter()
+        .map(|(seconds, passage)| artifact(*seconds, passage))
+        .collect();
+    window_with_artifacts(dir, &artifacts, secrets)
+}
+
+/// The same, with the Artifacts supplied whole: a test that needs an absent
+/// Example or a modified Explanation writes it here rather than through the
+/// fixed fixture.
+fn window_with_artifacts(
+    dir: &TempDir,
+    artifacts: &[plainly_core::Artifact],
+    secrets: Secrets,
+) -> Desktop {
     let paths = dir.paths();
     let mut store = plainly_core::Store::open(paths.history_file()).expect("the store opens");
-    for (seconds, passage) in records {
-        let artifact = artifact(*seconds, passage);
+    for artifact in artifacts {
         let lookup = plainly_core::Lookup {
             passage: &artifact.passage,
             level: artifact.level,
@@ -80,7 +99,7 @@ fn window_with_secrets(dir: &TempDir, records: &[(i64, &str)], secrets: Secrets)
             thinking: artifact.thinking,
         };
         store
-            .remember(&lookup.key(), &artifact)
+            .remember(&lookup.key(), artifact)
             .expect("the fixture record is written");
     }
     drop(store);
@@ -88,6 +107,12 @@ fn window_with_secrets(dir: &TempDir, records: &[(i64, &str)], secrets: Secrets)
     Desktop::open_at(paths, desktop_with_wayland(), Box::new(FixedClock(NOW)))
         .expect("the window opens")
         .with_secrets(secrets)
+}
+
+/// The key `window` puts in the environment, as a [`Secrets`] value for the
+/// tests that build their own Artifacts.
+fn test_secrets() -> Secrets {
+    secrets_with(&[("deepseek", "sk-test")])
 }
 
 /// The same, with a configuration file written before the window opens.
@@ -227,6 +252,52 @@ fn a_search_covers_the_english_fields_and_a_tag_narrows_it() {
     assert!(chinese.records.is_empty());
 }
 
+/// The Passage and Explanation a detail's sections carry.
+///
+/// The detail no longer holds the Explanation as five flat fields (ticket 03);
+/// this reads it back through the section list, so the markdown comparison still
+/// checks the product rather than restating an internal shape.
+fn explanation_of(detail: &DetailView) -> (String, Explanation) {
+    let mut passage = String::new();
+    let mut comprehensible = String::new();
+    let mut glosses = Vec::new();
+    let mut grammar = None;
+    let mut translation = String::new();
+
+    for section in &detail.sections {
+        match (section.kind, &section.body) {
+            ("original", SectionBodyView::Prose { text }) => passage = text.clone(),
+            ("comprehensible-english", SectionBodyView::Prose { text }) => {
+                comprehensible = text.clone();
+            }
+            ("key-help", SectionBodyView::Glosses { glosses: views }) => {
+                glosses = views
+                    .iter()
+                    .map(|gloss| plainly_core::Gloss {
+                        expression: gloss.expression.clone(),
+                        gloss: gloss.gloss.clone(),
+                        example: gloss.example.clone().unwrap_or_default(),
+                    })
+                    .collect();
+            }
+            ("grammar", SectionBodyView::Prose { text }) => grammar = Some(text.clone()),
+            ("grammar", SectionBodyView::Note { .. }) => {}
+            ("translation", SectionBodyView::Prose { text }) => translation = text.clone(),
+            (kind, body) => panic!("unexpected section {kind} with {body:?}"),
+        }
+    }
+
+    (
+        passage,
+        Explanation {
+            comprehensible,
+            glosses,
+            grammar,
+            translation,
+        },
+    )
+}
+
 #[test]
 fn the_detail_carries_the_five_sections_and_the_markdown_export_of_one_record() {
     let dir = TempDir::new("window-detail");
@@ -238,18 +309,36 @@ fn the_detail_carries_the_five_sections_and_the_markdown_export_of_one_record() 
 
     let detail = desktop.show(id).expect("the record is there");
 
+    let (passage, explanation) = explanation_of(&detail);
+    assert_eq!(passage, "The report stops short of apportioning blame.");
+    assert!(!explanation.comprehensible.is_empty());
+    assert!(!explanation.glosses.is_empty());
     assert_eq!(
-        detail.passage,
-        "The report stops short of apportioning blame."
+        explanation.glosses[0].example,
+        "The manager went to ground when the reporters arrived.",
+        "the card's third line has something to draw, and it is the trimmed sentence"
     );
-    assert!(!detail.comprehensible.is_empty());
-    assert!(!detail.glosses.is_empty());
-    assert!(
-        !detail.glosses[0].example.is_empty(),
-        "the card's third line has something to draw"
-    );
+    let kinds: Vec<&str> = detail.sections.iter().map(|section| section.kind).collect();
     assert_eq!(
-        detail.translation,
+        kinds,
+        [
+            "original",
+            "comprehensible-english",
+            "key-help",
+            "grammar",
+            "translation",
+        ],
+        "the card draws core's sections, in core's order"
+    );
+    assert_eq!(detail.sections[0].title, "原文");
+    match &detail.sections[3].body {
+        plainly_desktop::view::SectionBodyView::Note { text } => {
+            assert_eq!(text, "本段不需要", "an empty Grammar is said, not hidden");
+        }
+        other => panic!("expected the empty-section note, got {other:?}"),
+    }
+    assert_eq!(
+        explanation.translation,
         "委员会对此事进行了彻底调查，但那位经理已经躲了起来。"
     );
     assert_eq!(detail.level, "B2");
@@ -262,23 +351,7 @@ fn the_detail_carries_the_five_sections_and_the_markdown_export_of_one_record() 
     assert_eq!(detail.last_seen_unix, NOW);
     assert_eq!(
         detail.markdown,
-        plainly_core::render::markdown(
-            &detail.passage,
-            &plainly_core::Explanation {
-                comprehensible: detail.comprehensible.clone(),
-                glosses: detail
-                    .glosses
-                    .iter()
-                    .map(|gloss| plainly_core::Gloss {
-                        expression: gloss.expression.clone(),
-                        gloss: gloss.gloss.clone(),
-                        example: gloss.example.clone(),
-                    })
-                    .collect(),
-                grammar: detail.grammar.clone(),
-                translation: detail.translation.clone(),
-            }
-        ),
+        plainly_core::render::markdown(&passage, &explanation),
         "the detail's markdown is the one renderer's, not a second rendering"
     );
     // The five sections, in the renderer's own markdown, with the Original
@@ -290,6 +363,113 @@ fn the_detail_carries_the_five_sections_and_the_markdown_export_of_one_record() 
     assert!(
         !detail.markdown.contains("### Grammar"),
         "a Grammar note the model did not give is absent from a document, not labelled"
+    );
+}
+
+#[test]
+fn the_detail_wire_carries_the_sections_core_renders() {
+    // The frontend renders this array; nothing in it is the frontend's decision
+    // (ADR-0005). The JSON is the contract between the two halves of the window,
+    // so it is pinned here rather than by reading the template.
+    let dir = TempDir::new("window-wire");
+    let desktop = window(&dir, &[(NOW, "A passage.")]);
+    let id = desktop.history().expect("the history reads").records[0].id;
+    let detail = desktop.show(id).expect("the record is there");
+
+    let wire = serde_json::to_value(&detail).expect("the detail serialises");
+
+    assert_eq!(wire["sections"][0]["kind"], "original");
+    assert_eq!(wire["sections"][0]["title"], "原文");
+    assert_eq!(wire["sections"][0]["body"]["type"], "prose");
+    assert_eq!(wire["sections"][0]["body"]["text"], "A passage.");
+    assert_eq!(wire["sections"][2]["body"]["type"], "glosses");
+    assert_eq!(
+        wire["sections"][2]["body"]["glosses"][0]["expression"],
+        "go to ground"
+    );
+    assert_eq!(
+        wire["sections"][2]["body"]["glosses"][0]["example"],
+        "The manager went to ground when the reporters arrived."
+    );
+    assert_eq!(wire["sections"][3]["body"]["type"], "note");
+    assert_eq!(wire["sections"][3]["body"]["text"], "本段不需要");
+    assert_eq!(wire["sections"][4]["body"]["type"], "prose");
+    for flat in [
+        "passage",
+        "comprehensible",
+        "glosses",
+        "grammar",
+        "translation",
+    ] {
+        assert!(
+            wire.get(flat).is_none(),
+            "{flat} is not a second copy of the Explanation on the wire"
+        );
+    }
+    assert!(
+        wire["markdown"]
+            .as_str()
+            .is_some_and(|markdown| markdown.starts_with("### Original")),
+        "the document the copy and export actions use still rides along"
+    );
+
+    // The stylesheet and the wire share the section names: a kind the wire sends
+    // has to have materials, so the pairing is asserted rather than left to
+    // whoever renames one side. Key Help is not here — its parts carry the
+    // `.gl` styling, not the section.
+    let css = include_str!("../ui/style.css");
+    for kind in [
+        "original",
+        "comprehensible-english",
+        "grammar",
+        "translation",
+    ] {
+        assert!(
+            css.contains(&format!("data-kind=\"{kind}\"")),
+            "style.css has no material for section kind {kind}"
+        );
+    }
+}
+
+#[test]
+fn a_gloss_without_an_example_is_null_on_the_wire() {
+    // Whitespace-only and empty mean the same picture: no Example line. The wire
+    // says so with null, so the frontend never trims a string to find out.
+    let dir = TempDir::new("window-wire-absent");
+    let mut artifact = artifact(NOW, "A passage.");
+    artifact.explanation.glosses[0].example = "   ".to_string();
+    let desktop = window_with_artifacts(&dir, &[artifact], test_secrets());
+    let id = desktop.history().expect("the history reads").records[0].id;
+    let detail = desktop.show(id).expect("the record is there");
+
+    let wire = serde_json::to_value(&detail).expect("the detail serialises");
+
+    assert_eq!(
+        wire["sections"][2]["body"]["glosses"][0]["example"],
+        serde_json::Value::Null
+    );
+    match &detail.sections[2].body {
+        SectionBodyView::Glosses { glosses } => assert_eq!(glosses[0].example, None),
+        other => panic!("expected the Key Help's Glosses, got {other:?}"),
+    }
+}
+
+#[test]
+fn the_detail_wire_trims_the_example_it_carries() {
+    // The Example's text is settled with its presence (ADR-0005): a model that
+    // padded the sentence does not make the card draw the padding.
+    let dir = TempDir::new("window-wire-trim");
+    let mut artifact = artifact(NOW, "A passage.");
+    artifact.explanation.glosses[0].example = "  The manager went to ground.  ".to_string();
+    let desktop = window_with_artifacts(&dir, &[artifact], test_secrets());
+    let id = desktop.history().expect("the history reads").records[0].id;
+    let detail = desktop.show(id).expect("the record is there");
+
+    let wire = serde_json::to_value(&detail).expect("the detail serialises");
+
+    assert_eq!(
+        wire["sections"][2]["body"]["glosses"][0]["example"],
+        "The manager went to ground."
     );
 }
 

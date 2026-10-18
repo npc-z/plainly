@@ -3,9 +3,9 @@
 //! Two jobs with one rule between them. [`sections`] is the only filter of
 //! `app.show_*` in the crate, and it is what the body draws from; [`markdown`] is
 //! the same list rendered as text for 复制. Both go through
-//! [`plainly_core::render::panel`] — the section list, the order, and the two
+//! [`plainly_core::render::sections`] — the section list, the order, and the two
 //! "nothing here" sentences are the renderer's, and a second renderer in the panel
-//! would be a second set of rules to keep in step (tickets/15).
+//! would be a second set of rules to keep in step (tickets/15, ADR-0005).
 //!
 //! They live together because they must agree: 复制 copies what is on screen, and
 //! the surest way for two renderings to disagree is for them to be built in two
@@ -26,7 +26,7 @@ use crate::strings;
 /// `app.show_*` has to mean something here for the settings screen to be telling
 /// the truth about it (tickets/09 wrote the switches; tickets/15 made them work).
 /// The empty-key-help decision is core's and is reached through
-/// [`plainly_core::render::panel`]; this only removes what the person switched
+/// [`plainly_core::render::sections`]; this only removes what the person switched
 /// off, so there is still exactly one renderer.
 ///
 /// It lives in this module rather than beside the panel's state because both
@@ -34,11 +34,13 @@ use crate::strings;
 /// clipboard — and a leaf module is what keeps "the copy shows what the panel
 /// shows" from becoming a cycle between the two.
 pub fn sections(artifact: &Artifact, prefs: &Prefs) -> Vec<render::Section> {
-    render::panel(
+    render::sections(
         &artifact.passage,
         &artifact.explanation,
-        strings::GRAMMAR_NOT_NEEDED,
-        strings::KEY_HELP_NOT_NEEDED,
+        &render::EmptyNotes {
+            grammar: Some(strings::GRAMMAR_NOT_NEEDED),
+            key_help: Some(strings::KEY_HELP_NOT_NEEDED),
+        },
     )
     .into_iter()
     .filter(|section| prefs.shows(section.kind))

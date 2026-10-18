@@ -11,6 +11,7 @@
 
 use serde::Serialize;
 
+use crate::strings::STRINGS;
 use plainly_core::export;
 use plainly_core::render;
 use plainly_core::{Config, Record, Timestamp, local_of};
@@ -82,19 +83,13 @@ impl RecordView {
 
 /// One Record, in full: the detail pane's content, and the input to its two
 /// export actions.
+///
+/// The Explanation arrives as [`SectionView`]s, not as five flat fields: the
+/// card renders the list it is given, so presentation and copy stay with the
+/// surface while the section rules stay in core (ADR-0005).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct DetailView {
     pub id: i64,
-    /// The Passage verbatim, never the normalized form (spec §9): it is the
-    /// authority the learner checks the Explanation against.
-    pub passage: String,
-    pub comprehensible: String,
-    pub glosses: Vec<GlossView>,
-    /// The structural note, absent when the model found nothing structural to
-    /// say — which the detail shows as "本段不需要" rather than by hiding the
-    /// section (spec §4).
-    pub grammar: Option<String>,
-    pub translation: String,
     pub level: String,
     pub source_language: String,
     pub native_language: String,
@@ -113,6 +108,10 @@ pub struct DetailView {
     pub last_seen_unix: i64,
     pub local: bool,
     pub tags: Vec<String>,
+    /// The card's content as the section list core renders: the order, the
+    /// empty-section policy and every Gloss's settled shape come from there, so
+    /// the window draws values instead of re-deriving them (ADR-0005).
+    pub sections: Vec<SectionView>,
     /// The whole Record as the five-section markdown document, which is what
     /// "复制 markdown" puts on the clipboard and what "导出这一条" writes.
     ///
@@ -131,19 +130,6 @@ impl DetailView {
 
         Self {
             id: record.id,
-            passage: artifact.passage.clone(),
-            comprehensible: explanation.comprehensible.clone(),
-            glosses: explanation
-                .glosses
-                .iter()
-                .map(|gloss| GlossView {
-                    expression: gloss.expression.clone(),
-                    gloss: gloss.gloss.clone(),
-                    example: gloss.example.clone(),
-                })
-                .collect(),
-            grammar: explanation.grammar.clone(),
-            translation: explanation.translation.clone(),
             level: artifact.level.to_string(),
             source_language: artifact.source_language.clone(),
             native_language: artifact.native_language.clone(),
@@ -160,22 +146,107 @@ impl DetailView {
             last_seen_unix: record.last_seen.unix_seconds(),
             local: local_of(&artifact.provider, config),
             tags: record.tags.clone(),
+            sections: render::sections(
+                &artifact.passage,
+                explanation,
+                &render::EmptyNotes {
+                    grammar: Some(STRINGS.grammar_not_needed),
+                    key_help: Some(STRINGS.glosses_empty),
+                },
+            )
+            .into_iter()
+            .map(section_view)
+            .collect(),
             markdown: render::markdown(&artifact.passage, explanation),
         }
     }
 }
 
-/// One Gloss, as the detail lists it: the expression, its explanation, and the
-/// Example under them.
+/// One section of the detail card, as the window draws it.
+///
+/// `kind` is the section's identity for the stylesheet (`data-kind`), `title` is
+/// the interface copy, and `body` says which of the three drawings the section
+/// wants. The list this comes in is core's order: the frontend renders the array
+/// it is handed and decides none of those things (ADR-0005).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SectionView {
+    pub kind: &'static str,
+    pub title: &'static str,
+    pub body: SectionBodyView,
+}
+
+/// A section's body, in the terms the window's template draws it in.
+///
+/// Internally tagged for the wire: `{ "type": "prose", "text": … }`,
+/// `{ "type": "note", "text": … }` and `{ "type": "glosses", "glosses": […] }`.
+/// `Note` is the sentence a surface says where the model left a section empty —
+/// not the Explanation talking — which is what lets the card keep its quieter
+/// material for it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum SectionBodyView {
+    Prose { text: String },
+    Note { text: String },
+    Glosses { glosses: Vec<GlossView> },
+}
+
+/// One Gloss, as the wire carries it: the expression, its explanation, and the
+/// Example only when there is one.
+///
+/// The presence and the text are core's decision ([`plainly_core::render::GlossView`]);
+/// this type exists because the wire is the desktop crate's contract and core's
+/// render types stay free of serde (ADR-0005).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct GlossView {
     pub expression: String,
     pub gloss: String,
-    /// Empty for a Record generated before Examples existed (ADR 0002) — and for
-    /// one whose model left the Example empty. The frontend draws an example line
-    /// only when there is one, which is why this is a plain string rather than an
-    /// `Option`: "no line" is the same picture either way.
-    pub example: String,
+    /// `null` for a Record generated before Examples existed (ADR 0002), for one
+    /// whose model left the Example empty, and for one that answered only
+    /// whitespace; otherwise the trimmed sentence.
+    pub example: Option<String>,
+}
+
+impl From<render::GlossView> for GlossView {
+    fn from(gloss: render::GlossView) -> Self {
+        Self {
+            expression: gloss.expression,
+            gloss: gloss.gloss,
+            example: gloss.example,
+        }
+    }
+}
+
+/// One core section as the wire form, with the window's own title attached.
+fn section_view(section: render::Section) -> SectionView {
+    let (kind, title) = section_identity(section.kind);
+    SectionView {
+        kind,
+        title,
+        body: match section.body {
+            render::Body::Prose(text) => SectionBodyView::Prose { text },
+            render::Body::Note(text) => SectionBodyView::Note { text },
+            render::Body::Glosses(glosses) => SectionBodyView::Glosses {
+                glosses: glosses.into_iter().map(GlossView::from).collect(),
+            },
+        },
+    }
+}
+
+/// The two names a section needs on the wire: its identity for the stylesheet
+/// (and the wire test) and its heading in the interface's own copy.
+///
+/// One table rather than two matches, because a new section has to appear in
+/// both and a forgotten arm should fail where the section is built.
+fn section_identity(kind: render::SectionKind) -> (&'static str, &'static str) {
+    match kind {
+        render::SectionKind::Original => ("original", STRINGS.detail_original),
+        render::SectionKind::ComprehensibleEnglish => {
+            ("comprehensible-english", STRINGS.detail_comprehensible)
+        }
+        render::SectionKind::KeyHelp => ("key-help", STRINGS.detail_glosses),
+        render::SectionKind::Grammar => ("grammar", STRINGS.detail_grammar),
+        render::SectionKind::Translation => ("translation", STRINGS.detail_translation),
+    }
 }
 
 /// Where an export was written.

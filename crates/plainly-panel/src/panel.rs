@@ -25,8 +25,7 @@ use gtk::{gdk, glib};
 use gtk_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
 use plainly_core::clipboard::Clipboard;
 use plainly_core::desktop::Presentation;
-use plainly_core::render::{Body, SectionKind};
-use plainly_core::Gloss;
+use plainly_core::render::{Body, GlossView, SectionKind};
 
 use crate::position::Anchors;
 use crate::prefs::Prefs;
@@ -1408,13 +1407,16 @@ fn heading(text: &str) -> gtk::Label {
 /// asked to display it has nothing else to print.
 fn body_widget(body: &Body) -> gtk::Widget {
     match body {
-        Body::Prose(text) => body_label(text).upcast(),
+        // A surface read in place gives the empty-section sentences a quieter
+        // material than prose where it can; a plain label is what the panel has
+        // always given them, and the type at least lets it tell the two apart.
+        Body::Prose(text) | Body::Note(text) => body_label(text).upcast(),
         Body::Glosses(glosses) => glosses_widget(glosses).upcast(),
     }
 }
 
 /// The Key Help: one block per Gloss, spaced so two of them do not read as one.
-fn glosses_widget(glosses: &[Gloss]) -> gtk::Widget {
+fn glosses_widget(glosses: &[GlossView]) -> gtk::Widget {
     let list = gtk::Box::new(gtk::Orientation::Vertical, GLOSS_GAP);
     list.set_halign(gtk::Align::Fill);
 
@@ -1427,7 +1429,7 @@ fn glosses_widget(glosses: &[Gloss]) -> gtk::Widget {
 
 /// One Gloss: the expression in a chip, its meaning under it, and its Example
 /// under a rule of its own.
-fn gloss_widget(gloss: &Gloss) -> gtk::Widget {
+fn gloss_widget(gloss: &GlossView) -> gtk::Widget {
     let block = gtk::Box::new(gtk::Orientation::Vertical, GLOSS_PART_GAP);
 
     // The expression is quoted from the Passage, so it keeps the document's
@@ -1447,8 +1449,8 @@ fn gloss_widget(gloss: &Gloss) -> gtk::Widget {
     // The meaning is the answer, so it is the panel's ordinary body text.
     block.pack_start(&body_label(&gloss.gloss), false, false, 0);
 
-    if !gloss.example.trim().is_empty() {
-        block.pack_start(&example_widget(&gloss.example), false, false, 0);
+    if let Some(example) = &gloss.example {
+        block.pack_start(&example_widget(example), false, false, 0);
     }
 
     block.upcast()
@@ -1485,6 +1487,7 @@ fn body_label(text: &str) -> gtk::Label {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use plainly_core::Gloss;
 
     /// Every label in a widget tree, in the order the tree is walked.
     fn labels(widget: &gtk::Widget, found: &mut Vec<String>) {
@@ -1550,7 +1553,7 @@ mod tests {
             .load_from_data(css::CSS.as_bytes())
             .expect("the panel's stylesheet parses: a typo would silently drop the panel's look");
 
-        let glosses = vec![
+        let glosses: Vec<GlossView> = [
             Gloss {
                 expression: "go to ground".to_string(),
                 gloss: "hide so that nobody can find you".to_string(),
@@ -1562,7 +1565,17 @@ mod tests {
                 gloss: "the situation being discussed".to_string(),
                 example: String::new(),
             },
-        ];
+            // A model that answered only whitespace has written no Example: the
+            // rule is "no Example, no Example line", so this is two parts too.
+            Gloss {
+                expression: "bottle it".to_string(),
+                gloss: "lose your nerve".to_string(),
+                example: "   ".to_string(),
+            },
+        ]
+        .iter()
+        .map(GlossView::of)
+        .collect();
 
         let mut found = Vec::new();
         labels(&glosses_widget(&glosses), &mut found);
@@ -1575,6 +1588,8 @@ mod tests {
                 "The manager went to ground.",
                 "the matter",
                 "the situation being discussed",
+                "bottle it",
+                "lose your nerve",
             ],
             "three parts per Gloss and no markup; a Gloss without an Example is two"
         );

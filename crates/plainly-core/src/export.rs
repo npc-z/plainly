@@ -144,15 +144,18 @@ pub fn raw_csv(records: &[Record]) -> String {
 /// The same three lines the document and the card draw, and deliberately without
 /// the document's block quote around the Example: a spreadsheet cell is not a
 /// document (see [`plainly_core::render`]), and a `>` in a data cell is noise. A
-/// Gloss stored before Examples existed (ADR 0002) is two lines.
+/// Gloss with no Example — an old Record, or a model that left the field blank
+/// (ADR 0002) — is two lines. The Example's presence and text are settled by
+/// [`render::GlossView::of`], the same value the document and the card draw.
 fn glosses_text(explanation: &Explanation) -> String {
     explanation
         .glosses
         .iter()
+        .map(render::GlossView::of)
         .map(|gloss| {
             let mut block = format!("{}\n  {}", gloss.expression, gloss.gloss);
-            if !gloss.example.trim().is_empty() {
-                block.push_str(&format!("\n  {}", gloss.example));
+            if let Some(example) = &gloss.example {
+                block.push_str(&format!("\n  {example}"));
             }
             block
         })

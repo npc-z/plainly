@@ -9,7 +9,18 @@ use plainly_core::{Body, Explanation, SectionKind, render};
 fn prose(body: &Body) -> &str {
     match body {
         Body::Prose(text) => text,
+        Body::Note(text) => panic!("expected prose, got the empty-section note {text:?}"),
         Body::Glosses(glosses) => panic!("expected prose, got {} Glosses", glosses.len()),
+    }
+}
+
+/// The sentence a surface says where a section is empty, for the tests that are
+/// about the empty-section policy rather than about the model's text.
+fn note(body: &Body) -> &str {
+    match body {
+        Body::Note(text) => text,
+        Body::Prose(text) => panic!("expected a note, got prose {text:?}"),
+        Body::Glosses(glosses) => panic!("expected a note, got {} Glosses", glosses.len()),
     }
 }
 
@@ -22,6 +33,19 @@ const NOT_NEEDED: &str = "本段不需要";
 /// Grammar one: two empty sections saying the same thing would make one of them
 /// look like the other's mistake (tickets/15).
 const NO_GLOSSES: &str = "本段没有需要解释的表达";
+
+/// The sections a surface read in place asks for: every section, with the two
+/// empty ones said in this test's own words.
+fn sections_with_notes(passage: &str, explanation: &Explanation) -> Vec<render::Section> {
+    render::sections(
+        passage,
+        explanation,
+        &render::EmptyNotes {
+            grammar: Some(NOT_NEEDED),
+            key_help: Some(NO_GLOSSES),
+        },
+    )
+}
 
 /// The prototype's common example, parsed through the contract so the fixture
 /// and the renderer cannot drift apart.
@@ -161,7 +185,7 @@ fn the_document_omits_a_grammar_section_there_is_none_of() {
 
 #[test]
 fn the_panel_keeps_the_grammar_section_and_says_it_is_not_needed() {
-    let sections = render::panel(support::PASSAGE, &common(), NOT_NEEDED, NO_GLOSSES);
+    let sections = sections_with_notes(support::PASSAGE, &common());
 
     let kinds: Vec<SectionKind> = sections.iter().map(|section| section.kind).collect();
     assert_eq!(
@@ -180,26 +204,21 @@ fn the_panel_keeps_the_grammar_section_and_says_it_is_not_needed() {
         .iter()
         .find(|section| section.kind == SectionKind::Grammar)
         .expect("the panel has the section");
-    assert_eq!(prose(&grammar.body), NOT_NEEDED);
-    assert_eq!(prose(&grammar.body), "本段不需要");
+    assert_eq!(note(&grammar.body), NOT_NEEDED);
+    assert_eq!(note(&grammar.body), "本段不需要");
 }
 
 #[test]
 fn the_panel_shows_the_grammar_note_when_there_is_one() {
     let explanation = structural();
-    let sections = render::panel(
-        support::PASSAGE_WITH_GRAMMAR,
-        &explanation,
-        NOT_NEEDED,
-        NO_GLOSSES,
-    );
+    let sections = sections_with_notes(support::PASSAGE_WITH_GRAMMAR, &explanation);
 
     let grammar = sections
         .iter()
         .find(|section| section.kind == SectionKind::Grammar)
         .expect("the panel has the section");
-    let note = explanation.grammar.clone().expect("the fixture has a note");
-    assert_eq!(prose(&grammar.body), note);
+    let grammar_note = explanation.grammar.clone().expect("the fixture has a note");
+    assert_eq!(prose(&grammar.body), grammar_note);
     assert_ne!(prose(&grammar.body), NOT_NEEDED);
 }
 
@@ -245,7 +264,7 @@ fn an_empty_key_help_is_left_out_of_the_document_and_said_on_the_panel() {
         "### Original\nOriginal text.\n\n### Comprehensible English\nc\n\n### Translation\nt\n"
     );
 
-    let sections = render::panel("Original text.", &explanation, NOT_NEEDED, NO_GLOSSES);
+    let sections = sections_with_notes("Original text.", &explanation);
     let kinds: Vec<SectionKind> = sections.iter().map(|section| section.kind).collect();
     assert_eq!(
         kinds,
@@ -263,9 +282,9 @@ fn an_empty_key_help_is_left_out_of_the_document_and_said_on_the_panel() {
         .iter()
         .find(|section| section.kind == SectionKind::KeyHelp)
         .expect("the panel has the section");
-    assert_eq!(prose(&key_help.body), NO_GLOSSES);
+    assert_eq!(note(&key_help.body), NO_GLOSSES);
     assert_ne!(
-        prose(&key_help.body),
+        note(&key_help.body),
         NOT_NEEDED,
         "the two empty sections do not say the same thing"
     );
@@ -277,16 +296,11 @@ fn the_panel_and_the_document_carry_the_same_bodies() {
     // sections a model can leave empty, and in nothing else.
     let explanation = structural();
     let document = render::markdown(support::PASSAGE_WITH_GRAMMAR, &explanation);
-    let sections = render::panel(
-        support::PASSAGE_WITH_GRAMMAR,
-        &explanation,
-        NOT_NEEDED,
-        NO_GLOSSES,
-    );
+    let sections = sections_with_notes(support::PASSAGE_WITH_GRAMMAR, &explanation);
 
     for section in sections {
         match &section.body {
-            Body::Prose(text) => assert!(
+            Body::Prose(text) | Body::Note(text) => assert!(
                 document.contains(text),
                 "{:?} is missing from the document",
                 section.kind
@@ -308,3 +322,37 @@ fn the_panel_and_the_document_carry_the_same_bodies() {
         }
     }
 }
+
+#[test]
+fn the_key_help_body_carries_settled_glosses() {
+    // The owner is a value, not a predicate: a surface receives the Example's
+    // presence and its text already decided (ADR-0005).
+    let explanation = support::shaped_examples();
+    let sections = sections_with_notes("Original text.", &explanation);
+    let key_help = sections
+        .iter()
+        .find(|section| section.kind == SectionKind::KeyHelp)
+        .expect("the panel has the section");
+    let Body::Glosses(glosses) = &key_help.body else {
+        panic!("the Key Help is Glosses, not prose");
+    };
+
+    assert_eq!(glosses[0].example.as_deref(), Some("He went to ground."));
+    assert_eq!(glosses[1].example, None, "spaces only is no Example");
+    assert_eq!(glosses[2].example, None, "a newline only is no Example");
+}
+
+#[test]
+fn an_example_is_trimmed_and_a_blank_one_is_absent() {
+    // The rendered shape settles the Example's text as well as its presence
+    // (ADR-0005): surrounding whitespace is not part of the sentence, and an
+    // Example of only whitespace is no Example line at all.
+    let explanation = support::shaped_examples();
+
+    assert_eq!(
+        render::markdown("Original text.", &explanation),
+        "### Original\nOriginal text.\n\n### Comprehensible English\nc\n\n### Key Help\n\
+         - `go to ground`\n  hide\n\n  > He went to ground.\n\n- `the matter`\n  the situation\n\n- `bottle it`\n  lose your nerve\n\n### Translation\nt\n"
+    );
+}
+

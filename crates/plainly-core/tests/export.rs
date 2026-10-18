@@ -353,3 +353,28 @@ fn a_csv_field_with_a_comma_a_quote_or_a_line_break_is_quoted_and_escaped() {
 fn the_raw_export_of_an_empty_history_is_the_header_alone() {
     assert_eq!(export::raw_csv(&[]), format!("{RAW_HEADER}\n"));
 }
+
+#[test]
+fn the_raw_export_draws_a_trimmed_example_and_none_for_whitespace() {
+    // A spreadsheet cell gets the same settled shape as the document (ADR-0005):
+    // surrounding whitespace is not part of the Example, and an Example of only
+    // whitespace is absent rather than a third blank line.
+    let record = one(&support::artifact_at(
+        "A passage.",
+        support::shaped_examples(),
+        1_760_000_000,
+    ));
+
+    let document = export::raw_csv(std::slice::from_ref(&record));
+    let table = rows(&document);
+    let glosses = table[0]
+        .iter()
+        .position(|heading| heading == "glosses")
+        .expect("a glosses column");
+
+    assert_eq!(
+        table[1][glosses],
+        "go to ground\n  hide\n  He went to ground.\nthe matter\n  the situation\n\
+         bottle it\n  lose your nerve"
+    );
+}

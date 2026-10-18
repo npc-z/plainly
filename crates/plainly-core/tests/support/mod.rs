@@ -86,6 +86,28 @@ pub const ANSWER_WITH_GRAMMAR: &str = r#"{
 }"#;
 
 /// A request for `passage` at B2 in Chinese, from the default cloud profile.
+/// An Explanation whose Glosses exercise the rendered shape: an Example with
+/// surrounding whitespace, one of spaces only, and one of a newline only.
+///
+/// The same fixture backs the document and the CSV tests: the
+/// Example rule has one owner (ADR-0005), so the inputs that pin it should not be
+/// copied into three test files.
+pub fn shaped_examples() -> Explanation {
+    Explanation::parse(
+        r#"{
+            "comprehensible": "c",
+            "glosses": [
+                { "expression": "go to ground", "gloss": "hide", "example": "  He went to ground.  " },
+                { "expression": "the matter", "gloss": "the situation", "example": "   " },
+                { "expression": "bottle it", "gloss": "lose your nerve", "example": "\n" }
+            ],
+            "grammar": null,
+            "translation": "t"
+        }"#,
+    )
+    .expect("the fixture holds the contract")
+}
+
 pub fn request(passage: &str) -> ExplainRequest {
     ExplainRequest {
         passage: passage.to_string(),

@@ -55,7 +55,7 @@ pub use probe::{
 pub use prompt::{FACTORY_PROMPT, PROMPT_LABEL, Prompt, factory_descriptor};
 pub use provider::{ExplainRequest, Provider, ProviderError, ProviderErrorKind};
 pub use readiness::{KeyPresence, Readiness, local_of};
-pub use render::{Body, Section, SectionKind};
+pub use render::{Body, EmptyNotes, GlossView, Section, SectionKind};
 pub use retry::{Failure, FailureKind, Stopped};
 pub use runner::{
     CredentialError, CredentialState, PromptChoice, Recall, RunNotice, Runner, RunnerError,

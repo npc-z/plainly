@@ -270,20 +270,39 @@
       </div>`;
   }
 
+  /* One section's body, drawn by the kind of value it holds: prose as it stands,
+   * the sentence a surface says where the model left a section empty, and the
+   * Key Help's Glosses as three blocks. Which sections exist, in what order, and
+   * whether an Example is there at all are the backend's decisions (ADR-0005);
+   * this only chooses the material for each kind. */
+  function bodyView(section) {
+    const body = section.body;
+    if (body.type === "prose") return `<p class="prose">${esc(body.text)}</p>`;
+    if (body.type === "note") {
+      return `<p class="${section.kind === "grammar" ? "notneeded" : "note"}">${esc(body.text)}</p>`;
+    }
+    if (body.type !== "glosses") {
+      /* The backend sends three kinds today. A fourth would otherwise fall into
+       * the Glosses branch and throw `undefined.map`; say which kind it was. */
+      throw new Error(`unknown section body: ${body.type}`);
+    }
+    return body.glosses.map((gloss) => `
+      <div class="gl">
+        <div class="ex"><code>${esc(gloss.expression)}</code></div>
+        <div class="gloss">${esc(gloss.gloss)}</div>
+        ${gloss.example ? `<div class="eg">${esc(gloss.example)}</div>` : ""}
+      </div>`).join("");
+  }
+
+  /* The detail card: the metadata the window draws around the Explanation, then
+   * core's sections in the order it rendered them. The template holds no section
+   * list, no empty-section rule and no example rule — the five hard-coded
+   * sections this replaced were the last renderer outside core (ADR-0005). */
   function detailView(record) {
     const t = app.strings;
-    /* One Gloss is three lines — the expression, its explanation and the Example
-     *  — and a Gloss with no Example (a Record generated before Examples existed,
-     *  or one whose model left it out) is two: the card never draws an empty
-     *  third line, and never explains the gap. */
-    const glosses = record.glosses.length
-      ? record.glosses.map((gloss) => `
-        <div class="gl">
-          <div class="ex"><code>${esc(gloss.expression)}</code></div>
-          <div class="gloss">${esc(gloss.gloss)}</div>
-          ${gloss.example.trim() ? `<div class="eg">${esc(gloss.example)}</div>` : ""}
-        </div>`).join("")
-      : `<p class="note">${esc(t.glosses_empty)}</p>`;
+    const sections = record.sections.map((section) => `
+      <h3>${esc(section.title)}</h3>
+      <div class="sec" data-kind="${esc(section.kind)}">${bodyView(section)}</div>`).join("");
 
     return `
       <h2>${esc(record.level)}</h2>
@@ -295,18 +314,7 @@
         <span>· ${esc(when(record.last_seen_unix))}</span>
         ${record.local ? `<span class="tag local">${esc(t.local_badge)}</span>` : ""}
       </div>
-      <h3>${esc(t.detail_original)}</h3>
-      <div class="orig">${esc(record.passage)}</div>
-      <h3>${esc(t.detail_comprehensible)}</h3>
-      <p class="comp">${esc(record.comprehensible)}</p>
-      <h3>${esc(t.detail_glosses)}</h3>
-      ${glosses}
-      <h3>${esc(t.detail_grammar)}</h3>
-      ${record.grammar
-        ? `<div class="grammar">${esc(record.grammar)}</div>`
-        : `<p class="notneeded">${esc(t.grammar_not_needed)}</p>`}
-      <h3>${esc(t.detail_translation)}</h3>
-      <p class="zh">${esc(record.translation)}</p>
+      ${sections}
       <p class="note">${esc(t.provenance)}：${esc(record.provider)}/${esc(record.model)} · ${esc(record.source_language)}→${esc(record.native_language)} · ${esc(record.prompt_label)} · ${esc(app.settingsStrings.provenance_format)} v${record.artifact_version} · ${esc(app.settingsStrings.provenance_created)} ${esc(record.created_at)} · ${esc(app.settingsStrings.provenance_generated)} ${esc(record.generated_at)} · ${esc(app.settingsStrings.provenance_seen)} ${esc(record.last_seen)}</p>
       ${record.local ? `<div class="warnbox">${esc(t.local_provider_note)}</div>` : ""}
       <div class="actions">
