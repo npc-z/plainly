@@ -37,3 +37,7 @@
 - `docs/manual-checks.md` §0 加了说明：**先提交 `nix flake update` 的结果**再跑（脚本 archive 的是 `HEAD`，未提交的 bump 看不见——这是 Spec 轴抓到的、我最初写反的地方）；只 eval 不构建、约 10–15 s；`--self-test` 改两个包各自的 lock 来源。
 - 没动 CI（仓库 CI 刻意不装 Nix）；没新增 flake 输出（deps 派生按 `-deps-` 名字从 `nix derivation show` 的输入里发现）；脚本依赖 `python3`（dev shell 已声明）与 `nix`，不需要 `jq`。
 - Review：Standards 轴指出 house-style 差距（`NIX_CACHE_HOME`、失败走 stderr、不可达分支与 package 表、命名），已全部修正；Spec 轴指出自检对 `Cargo.lock` 的判断错误、`invalidated > 0` 不能证明两处都活着、以及文档的"先升级后跑"与 `git archive HEAD` 矛盾——均已按上面重写并重测。
+
+## Comments
+
+**2026-10-18 — 后记**：CLI 的合成 workspace 数据已不再是 flake 里的手抄字面量——manifest 与 lock 由 `scripts/generate-cli-workspace.sh` 从根 `Cargo.toml` / `Cargo.lock` 派生、提交在 `nix/cli-workspace/`。本票的自检随之改为「往 `nix/cli-workspace/Cargo.lock` 追加一行」（GUI 仍控制根 `Cargo.lock`），脚本里那段在 flake 源码里切片找 `cliLock` 的 Python 已删除；同步守卫是 `scripts/check-cli-workspace.sh`。决定与验收见 `.scratch/flake-workspace/spec.md`。

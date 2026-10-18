@@ -355,7 +355,7 @@ v0 的承诺：**Linux 一等公民**（niri / wlroots 系完整；GNOME 有据�
 
 ### 14. 开发环境
 
-- **flake**（`flake.nix` + `flake.lock`）：`flake-utils` + `fenix`（`inputs.nixpkgs.follows = "nixpkgs"`），nixpkgs 锁 `nixos-unstable`；Rust 工具链用 fenix 的 `toolchainOf` 钉在 **1.99.1**（channel manifest 带 sha256）。dev shell 用该 release 的 cargo / clippy / rustc / rustfmt / rust-analyzer；两个包的构建用同一 release 的 cargo / rustc：CLI 是 `.#plainly`，GUI 派生（`gui`）经 `.#default` 的 `symlinkJoin` 与 CLI 一起暴露。Rust 版本因此与 nixpkgs 的 rustc 解耦：升 nixpkgs 不换编译器；编译器版本只在这一处改，而 `rust-version` 下限同步在 `Cargo.toml` 与 flake 内的 `cliManifest` 两处。
+- **flake**（`flake.nix` + `flake.lock`）：`flake-utils` + `fenix`（`inputs.nixpkgs.follows = "nixpkgs"`），nixpkgs 锁 `nixos-unstable`；Rust 工具链用 fenix 的 `toolchainOf` 钉在 **1.99.1**（channel manifest 带 sha256）。dev shell 用该 release 的 cargo / clippy / rustc / rustfmt / rust-analyzer；两个包的构建用同一 release 的 cargo / rustc：CLI 是 `.#plainly`，GUI 派生（`gui`）经 `.#default` 的 `symlinkJoin` 与 CLI 一起暴露。Rust 版本因此与 nixpkgs 的 rustc 解耦：升 nixpkgs 不换编译器；编译器版本只在这一处改；`rust-version` 下限只写在根 `Cargo.toml`，CLI 的合成 workspace manifest 由 `scripts/generate-cli-workspace.sh` 从它派生（见 `.scratch/flake-workspace/spec.md`）。
 - **系统列表 v0 只列 `x86_64-linux`**，但结构照参数化的 `mkShell` 函数写，v1 加 `aarch64-darwin` 是两行的事（没人验证的 darwin shell 会腐烂，还会给人"已支持 macOS"的错觉）。
 - **环境内容**：fenix 1.99.1 工具链、`pnpm` + `nodejs_24`、`pkg-config`、`gtk3`、`gtk-layer-shell`、`webkitgtk_4_1`、`libsoup_3`、`glib-networking`、`openssl`、`patchelf`、`xdg-utils`、`clang`；环境变量 `GDK_BACKEND=wayland`（**与 readest 相反**——layer-shell 在 XWayland 上不存在）+ `LD_LIBRARY_PATH`。**去掉** gstreamer 全家桶、Android/iOS 工具与 playwright。`.envrc` 写 `use flake`。
 - **不抄 readest 的 `nixConfig`**（它指向不存在的替代源）；**保留它的教训**：`checks` 不指向应用构建，否则 `nix flake check` 会变成一次完整发布构建。

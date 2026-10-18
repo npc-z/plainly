@@ -23,6 +23,16 @@ toolchain. Those are the crates that must build with no graphics stack (spec §2
 that should not need Nix. The panel and the main window — the crates that do need the flake — have no
 CI job; their coverage is the manual checklist in `docs/manual-checks.md`.
 
+### Generated build data
+
+`nix/cli-workspace/{Cargo.toml,Cargo.lock}` is generated, not hand-written: it is the root
+workspace's CLI subset (spec §2), produced by `scripts/generate-cli-workspace.sh` from the root
+`Cargo.toml`/`Cargo.lock`. It is committed, and `nix build` only reads it — changing a dependency
+means regenerating it inside `nix develop` and committing the result. `nix build` does not notice
+most staleness (a moved root-lock version still satisfies `--locked`), so run
+`scripts/check-cli-workspace.sh` after a dependency change; it is offline and takes under a second,
+and `docs/manual-checks.md` §0 carries the workflow.
+
 ### Never search `/nix/store` by hand
 
 - **Do not walk `/nix/store` with `find`, `grep`, `ls`, `du` or similar** to locate a program, a

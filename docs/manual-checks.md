@@ -32,9 +32,19 @@ CLI 的闭包里没有图形库、两个闭包大小不同、面板在 `env -i`�
 用 `nix flake update` 升级输入（nixpkgs / fenix / crane）并**提交**之后，再跑
 `scripts/check-incremental-build.sh`：它只 eval、不构建（约 10–15 s），验证「改一行 `.rs` 不会让
 crane 的依赖缓存失效」在升级后的输入上仍然成立；加 `--self-test` 会分别改两个包各自的 lock 来源
-（repo 的 `Cargo.lock` 与 flake 里的 `cliLock` 字面量），确认两处检查都还活着，否则任何一处变成
+（repo 的 `Cargo.lock` 与 `nix/cli-workspace/Cargo.lock`），确认两处检查都还活着，否则任何一处变成
 恒真都不会被发现。它比对的是两份 `git archive HEAD` 的拷贝，所以未提交的改动不参与——这也是
 「先提交升级」的原因。
+
+CLI 的合成 workspace（`plainly-core` + `plainly-cli`）的 manifest 与 lock 是**生成物**，提交在
+`nix/cli-workspace/`。改完根 `Cargo.toml` / `Cargo.lock` 之后，在 dev shell 里跑
+`bash scripts/generate-cli-workspace.sh` 重新生成并提交：它把根清单投影成 CLI 的 manifest、把根
+lock 剪成种子后交给 cargo 规范化（首次运行需要网络或已填充的 cargo 缓存，之后是毫秒级）。
+生成器能证明「这份 lock 是 cargo 写的」，证明不了「它还跟根 lock 同步」——那半个答案是
+`bash scripts/check-cli-workspace.sh`：纯 `python3`、离线、**不装 Nix 也能跑**（约 1 s；投影规则在
+`scripts/cli_workspace.py`，与生成器共用，且导入时不写字节码），检查
+committed manifest 是否等于根清单的投影、committed lock 的每个版本是否都在根 lock 里、两个 crate
+继承的依赖是否都被覆盖；漂移时它打印要重跑的命令。两者都是手动脚本，不进 CI。
 
 每次检查前清一份临时状态，不要碰真实配置与历史：
 

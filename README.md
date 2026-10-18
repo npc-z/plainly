@@ -39,6 +39,21 @@ ones a key binding can spawn: the panel and the main window need the dev shell's
 sets it. Use the built ones from `result/bin` to check behaviour, and this shell
 to rebuild after an edit.
 
+The command line is built from a generated two-crate workspace, committed under
+`nix/cli-workspace/`. After changing a dependency in the root `Cargo.toml` (and
+letting the root `Cargo.lock` catch up), regenerate it inside the dev shell and
+commit the result:
+
+```
+nix develop -c bash scripts/generate-cli-workspace.sh
+bash scripts/check-cli-workspace.sh        # offline, <1 s; says "stale" if forgotten
+```
+
+`nix build` does not run the generator, and it only notices a stale copy when the
+committed manifests stop satisfying the crates — a moved lock version or a changed
+`[workspace.package]` builds fine and silently. `docs/manual-checks.md` §0 says
+when it is needed; the check above is the reliable signal.
+
 A machine without a graphics stack needs none of it:
 
 ```

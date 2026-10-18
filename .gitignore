@@ -42,3 +42,6 @@ scripts/stub-provider.requests.log
 # Local scratch: `cargo vendor` output, kept out of the source copy and the
 # repository. The flake fetches its crates with fetchCargoVendor instead.
 vendor/
+
+# Python bytecode (scripts/ holds one importable helper)
+__pycache__/
