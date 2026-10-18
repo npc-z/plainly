@@ -81,8 +81,6 @@ fn every_instant_survives_the_round_trip_through_its_written_form() {
 
 #[test]
 fn the_representable_range_is_what_the_stored_form_can_write_and_read() {
-    // The stored form names a four-digit year, so these two instants are the ends
-    // of the range — and both survive the trip out and back.
     let earliest = Timestamp::from_unix_seconds(-62_167_219_200).expect("the earliest instant");
     assert_eq!(earliest.to_rfc3339(), "0000-01-01T00:00:00Z");
     assert_eq!(
@@ -106,8 +104,6 @@ fn the_representable_range_is_what_the_stored_form_can_write_and_read() {
 
 #[test]
 fn an_instant_the_stored_form_cannot_name_is_refused_at_construction() {
-    // Without this, `to_rfc3339` could write a year the parser refuses, and a
-    // Timestamp would serialize to JSON it cannot read back.
     for seconds in [-62_167_219_201, 253_402_300_800, i64::MIN, i64::MAX] {
         assert_eq!(Timestamp::from_unix_seconds(seconds), None, "{seconds}");
     }
@@ -142,8 +138,6 @@ fn a_time_that_does_not_exist_is_refused_rather_than_shifted() {
 
 #[test]
 fn only_the_stored_form_is_accepted() {
-    // A local offset, a fractional second, a missing Z: each would have to be
-    // guessed at, and a guessed timestamp is worse than a refused one.
     for text in [
         "2025-10-09T08:53:20+02:00",
         "2025-10-09 08:53:20Z",
@@ -158,8 +152,6 @@ fn only_the_stored_form_is_accepted() {
 
 #[test]
 fn a_field_of_the_wrong_width_or_sign_is_refused_rather_than_read_loosely() {
-    // Parsing numbers loosely turns `-1` into an hour and shifts the instant a
-    // day back; the promise is the fixed form, so the shape is checked first.
     for text in [
         "2025-10-09T-1:00:00Z",
         "2025-10-09T+1:00:00Z",
@@ -180,7 +172,6 @@ fn the_json_document_is_the_artifact() {
     let text = serde_json::to_string(&artifact).expect("the artifact serializes");
     let value: Value = serde_json::from_str(&text).expect("and is valid JSON");
 
-    // The Passage and every piece of metadata the app attaches.
     assert_eq!(value["passage"], support::PASSAGE);
     assert_eq!(value["level"], "B2");
     assert_eq!(value["source_language"], "en");
@@ -194,7 +185,6 @@ fn the_json_document_is_the_artifact() {
     assert_eq!(value["created_at"], "2025-10-09T08:53:20Z");
     assert_eq!(value["generated_at"], "2025-10-09T08:53:20Z");
 
-    // The model's four fields sit beside them, not behind a wrapper.
     assert_eq!(
         value["comprehensible"],
         "The committee tried hard to find out what had happened, but the manager had already gone into hiding."
@@ -272,7 +262,6 @@ fn the_grammar_note_is_null_not_missing_when_there_is_none() {
 
 #[test]
 fn the_artifact_version_is_the_one_v0_records() {
-    // 1 is the v0 shape; 2 adds the Gloss Example (ADR 0002).
     assert_eq!(ARTIFACT_VERSION, 2);
     assert_eq!(example().artifact_version, ARTIFACT_VERSION);
 }

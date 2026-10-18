@@ -1,9 +1,5 @@
 //! The history store: what a Lookup Key is made of, what a hit does, and what a
-//! regeneration leaves alone — driven by a real (in-memory) SQLite store.
-//!
-//! The store is the history *and* the cache (spec §9), so these tests are about
-//! identity and about the row: which question this is, and what happens to the
-//! row that already answered it.
+//! regeneration leaves alone — driven by a real SQLite store.
 
 mod support;
 
@@ -44,8 +40,9 @@ fn replacement() -> Explanation {
     .expect("the fixture holds the contract")
 }
 
-/// A fixture whose four English fields share no word, so a search result says
-/// *which* field was matched rather than which field happens to contain "the".
+/// A fixture whose four English fields share no content word, so a search
+/// result says *which* field was matched rather than which one happens to
+/// contain "the".
 ///
 /// One exception is deliberate: `ledgers` is in both the Passage and a Gloss
 /// expression, which is what makes the two search tables overlap.
@@ -60,7 +57,6 @@ const LEDGERS_ANSWER: &str = r#"{
   "translation": "审计人员把账目检查了两遍。"
 }"#;
 
-/// A fresh in-memory store, which is what every test but the WAL one uses.
 fn store() -> Store {
     Store::in_memory().expect("an in-memory store opens")
 }
@@ -69,7 +65,6 @@ fn ledgers() -> Explanation {
     Explanation::parse(LEDGERS_ANSWER).expect("the fixture holds the contract")
 }
 
-/// Store one Passage and return the Record it made.
 fn keep(store: &mut Store, passage: &str, explanation: Explanation) -> plainly_core::Record {
     store
         .remember(&lookup(passage).key(), &support::artifact(passage, explanation))
@@ -158,7 +153,6 @@ fn differ_only_in_surrounding_whitespace_and_line_endings_is_the_same_question()
 
 #[test]
 fn interior_whitespace_is_a_different_question() {
-    // Two spaces after a full stop are meaning; only the ends are not.
     assert_ne!(lookup("a  b").key(), lookup("a b").key());
     assert_ne!(lookup("a\nb").key(), lookup("a b").key());
     assert_eq!(lookup(" a\r\n").key(), lookup("\na ").key());
@@ -242,13 +236,11 @@ fn a_regeneration_replaces_the_explanation_and_keeps_the_two_dates() {
         .remember(&key, &support::artifact_at(support::PASSAGE, explanation(), 1_000))
         .expect("the store accepts it");
 
-    // The learner looks at it, which moves `last_seen` forward …
     store
         .recall(&key, at(2_000))
         .expect("the store is readable")
         .expect("the question has been asked");
 
-    // … and then asks for it to be done again, at a third instant.
     let again = store
         .remember(
             &key,
@@ -270,9 +262,6 @@ fn a_regeneration_replaces_the_explanation_and_keeps_the_two_dates() {
 
 #[test]
 fn a_question_asked_twice_within_the_same_second_is_still_a_hit() {
-    // `last_seen` is only accurate to the second, so a second ask at the same
-    // instant writes back the value that is already there. That is a hit, and it
-    // must not depend on the write reporting itself as a change.
     let mut store = store();
     let key = lookup(support::PASSAGE).key();
     let saved = store
@@ -294,8 +283,6 @@ fn a_question_asked_twice_within_the_same_second_is_still_a_hit() {
 
 #[test]
 fn a_new_artifact_version_reuses_the_row() {
-    // `artifact_version` is not part of a Lookup Key (spec §9): a change of data
-    // shape does not make an old answer wrong, so it must not fragment the cache.
     let mut store = store();
     let key = lookup(support::PASSAGE).key();
     let first = support::artifact(support::PASSAGE, explanation());
@@ -373,9 +360,6 @@ fn a_record_carries_its_provenance() {
 
 #[test]
 fn the_file_the_store_leaves_behind_is_a_wal_database() {
-    // WAL is what lets the panel read while the main window writes (spec §8), and
-    // it is a property of the file rather than of the interface — so it is read
-    // back from the file with a connection of the test's own.
     let dir = TempDir::new("store-wal");
     let path = dir.join("data/history.db");
     {
@@ -392,9 +376,6 @@ fn the_file_the_store_leaves_behind_is_a_wal_database() {
 
 #[test]
 fn a_file_that_is_not_a_database_says_which_file_it_is() {
-    // `Connection::open` succeeds on a text file — SQLite only reads it when the
-    // first statement runs — so this is the failure a user is most likely to
-    // meet, and the one where the path is the whole message.
     let dir = TempDir::new("store-not-a-database");
     let path = dir.join("history.db");
     std::fs::write(&path, "this is not a database").expect("the fixture is writable");
@@ -413,9 +394,6 @@ fn a_file_that_is_not_a_database_says_which_file_it_is() {
 
 #[test]
 fn a_row_somebody_edited_is_reported_rather_than_guessed_at() {
-    // The history file is on disk and hand-editable. A Level that does not parse
-    // is a corrupt record, not a B2 one: inventing a value would change what the
-    // stored Explanation claims to be.
     let dir = TempDir::new("store-corrupt");
     let path = dir.join("history.db");
     let key = {
@@ -449,8 +427,6 @@ fn a_row_somebody_edited_is_reported_rather_than_guessed_at() {
 
 #[test]
 fn a_row_that_does_not_read_back_is_not_a_reason_to_lose_the_rest() {
-    // Two records, one of them edited: the good one is still reachable by id, so
-    // the failure is about the bad row rather than about the whole history.
     let dir = TempDir::new("store-partly-corrupt");
     let path = dir.join("history.db");
     let (good, bad) = {
@@ -489,10 +465,6 @@ fn a_row_that_does_not_read_back_is_not_a_reason_to_lose_the_rest() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// Search: the English fields, two tables, one list
-// ---------------------------------------------------------------------------
-
 #[test]
 fn search_finds_a_record_by_its_passage_and_by_its_comprehensible_english() {
     let mut store = store();
@@ -530,10 +502,6 @@ fn search_finds_a_record_by_a_gloss_expression_and_by_a_gloss_gloss() {
 
 #[test]
 fn a_word_that_appears_only_in_an_example_is_not_searchable() {
-    // Deliberate: the Examples are generated scaffolding, full of the commonest
-    // words in English, and indexing them would only make the history search
-    // noisier. The search scope the interface states — the Passage, the
-    // Comprehensible English and the Glosses — stays true.
     let mut store = store();
     keep(&mut store, LEDGERS, ledgers());
 
@@ -548,8 +516,6 @@ fn a_record_whose_passage_and_gloss_both_match_is_listed_once() {
     let mut store = store();
     let record = keep(&mut store, LEDGERS, ledgers());
 
-    // `ledgers` is in the Passage and in a Gloss expression, so the two search
-    // tables both answer — and the history is still one row.
     assert_eq!(found(&store, "ledgers"), vec![record.id]);
 }
 
@@ -571,9 +537,6 @@ fn all_terms_have_to_match() {
 
 #[test]
 fn the_terms_of_one_query_may_be_spread_across_the_fields() {
-    // The Passage and a Gloss are two tables, but one search: `MATCH` is
-    // evaluated per table, so asking both words of either table would lose a
-    // query whose words are one in each.
     let mut store = store();
     let record = keep(&mut store, LEDGERS, ledgers());
 
@@ -620,9 +583,6 @@ fn search_lists_the_most_recently_seen_first() {
 
 #[test]
 fn the_translation_is_not_searchable() {
-    // Spec §9: `translation` is not indexed, and the tokenizer is per-table, so
-    // Chinese would need a table of its own. This is the known fact the surfaces
-    // state, asserted as a fact rather than left to be discovered.
     let mut store = store();
     keep(&mut store, LEDGERS, ledgers());
 
@@ -661,9 +621,6 @@ fn the_grammar_note_is_not_searchable() {
 
 #[test]
 fn a_query_of_punctuation_finds_nothing_rather_than_failing() {
-    // FTS5 has a query language of its own, and a search box is not the place to
-    // teach it: every term is quoted, so punctuation is literal and a query that
-    // means nothing to the tokenizer quietly matches nothing.
     let mut store = store();
     keep(&mut store, LEDGERS, ledgers());
 
@@ -677,8 +634,6 @@ fn a_query_of_punctuation_finds_nothing_rather_than_failing() {
 
 #[test]
 fn an_empty_query_matches_everything() {
-    // What a search box holds before anything is typed into it, and after it is
-    // cleared. The history is still ordered by when it was last seen.
     let mut store = store();
     let first = keep(&mut store, LEDGERS, ledgers());
     let second = keep(&mut store, support::PASSAGE, explanation());
@@ -686,10 +641,6 @@ fn an_empty_query_matches_everything() {
     assert_eq!(found(&store, ""), vec![second.id, first.id]);
     assert_eq!(found(&store, "   "), vec![second.id, first.id]);
 }
-
-// ---------------------------------------------------------------------------
-// Tags: the learner's own words, added by hand
-// ---------------------------------------------------------------------------
 
 /// The ids a search returns when it is narrowed to one tag.
 fn tagged(store: &Store, query: &str, tag: &str) -> Vec<i64> {
@@ -703,9 +654,6 @@ fn tagged(store: &Store, query: &str, tag: &str) -> Vec<i64> {
 
 #[test]
 fn a_search_narrowed_by_a_tag_uses_the_same_rule_as_storing_one() {
-    // The Tag a filter is given goes through the same rule as the Tag that was
-    // stored: `--tag "  work  "` finds the record, and `--tag " "` is a
-    // mistake in the asking rather than a filter that quietly lists nothing.
     let mut store = store();
     let record = keep(&mut store, LEDGERS, ledgers());
     store.tag(record.id, "work").expect("the record exists");
@@ -807,8 +755,6 @@ fn the_same_tag_twice_is_still_one_tag() {
 
 #[test]
 fn removing_a_tag_that_was_never_there_is_not_an_error() {
-    // Clicking a chip that is already gone, or removing a tag twice, is not a
-    // mistake worth a failure: what the caller asked for is true afterwards.
     let mut store = store();
     let record = keep(&mut store, LEDGERS, ledgers());
 
@@ -841,8 +787,6 @@ fn tagging_a_record_that_is_not_there_is_reported() {
 
 #[test]
 fn tags_survive_a_regeneration() {
-    // A regeneration replaces the Explanation, not the Record: the learner's own
-    // Tags are about the Passage, and they are still true of it.
     let mut store = store();
     let key = lookup(LEDGERS).key();
     let record = keep(&mut store, LEDGERS, ledgers());
@@ -888,10 +832,6 @@ fn a_search_can_be_narrowed_to_one_tag() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// Deletion and clearing: a hard delete, and no graveyard behind it
-// ---------------------------------------------------------------------------
-
 #[test]
 fn deleting_a_record_takes_the_glosses_the_tags_and_the_search_rows_with_it() {
     let mut store = store();
@@ -919,9 +859,6 @@ fn deleting_a_record_takes_the_glosses_the_tags_and_the_search_rows_with_it() {
 
 #[test]
 fn a_deleted_record_leaves_nothing_for_the_next_record_to_inherit() {
-    // SQLite hands the id of a deleted Record to the next insert, so search rows
-    // or tags that outlived their Record would make the next Passage answer to
-    // the old one's words. This is the visible form of a graveyard.
     let mut store = store();
     let first = keep(&mut store, LEDGERS, ledgers());
     store.tag(first.id, "work").expect("the record exists");
@@ -976,7 +913,7 @@ fn clearing_an_empty_history_removes_nothing() {
     assert_eq!(store.clear().expect("there is nothing to clear"), 0);
 }
 
-/// A history as the release before Examples wrote it: the `glosses` table with no
+/// A history written before Examples existed: the `glosses` table with no
 /// `example` column, and `user_version` still 0.
 ///
 /// Written out in full rather than derived from the schema, because the point of
@@ -1028,8 +965,6 @@ fn write_a_history_from_before_examples(path: &std::path::Path) {
 
 #[test]
 fn a_history_written_before_examples_existed_opens_and_reads_without_one() {
-    // ADR 0002: the Example is required from the model and absent from an older
-    // Record. "Absent" has to be a read that works, not a read that fails.
     let dir = TempDir::new("store-before-examples");
     let path = dir.join("history.db");
     write_a_history_from_before_examples(&path);
@@ -1079,9 +1014,6 @@ fn the_migration_adds_the_column_once_and_records_that_it_did() {
         .expect("the file records its shape version");
     assert_eq!(version, 1, "the step is written down, not inferred");
 
-    // And a second open is not a second migration: `ALTER TABLE` on a column that
-    // is already there would be an error, and a history that cannot be opened
-    // twice is not a history.
     let store = Store::open(&path).expect("the second open is a no-op");
     assert_eq!(
         store
@@ -1098,10 +1030,6 @@ fn the_migration_adds_the_column_once_and_records_that_it_did() {
 
 #[test]
 fn a_file_whose_version_claims_the_step_ran_but_did_not_still_gets_the_column() {
-    // The guard is the column, not the number. A history restored from a partial
-    // backup can say `user_version = 1` and still hold the old table, and it has
-    // to open and read like any other rather than failing on every read with
-    // "no such column" and never repairing itself.
     let dir = TempDir::new("store-lying-version");
     let path = dir.join("history.db");
     write_a_history_from_before_examples(&path);
@@ -1121,9 +1049,6 @@ fn a_file_whose_version_claims_the_step_ran_but_did_not_still_gets_the_column() 
 
 #[test]
 fn a_fresh_store_is_already_at_the_current_shape() {
-    // The `CREATE TABLE` in the schema is what a new file gets; the migration runs
-    // on it too and does nothing. Nothing about that may depend on which of the
-    // two happened first.
     let dir = TempDir::new("store-fresh-version");
     let path = dir.join("history.db");
 
@@ -1160,8 +1085,7 @@ fn the_history_file_is_not_encrypted() {
 #[test]
 fn a_history_written_before_the_search_tables_existed_is_searchable() {
     // The search tables are derived data, so the build that predates them is
-    // simulated by dropping them: the next open has to notice they are empty and
-    // fill them from the history rather than quietly answering nothing.
+    // simulated by dropping them.
     let dir = TempDir::new("store-reindex");
     let path = dir.join("history.db");
     {

@@ -3,11 +3,10 @@
 `flake.nix` builds the command line from a workspace of two crates, and that
 workspace's manifest is a projection of the root one. Both the generator
 (`scripts/generate-cli-workspace.sh`) and its guard
-(`scripts/check-cli-workspace.sh`) have to agree on what that projection is;
-this module is the agreement, so a change to the rule is one edit rather than
-two that can drift apart.
+(`scripts/check-cli-workspace.sh`) have to agree on what that projection is, so
+this module is the agreement and a change to the rule is one edit.
 
-It is deliberately plain: no cargo, no Nix, no side effects — importing it from
+It is deliberately plain: no cargo, no Nix, no side effects. Importing it from
 either script is safe, including from the guard that must stay offline.
 """
 
@@ -15,15 +14,14 @@ import os
 import tomllib
 
 # The two crates the CLI package is built from. `flake.nix`'s `cliSource` copies
-# the same two directories; adding a crate edits both places (one is a Nix path
-# expression, the other this list).
+# the same two directories, so adding a crate means editing both places.
 MEMBERS = ["crates/plainly-core", "crates/plainly-cli"]
 
 DEPENDENCY_SECTIONS = ("dependencies", "dev-dependencies", "build-dependencies")
 
-# The `[workspace]` keys the projection knows how to carry. A new one is not a
-# silently-dropped setting: `manifest_projection` refuses it until this module
-# (and the guard that checks the projection) learns what to do with it.
+# The `[workspace]` keys the projection knows how to carry. A new one is not
+# silently dropped: `manifest_projection` refuses it until this module learns
+# what to do with it.
 KNOWN_WORKSPACE_KEYS = {"resolver", "members", "package", "dependencies"}
 
 
@@ -33,7 +31,7 @@ def load(path):
 
 
 def member_name(member):
-    """`crates/plainly-core` -> `plainly-core` (the name Cargo.lock uses)."""
+    """The crate name Cargo.lock uses (`crates/plainly-core` -> `plainly-core`)."""
     return member.rsplit("/", 1)[-1]
 
 
@@ -74,8 +72,8 @@ def manifest_projection(root="."):
             "resolver": workspace["resolver"],
             "members": list(MEMBERS),
             "package": workspace["package"],
-            # Only the inherited entries, in the root manifest's order. A dep the
-            # GUI alone uses must not appear: the projection is the CLI's view.
+            # Only the inherited entries, in the root manifest's order. A
+            # dependency used only by the GUI must not appear in the CLI's view.
             "dependencies": {
                 name: declared[name] for name in declared if name in inherited
             },

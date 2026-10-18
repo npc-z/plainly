@@ -5,18 +5,10 @@
 //! user pick one — a runtime on none of those ports is reached by configuring
 //! its endpoint, which is the same act as configuring any other provider.
 //!
-//! Three things are deliberately separate here:
-//!
-//! - [`candidates`] decides *where to look*. The common ports are a constant;
-//!   an endpoint the user already configured is added to it, because that is not
-//!   a guess either — it is the user's own answer — and a runtime on a port of
-//!   their choosing should be listed too.
-//! - [`scan`] asks each candidate and keeps the ones that answered with a model
-//!   list. A port that refused, timed out, or answered with something that is
-//!   not a model list is not a runtime: the answer is what makes it one.
-//! - [`select`] turns the result into a selection: which of the runtimes that
-//!   answered is the one a provider name means, and which of them is the one a
-//!   model makes selectable.
+//! The module decides where to look ([`candidates`]), what answered with a model
+//! list ([`scan`]), and what a selection should do with the answers ([`select`]).
+//! A port that refused, timed out, or answered with something that is not a model
+//! list is not a runtime: the answer is what makes it one.
 //!
 //! Whether a model's reported context is big enough is deliberately *not* here.
 //! That is a question about the request's budget, and it lives next to the budget
@@ -192,9 +184,9 @@ pub struct Scan {
     /// The candidates that answered with a model list.
     pub runtimes: Vec<LocalRuntime>,
     /// The candidates that did not, in the order they were asked. Kept because
-    /// "nothing is listening" and "something refused us" are different answers:
-    /// a surface that reports the first when the second is true offers a fix that
-    /// cannot work (tickets/06).
+    /// "nothing is listening" and "something refused us" are different answers,
+    /// and a surface that reports the first when the second is true offers a fix
+    /// that cannot work.
     pub unanswered: Vec<Unanswered>,
 }
 
@@ -261,7 +253,7 @@ pub enum Selection<'a> {
 /// - the name merely guessed a port, and another runtime under the same name
 ///   serves the model → take that one. A preset's port is a guess, the model is
 ///   what tells same-name runtimes apart, and finding the right port without
-///   being told is the point (tickets/06);
+///   being told is the point;
 /// - the user pointed the name somewhere → never move it. The runtime that has
 ///   the model is reported instead, and so is one that answered where the user's
 ///   endpoint did not ([`Selection::Silent`]).

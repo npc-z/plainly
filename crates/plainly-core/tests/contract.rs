@@ -54,9 +54,6 @@ fn a_good_answer_becomes_an_explanation() {
 
 #[test]
 fn the_glosses_keep_the_order_the_model_gave_them() {
-    // The prompt asks for the most blocking expression first. That order is part
-    // of the artifact — the learner reads the section top down — so it is kept,
-    // not sorted.
     let explanation = Explanation::parse(support::ANSWER).expect("the contract holds");
     let expressions: Vec<&str> = explanation
         .glosses
@@ -109,9 +106,6 @@ fn an_empty_answer_is_a_parse_failure() {
 
 #[test]
 fn a_wrong_field_name_is_a_schema_failure() {
-    // issues/14 measured exactly this drift on DeepSeek — `paraphrase` instead
-    // of `comprehensible`, three attempts out of three — which is why the two
-    // failures have to be tellable apart.
     let answer = support::ANSWER.replace("\"comprehensible\"", "\"paraphrase\"");
     let problems = problems_with(&answer);
 
@@ -143,8 +137,6 @@ fn a_missing_field_is_a_schema_failure() {
 
 #[test]
 fn a_gloss_without_an_example_is_a_schema_failure() {
-    // `example` is required where `grammar` is nullable: "no Example" is not a
-    // decision the model gets to make (ADR 0002).
     let problems = problems_with(
         r#"{
             "comprehensible": "c",
@@ -162,9 +154,6 @@ fn a_gloss_without_an_example_is_a_schema_failure() {
 
 #[test]
 fn an_empty_example_is_a_string_not_a_broken_contract() {
-    // ADR-0001 keeps `minLength` out of the schema, so "never leave it empty" is
-    // a prompt rule — the same regime the Gloss count lives in. A surface answers
-    // for it by not drawing the line: a three-line Gloss with no third line.
     let explanation = Explanation::parse(
         r#"{
             "comprehensible": "c",
@@ -211,9 +200,6 @@ fn a_number_where_a_string_belongs_is_a_schema_failure() {
 
 #[test]
 fn a_field_the_contract_does_not_have_is_a_schema_failure() {
-    // The model does not get to add fields: the Passage and every piece of
-    // metadata are the app's, and an answer that carries its own copy of them is
-    // not trusted.
     let answer = support::ANSWER.replace(
         "\"translation\":",
         "\"passage\": \"a passage of its own\", \"translation\":",
@@ -230,9 +216,6 @@ fn a_field_the_contract_does_not_have_is_a_schema_failure() {
 
 #[test]
 fn the_number_of_glosses_is_advisory_not_a_bound() {
-    // ADR-0001 keeps every cardinality bound out of the schema — OpenAI's strict
-    // mode rejects them, and a contradictory one OOM-kills llama-server. "Three
-    // to five glosses" is a prompt rule, enforced by validation and retry.
     for count in [0, 1, 12] {
         let glosses: Vec<String> = (0..count)
             .map(|index| {
@@ -252,9 +235,6 @@ fn the_number_of_glosses_is_advisory_not_a_bound() {
 
 #[test]
 fn an_empty_string_is_a_string() {
-    // The contract fixes the shape, not the quality: an empty section is a
-    // prompt problem (tickets/07), not a broken contract, and pretending otherwise
-    // here would silently turn a bad answer into a retry.
     let explanation = Explanation::parse(
         r#"{ "comprehensible": "", "glosses": [], "grammar": "", "translation": "" }"#,
     )
@@ -286,12 +266,9 @@ fn the_wire_schema_is_the_contract_the_spec_records() {
         BTreeSet::from(["comprehensible", "glosses", "grammar", "translation"])
     );
 
-    // Content only: the Passage and the metadata are the app's to attach.
     assert_eq!(schema["properties"]["comprehensible"]["type"], "string");
     assert_eq!(schema["properties"]["translation"]["type"], "string");
 
-    // Required *and* nullable: "there is no structural blocker" is a decision the
-    // model has to make, not an omission.
     assert_eq!(
         schema["properties"]["grammar"]["type"],
         json!(["string", "null"])
@@ -312,7 +289,6 @@ fn the_wire_schema_is_the_contract_the_spec_records() {
     assert_eq!(glosses["items"]["properties"]["gloss"]["type"], "string");
     assert_eq!(glosses["items"]["properties"]["example"]["type"], "string");
 
-    // The root cannot be a union (ADR-0001).
     for union in ["anyOf", "oneOf", "allOf", "not"] {
         assert!(schema.get(union).is_none(), "the root cannot use {union}");
     }
@@ -320,9 +296,6 @@ fn the_wire_schema_is_the_contract_the_spec_records() {
 
 #[test]
 fn the_wire_schema_uses_only_keywords_the_validator_understands() {
-    // The validator implements exactly these five. A keyword outside the list
-    // would be a rule nobody enforces, which is the drift this contract exists
-    // to make impossible.
     const UNDERSTOOD: [&str; 5] = [
         "type",
         "properties",
@@ -345,8 +318,6 @@ fn the_wire_schema_uses_only_keywords_the_validator_understands() {
 
 #[test]
 fn the_wire_schema_carries_no_length_pattern_or_numeric_bound() {
-    // ADR-0001. OpenAI's strict mode rejects these keywords outright, and on
-    // llama.cpp a contradictory bound is an OOM from a single request.
     const FORBIDDEN: [&str; 10] = [
         "minItems",
         "maxItems",
@@ -395,7 +366,6 @@ fn keyword_positions(schema: &Value, path: &str, found: &mut Vec<(String, String
     }
 }
 
-/// Every key that appears anywhere in a JSON document.
 fn collect_keys(value: &Value, found: &mut Vec<String>) {
     match value {
         Value::Object(object) => {

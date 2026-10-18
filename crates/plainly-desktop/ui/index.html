@@ -1,17 +1,14 @@
 <!doctype html>
 <!--
-  The Plainly main window (ticket 14).
+  The Plainly main window.
 
   Plain HTML, one stylesheet and one script, embedded in the binary by
   `tauri-build`. Everything it draws comes from the backend as data, including
   the copy: `strings.rs` owns the words, so this file has none of its own that a
   translator would have to hunt for.
 
-  The layout is the one ticket 16 settled: a top bar with two tabs, a resident
-  330px list on the left (search box, then rows grouped by day), and the detail
-  on the right. The panel's own surface is not drawn here — it is a separate
-  process — but the relationship is the one the prototype made visible: the
-  window is where you go to look things up.
+  The layout is a top bar with two tabs, a resident 330px list on the left
+  (search box, then rows grouped by day), and the detail on the right.
 -->
 <html lang="zh-CN">
 <head>

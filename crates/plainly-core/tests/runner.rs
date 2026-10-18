@@ -41,12 +41,10 @@ const CONFIG: &str = "[app]\nprovider = \"stub\"\n\n\
                       [providers.stub]\nendpoint = \"http://127.0.0.1:9/v1\"\n\
                       model = \"stub-model\"\n";
 
-/// The three directories, rooted in a temporary home.
 fn paths(dir: &TempDir) -> Paths {
     Paths::resolve(&PathInputs::new(dir.join("home"))).expect("the fixture paths resolve")
 }
 
-/// Write the fixture configuration where `Paths::config_file` will look for it.
 fn write_config(paths: &Paths, text: &str) {
     std::fs::create_dir_all(paths.config_dir()).expect("the config directory is creatable");
     std::fs::write(paths.config_file(), text).expect("the fixture config is writable");
@@ -142,7 +140,6 @@ impl FakeEndpoint {
         self.inner.generations.get()
     }
 
-    /// The requests it was asked, in order.
     fn requests(&self) -> Vec<ExplainRequest> {
         self.inner.seen.borrow().clone()
     }
@@ -482,8 +479,7 @@ fn a_turns_local_fact_is_the_provider_it_actually_asked() {
     let dir = TempDir::new("runner-turn-local");
     let paths = paths(&dir);
     // The configured provider is hosted; the one a bypass names is on this
-    // machine. `local` has to describe the endpoint that answered, not the
-    // configured one and not the provider's name.
+    // machine.
     write_config(
         &paths,
         "[app]\nprovider = \"hosted\"\n\n\
@@ -813,8 +809,6 @@ fn a_history_that_cannot_be_read_fails_the_turn_without_asking_the_provider() {
     let mut runner = open(&paths, endpoint.clone(), now());
     hide_records(&paths);
 
-    // Planning is the same read the turn takes, so it has to report the same
-    // failure rather than plan a fresh request.
     assert!(
         runner.cached(PASSAGE).is_err(),
         "a store read failure is not a cache miss"
@@ -885,8 +879,6 @@ fn the_lookup_key_agrees_with_the_key_a_reuse_turn_uses() {
         .record
         .expect("the answer was stored");
 
-    // A surface planning the batch would hold this key before explaining; it has
-    // to be the key the turn that produced `stored` actually wrote.
     let planned = open(&paths, FakeEndpoint::accepting(), later()).lookup(PASSAGE);
     let store = Store::open(paths.history_file()).expect("the store reopens");
     let recalled = store

@@ -5,9 +5,9 @@ The automated tests have their own stub (`crates/plainly-cli/tests/support/provi
 but the panel and the main window cannot be tested automatically, and the checks
 in `docs/manual-checks.md` want a real Explanation to come back so that the panel
 reaches its result state, 复制 has something to copy and ⟳ has something to
-regenerate. This is that provider: it answers exactly the way a runtime does —
-`GET /v1/models` for the model list, `POST /v1/chat/completions` with a
-contract-shaped answer — with no network beyond loopback and no API key.
+regenerate. This is that provider. It answers the way a runtime does, with
+`GET /v1/models` for the model list and `POST /v1/chat/completions` for a
+contract-shaped answer, over loopback only and with no API key.
 
     plainly providers discover                  # stdout: the runtimes that answered
     python3 scripts/stub-provider.py --port 8080 &   # a port that did not
@@ -15,12 +15,10 @@ contract-shaped answer — with no network beyond loopback and no API key.
     plainly config set providers.llamacpp.model stub-model
     plainly config set app.provider llamacpp
 
-**8080 is a default, not a workspace convention — check what your machine already
-serves.** A real llama.cpp started with `--port 3060` (the port this project's own
-bench used) owns 3060, and a runtime that owns a port must keep it: two things
-cannot listen there. Run `plainly providers discover` and read the addresses it
-prints before picking one; if your runtime is on 8080 instead, start this stub
-with `--port 8081` and point `providers.llamacpp.endpoint` at it. Binding a port
+**8080 is a default, not a workspace convention. Check what your machine already
+serves.** Run `plainly providers discover` and read the addresses it prints
+before picking a port; if your runtime is on 8080 instead, start this stub with
+`--port 8081` and point `providers.llamacpp.endpoint` at it. Binding a port
 somebody else owns fails loudly here rather than quietly answering for them.
 
 Every request is logged to `stub-provider.requests.log` beside this script, which
@@ -99,8 +97,8 @@ def main():
     )
     # llama.cpp's own upstream default, which is also the port `providers
     # discover` attributes to the llamacpp preset. Deliberately not 3060: that is
-    # where this project's bench ran a *real* llama.cpp, and a machine that still
-    # has one running there must keep it. See the module docstring.
+    # where this project's bench ran a real llama.cpp, and a machine that still
+    # has one running there must keep it.
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--host", default="127.0.0.1")
     args = parser.parse_args()

@@ -1,10 +1,10 @@
 # The two crates that must build with no graphics stack, which is the promise
 # the workspace split exists to keep: `plainly-core` and `plainly-cli` (spec §2,
 # §10, §14). Neither reaches GTK, gtk-layer-shell, WebKit or Wayland, so a plain
-# runner can build and test both — and saying so here is what makes the promise a
-# thing CI checks rather than a thing the README claims. `plainly-core` is the
-# spec's primary testing seam ("缝 A"), so leaving it out would let a regression
-# in the contract, the lookup key or the splitter pass this job green.
+# runner can build and test both, and this job is what checks the promise rather
+# than leaving it a README claim. `plainly-core` is the spec's primary testing
+# seam ("缝 A"), so leaving it out would let a regression in the contract, the
+# lookup key or the splitter pass green.
 #
 # The panel and the main window are deliberately absent: they need the flake's
 # libraries, and the spec asks for a manual checklist, not a runner, to cover
@@ -26,15 +26,15 @@ jobs:
       - uses: actions/checkout@v4
 
       # The toolchain comes from the runner's image rather than from
-      # `flake.nix`: pinning it here would be a second place to keep in step, and
-      # `rust-toolchain.toml` does not exist. The workspace's own `rust-version`
-      # is the floor, and `stable` is what the runner has; a build that needs
-      # nightly would fail here rather than later.
+      # `flake.nix`, because pinning it here would be a second place to keep in
+      # step, and `rust-toolchain.toml` does not exist. The workspace's own
+      # `rust-version` is the floor, and `stable` is what the runner has, so a
+      # build that needs nightly fails here rather than later.
       #
-      # No `rustfmt` component and no format step: the formatter's output for
-      # this revision differs between the toolchain the flake pins and the one
-      # the runner installs, so a format gate here would fail on lines nobody
-      # touched. Formatting is a review matter until the two agree.
+      # No `rustfmt` component and no format step: the formatter's output
+      # differs between the toolchain the flake pins and the stable one the
+      # runner installs, so a format gate would fail on lines nobody touched.
+      # Formatting is a review matter.
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -46,17 +46,14 @@ jobs:
         run: cargo test -p plainly-core
 
       # Seam B: the real binary, a temporary XDG tree, and a stub provider on
-      # loopback. If this job ever fails on a missing `libgtk`, a dependency has
+      # loopback. A failure on a missing `libgtk` here means a dependency has
       # crept into `plainly-core` or `plainly-cli`.
       - name: cargo test -p plainly-cli
         run: cargo test -p plainly-cli
 
       # The same invariant, checked from the outside: the dependency graph and
-      # the built binary's linkage. It builds the CLI itself and prints the
-      # shared libraries it needs.
-      #
-      # It reads cargo's JSON with `python3`, which this runner's base image has;
-      # nothing here installs a toolchain for the check itself.
+      # the built binary's linkage. It reads cargo's JSON with `python3`, which
+      # this runner's base image has, so the check itself installs nothing.
       - name: the CLI is headless
         run: scripts/check-headless-cli.sh
 

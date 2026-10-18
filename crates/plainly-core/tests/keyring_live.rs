@@ -1,7 +1,6 @@
 //! The real OS keyring — the one path that cannot be faked at the seam.
 //!
-//! It is `#[ignore]`d because it needs a session bus with a Secret Service
-//! running, which a build machine may not have. Run it explicitly:
+//! Run it explicitly:
 //!
 //! ```text
 //! cargo test -p plainly-core -- --ignored
@@ -37,11 +36,9 @@ fn a_key_can_be_stored_read_and_cleared_in_the_real_keyring() {
 
     let keyring = KeyringSecrets::new();
 
-    // A machine with no Secret Service on its bus cannot run this test at all,
-    // and failing here would read as "the keyring code is broken" when nothing
-    // about it has been exercised. Silence is worse: a skipped test that reports
-    // `ok` is indistinguishable from a passing one. So the skip is loud, and a
-    // machine that is *supposed* to have a keyring can demand one outright.
+    // A machine with no Secret Service cannot run this test at all, and a skip
+    // that reports `ok` is indistinguishable from a pass. So the skip is loud,
+    // and a machine that is supposed to have a keyring can demand one.
     if let Err(error) = keyring.get(&provider) {
         let message = format!("no usable Secret Service on this machine ({error})");
         if require_keyring() {

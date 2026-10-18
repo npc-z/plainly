@@ -21,7 +21,6 @@ use plainly_core::{
 
 use support::TempDir;
 
-/// The instant every fixture is stamped with.
 fn now() -> Timestamp {
     Timestamp::from_unix_seconds(1_760_000_000).expect("the fixture instant is in range")
 }
@@ -47,8 +46,7 @@ struct Inner {
 }
 
 impl FakeEndpoint {
-    /// An endpoint that accepts every shape, lists one model and answers with
-    /// `answer` any number of times.
+    /// An endpoint that accepts every shape and lists one model.
     fn accepting() -> Self {
         Self::new()
     }
@@ -87,7 +85,6 @@ impl FakeEndpoint {
         self
     }
 
-    /// Every probe request it was given, in order.
     fn probes_seen(&self) -> Vec<ProbeRequest> {
         self.inner.seen.borrow().clone()
     }
@@ -161,8 +158,6 @@ fn a_schema_enforcing_endpoint_is_learned_as_enforced() {
 
 #[test]
 fn an_endpoint_that_rejects_json_schema_is_learned_as_best_effort() {
-    // The documented DeepSeek signal: json_schema is a 400 and json_object is a
-    // 200 on the same endpoint (spec §7).
     let dir = TempDir::new("probe-besteffort");
     let config = Config::parse(&custom("http://127.0.0.1:1/v1")).expect("valid TOML");
     let setup = ProviderSetup::resolve("stub", &config).expect("the provider resolves");
@@ -351,8 +346,6 @@ fn clearing_the_cache_loses_nothing_but_the_conclusion() {
 
     std::fs::remove_dir_all(dir.join("cache")).expect("the cache directory is removable");
 
-    // The capability is recomputable, so nothing about the provider is lost: the
-    // choice lives in the configuration, which the cache never touched.
     let again = probe::capability_for(&endpoint, &setup, &cache(&dir), now());
     assert_eq!(again.origin, Origin::Probed);
     assert_eq!(again.capability.schema, SchemaSupport::Enforced);
@@ -588,9 +581,9 @@ fn a_second_run_with_a_cached_conclusion_probes_nothing() {
     assert_eq!(endpoint.generations(), 2);
 }
 
-/// The retry policy's own budget still applies on top of a downgrade: the two
-/// are separate layers, and a run that downgraded and then hit malformed answers
-/// gets the documented two extra attempts rather than a third cap.
+/// The retry policy's budget is separate from the downgrade, so a run that
+/// downgraded and then hit malformed answers still gets the documented two extra
+/// attempts rather than a third cap.
 #[test]
 fn a_downgraded_run_still_obeys_the_retry_policy() {
     let dir = TempDir::new("probe-run-downgrade-retry");
@@ -628,8 +621,6 @@ fn a_downgraded_run_still_obeys_the_retry_policy() {
     );
 }
 
-/// The capability a run reports is not a placeholder: a cached one describes the
-/// endpoint the run actually talked to.
 #[test]
 fn a_cached_conclusion_is_reported_as_cached() {
     let dir = TempDir::new("probe-run-origin");
@@ -686,10 +677,6 @@ fn a_cache_entry_that_cannot_be_read_is_a_miss_rather_than_an_error() {
     );
 }
 
-/// A re-probe that learns nothing is not a correction. The endpoint refused the
-/// shape *and* would not answer the probe, so the cautious shape is a guess —
-/// asking the Passage again on a guess is the wasted call the policy exists to
-/// refuse, and reporting it as the endpoint's own answer would be worse.
 #[test]
 fn a_re_probe_that_learns_nothing_does_not_ask_again() {
     let dir = TempDir::new("probe-run-reprobe-silent");
@@ -738,9 +725,6 @@ fn a_re_probe_that_learns_nothing_does_not_ask_again() {
     assert_eq!(failure.failure.kind, FailureKind::UnsupportedParameter);
 }
 
-/// The switch question is only settled by a request that carried the field. A
-/// provider whose route cannot carry it keeps its claim *unverified*, and an
-/// unverified claim is not something to write into a cache with no TTL.
 #[test]
 fn a_switch_the_route_cannot_carry_is_not_probed() {
     let dir = TempDir::new("probe-switch-untestable");
@@ -791,9 +775,6 @@ fn a_thinking_switch_that_could_not_be_verified_is_not_cached() {
     assert!(found.unwritten.is_some(), "{found:?}");
 }
 
-/// A correction the request cannot reflect is not a correction. With thinking
-/// asked for, the canonical field is never sent, so a switch-only change would
-/// buy a byte-identical second ask.
 #[test]
 fn a_correction_the_request_cannot_reflect_does_not_ask_again() {
     let dir = TempDir::new("probe-switch-unreflected");
@@ -839,7 +820,6 @@ fn a_correction_the_request_cannot_reflect_does_not_ask_again() {
     );
 }
 
-/// A cache that cannot be written costs a re-probe next time and nothing else.
 #[test]
 fn a_cache_that_cannot_be_written_does_not_fail_the_run() {
     let dir = TempDir::new("probe-cache-unwritable");

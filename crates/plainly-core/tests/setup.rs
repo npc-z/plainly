@@ -18,8 +18,6 @@ fn the_default_provider_is_the_shipped_deepseek_preset() {
     assert_eq!(setup.label, "DeepSeek");
     assert_eq!(setup.endpoint, "https://api.deepseek.com/v1");
     assert_eq!(setup.model, "deepseek-flash");
-    // Thinking off by default, which is the whole point of the preset: about a
-    // 10x latency improvement over the provider's own default (spec §7).
     assert_eq!(setup.thinking, Thinking::Off);
     assert_eq!(setup.schema, SchemaSupport::BestEffort);
     assert_eq!(setup.thinking_switch, ThinkingSwitch::Canonical);
@@ -31,13 +29,10 @@ fn every_shipped_preset_names_a_cloud_model_or_asks_for_one() {
     for name in ["deepseek", "openai", "llamacpp", "ollama", "lmstudio"] {
         let result = ProviderSetup::resolve(name, &Config::default());
         match name {
-            // The cloud presets are usable as they stand.
             "deepseek" | "openai" => {
                 let setup = result.expect("a cloud preset resolves on its own");
                 assert!(!setup.model.is_empty(), "{name} has a model");
             }
-            // A local runtime serves whatever the user has, so the model is
-            // theirs to name; tickets/06 fills it in from the probe.
             _ => {
                 let error = result.expect_err("a local preset asks for a model first");
                 assert!(
@@ -73,18 +68,13 @@ fn the_configuration_wins_over_the_preset_field_by_field() {
     )
     .expect("the configured provider resolves");
 
-    // The trailing slash is trimmed so the path is joined once, not twice.
     assert_eq!(setup.endpoint, "https://api.deepseek.com/v2");
     assert_eq!(setup.model, "a-newer-deepseek");
     assert_eq!(setup.thinking, Thinking::On);
-    // Same service, different path: what the preset knows still applies.
     assert_eq!(setup.schema, SchemaSupport::BestEffort);
     assert_eq!(setup.thinking_switch, ThinkingSwitch::Canonical);
 }
 
-/// The preset describes one service, not a name. Point the name at another
-/// machine and its call-surface knowledge is void: `json_object` is a 400 on
-/// LM Studio, and the canonical thinking field is a 400 on anything strict.
 #[test]
 fn an_endpoint_that_names_another_service_voids_what_the_preset_knew() {
     let setup = ProviderSetup::resolve(
@@ -98,14 +88,8 @@ fn an_endpoint_that_names_another_service_voids_what_the_preset_knew() {
     )
     .expect("the configured provider resolves");
 
-    // The model is a knob the user did not touch, so the preset's still stands.
     assert_eq!(setup.model, "deepseek-flash");
-    // And so is the name they wrote: a 400 from 127.0.0.1 must not be reported
-    // as "DeepSeek answered", which would blame a service never contacted.
     assert_eq!(setup.label, "deepseek");
-    // Everything else is "we do not know this endpoint yet": ask for a schema,
-    // send nothing that might be rejected, demand no key. tickets/05 replaces
-    // this with what a probe finds.
     assert_eq!(setup.schema, SchemaSupport::Enforced);
     assert_eq!(setup.thinking_switch, ThinkingSwitch::Unsupported);
     assert_eq!(setup.key, KeyRequirement::Optional);
@@ -151,9 +135,6 @@ fn a_custom_provider_is_whatever_the_configuration_says() {
     assert_eq!(setup.endpoint, "http://127.0.0.1:11434/v1");
     assert_eq!(setup.model, "some-model");
     assert_eq!(setup.thinking, Thinking::Off);
-    // Nothing is known about a name Plainly does not ship, so nothing that might
-    // be rejected is sent: a schema is asked for (correcting that is the probe's
-    // job), no thinking field, and no key is demanded.
     assert_eq!(setup.schema, SchemaSupport::Enforced);
     assert_eq!(setup.thinking_switch, ThinkingSwitch::Unsupported);
     assert_eq!(setup.key, KeyRequirement::Optional);
@@ -224,10 +205,6 @@ fn ollama_is_resolved_to_its_own_route_and_everyone_else_to_the_shared_one() {
 
 #[test]
 fn the_surface_follows_the_provider_name_rather_than_the_endpoint() {
-    // The surface is how Plainly talks to this provider, not a claim about what
-    // the endpoint accepts: someone running Ollama on another host still wants
-    // `/api/chat`, and an endpoint that does not serve it is caught by the
-    // compatibility fallback in `chat` rather than by guessing from a host name.
     let setup = ProviderSetup::resolve(
         "ollama",
         &config("[providers.ollama]\nmodel = \"m\"\nendpoint = \"http://127.0.0.1:9999/v1\"\n"),
@@ -235,8 +212,6 @@ fn the_surface_follows_the_provider_name_rather_than_the_endpoint() {
     .expect("the fixture resolves");
 
     assert_eq!(setup.surface, Surface::Ollama);
-    // What the preset knew about the *call surface* is still withdrawn: the
-    // schema and the switch are properties of the vendor's own endpoint.
     assert_eq!(
         ProviderSetup::resolve(
             "deepseek",
@@ -257,8 +232,6 @@ fn a_capability_replaces_only_what_a_probe_can_know() {
 
     assert_eq!(probed.schema, SchemaSupport::Enforced);
     assert_eq!(probed.thinking_switch, ThinkingSwitch::Unsupported);
-    // Everything a probe has no say in is carried over untouched: the model and
-    // the endpoint are the user's, and the profile still names the vendor.
     assert_eq!(probed.name, setup.name);
     assert_eq!(probed.label, setup.label);
     assert_eq!(probed.endpoint, setup.endpoint);
@@ -267,10 +240,6 @@ fn a_capability_replaces_only_what_a_probe_can_know() {
     assert_eq!(probed.key, setup.key);
 }
 
-/// "Local" is a fact about where the request goes, not about the provider's
-/// name: `ollama` pointed at a remote host is not local, and a custom name
-/// pointed at loopback is. The surfaces use it to say which answers come from a
-/// model nobody can vouch for (spec §12, tickets/06).
 #[test]
 fn an_endpoint_on_this_machine_is_local_and_one_elsewhere_is_not() {
     for local in [

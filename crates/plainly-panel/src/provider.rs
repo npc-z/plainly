@@ -1,28 +1,25 @@
 //! Which provider a trigger talks to — and, for ⟳, which one it would rather.
 //!
 //! The type is `ProviderChoice` rather than `Provider` on purpose: the glossary
-//! reserves "provider" for the profile the Lookup Key is made of, the domain
-//! already has `ProviderSetup` for the resolved profile, and a third name meaning
-//! "the provider this trigger picked" would be the kind of collision that makes
-//! two modules each other's business.
+//! reserves "provider" for the profile the Lookup Key is made of, and the domain
+//! already has `ProviderSetup` for the resolved profile, so a third name meaning
+//! "the provider this trigger picked" would collide with both.
 //!
-//! The panel reads its provider out of `[app].provider` like every other surface
-//! (spec §8), so the ordinary trigger needs nothing here. ⟳ is the exception, and
-//! it is the whole reason this module exists: the note the panel puts under a
-//! locally hosted model tells the person to press ⟳ "换成云端重新生成" (spec §12),
-//! and a button that re-ran the same local model would make that sentence a lie.
+//! The panel reads its provider out of `[app].provider` like every other surface,
+//! so the ordinary trigger needs nothing here. ⟳ is the whole reason this module
+//! exists: the note the panel puts under a locally hosted model tells the person to
+//! press ⟳ "换成云端重新生成", and a button that re-ran the same local model would
+//! make that sentence a lie.
 //!
 //! "换成云端" needs two answers, and neither is guessable: which cloud provider,
 //! and whether it can be used *now*. The choice is the first shipped preset whose
 //! **configured** endpoint is not on this machine and which core's readiness says
-//! is usable — deterministic, and always one of the providers the product ships
-//! rather than whichever name happens to sit in the file. When nothing satisfies
-//! it, there is no cloud alternative and ⟳ is honestly just a regeneration with
-//! the same model; the note under the content says which of the two it is, so the
-//! promise and the behaviour cannot drift apart.
+//! is usable. When nothing satisfies it, there is no cloud alternative and ⟳ is
+//! just a regeneration with the same model; the note under the content says which
+//! of the two it is, so the promise and the behaviour cannot drift apart.
 //!
 //! Both answers come from core: [`plainly_core::local_of`] for "is this machine",
-//! and [`plainly_core::Readiness`] for "could it be used right now" — the same
+//! and [`plainly_core::Readiness`] for "could it be used right now", the same
 //! values the run path is judged by, so a preset pointed at another host is
 //! offered under the requirement that host actually makes.
 
@@ -36,7 +33,7 @@ use crate::strings;
 pub struct ProviderChoice {
     pub name: String,
     /// Whether the endpoint is on this machine, which decides the note and the
-    /// chip (spec §7, §12).
+    /// chip.
     pub local: bool,
 }
 
@@ -56,8 +53,8 @@ impl ProviderChoice {
             let local = local_of(preset.name, config);
             (!local && Readiness::of(preset.name, config, secrets).usable()).then(|| Self {
                 name: preset.name.to_string(),
-                // Derived from the same predicate, never assumed: the filter above
-                // is what makes it false today, and it is not a second rule.
+                // Derived from the same predicate rather than assumed: the filter
+                // above is what makes it false, and this is not a second rule.
                 local,
             })
         })
@@ -71,9 +68,9 @@ impl ProviderChoice {
     pub fn of(config: &plainly_core::Config, secrets: &Secrets) -> (Self, Option<Self>) {
         let name = config.app.provider.clone();
         // "On this machine" is the configured endpoint's fact, and core answers it
-        // for every surface the same way (spec §6). It does not need a resolved
-        // setup: a local preset with no model chosen yet is still local
-        // (tickets/06), and "which model" has nothing to do with "where it runs".
+        // for every surface the same way. It does not need a resolved setup: a
+        // local preset with no model chosen yet is still local, and "which model"
+        // has nothing to do with "where it runs".
         let local = local_of(&name, config);
 
         (
@@ -83,12 +80,8 @@ impl ProviderChoice {
     }
 }
 
-/// The note under the content, for a locally hosted model.
-///
-/// Two sentences because there are two situations, and the sentence is the button's
-/// instructions: with a cloud provider to move to, ⟳ is that move; without one it
-/// is an ordinary regeneration, and saying "换成云端" would send the person looking
-/// for a provider they do not have (spec §12).
+/// The note under the content: the cloud-move one when there is a cloud provider,
+/// the ordinary-regeneration one otherwise.
 pub fn local_note(cloud: Option<&ProviderChoice>) -> &'static str {
     match cloud {
         Some(_) => strings::LOCAL_NOTE,
@@ -104,8 +97,7 @@ mod tests {
     /// A secret store that answers exactly the names it was given a key for.
     ///
     /// Through the environment tier, which is the one tier a test can populate
-    /// without a keyring — and the same way the desktop's own tests spell it, so
-    /// that "a key for this provider" means one thing across the workspace.
+    /// without a keyring.
     fn secrets_with(names: &[&str]) -> Secrets {
         Secrets::with_stores(
             EnvSecrets::from_pairs(
@@ -165,8 +157,7 @@ mod tests {
         );
     }
 
-    /// No key for any hosted provider means no cloud move, and the note says so
-    /// rather than instructing the person to press a button that would not do it.
+    /// No key for any hosted provider means no cloud move.
     #[test]
     fn a_local_provider_with_no_cloud_key_offers_nothing() {
         let config = crate::support::local_config();
@@ -178,7 +169,7 @@ mod tests {
     }
 
     /// A hosted provider pointed at this machine is local: the endpoint decides,
-    /// not the name (`spec §6`).
+    /// not the name.
     #[test]
     fn a_hosted_name_pointed_at_loopback_is_local() {
         let config = Config {

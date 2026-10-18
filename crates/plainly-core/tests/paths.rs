@@ -1,7 +1,4 @@
 //! Where Plainly's files go.
-//!
-//! The rules are the interesting part, and the inputs are data, so these run
-//! anywhere without touching the process environment.
 
 use plainly_core::{CONFIG_FILE, IDENTIFIER, PathError, PathInputs, Paths};
 
@@ -46,9 +43,6 @@ fn without_xdg_the_defaults_follow_the_home_directory() {
     );
 }
 
-/// The XDG spec says a relative variable is ignored, and an empty one is not a
-/// path at all. Both must fall back rather than produce a path relative to
-/// wherever the process happens to be.
 #[test]
 fn empty_or_relative_xdg_values_are_ignored() {
     let inputs = PathInputs::new("/home/learner")
@@ -92,8 +86,6 @@ fn the_configuration_file_is_named_and_placed_by_the_config_directory() {
     assert_eq!(paths.config_file(), paths.config_dir().join(CONFIG_FILE));
 }
 
-/// The identifier decides where everyone's files live, so it is worth pinning:
-/// changing it silently moves a user's history.
 #[test]
 fn the_identifier_is_the_shipped_one() {
     assert_eq!(IDENTIFIER, "dev.plainly.app");

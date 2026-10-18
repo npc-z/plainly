@@ -10,11 +10,10 @@
 //! Ollama is the one vendor with a surface of its own, so it gets its own route
 //! here rather than a special case at every call site (spec §7).
 //!
-//! It is deliberately the transport and the two experiments of ticket 05, and no
-//! policy: one request, one answer, no retry (tickets/04). [`ProbeEndpoint::probe`]
-//! and [`ProbeEndpoint::models`] report what an endpoint accepts; concluding
-//! anything from that, caching it and deciding whether to run again is
-//! [`crate::probe`].
+//! It is deliberately the transport and no policy: one request, one answer, no
+//! retry. [`ProbeEndpoint::probe`] and [`ProbeEndpoint::models`] report what an
+//! endpoint accepts; concluding anything from that, caching it and deciding
+//! whether to run again is [`crate::probe`].
 
 use std::time::Duration;
 
@@ -41,11 +40,10 @@ pub const MAX_TOKENS: u32 = 2048;
 ///
 /// Reasoning is spent before the answer exists, and it can be most of the
 /// completion (spec §7). A chunk at the splitting threshold needs roughly 900
-/// answer tokens, so the ordinary budget leaves nothing for thinking; 8192 is
-/// what the prototype's thinking runs used against DeepSeek, several times the
-/// 1304 reasoning tokens measured for a single sentence, whose own default
-/// output budget is 64K. A local runtime's context is the other half of that
-/// question, and tickets/06 probes it rather than this constant guessing.
+/// answer tokens, so the ordinary budget leaves nothing for thinking, and 8192
+/// leaves several times the reasoning measured for a single sentence. A local
+/// runtime's context is the other half of that question, and discovery probes it
+/// rather than this constant guessing.
 pub const MAX_TOKENS_THINKING: u32 = 8192;
 
 /// The floor [`MAX_TOKENS`] must clear: the spec's 1200 output tokens for a chunk
@@ -76,7 +74,7 @@ pub const TIMEOUT: Duration = Duration::from_secs(60);
 ///
 /// A scan asks several ports in a row, so a port that accepts a connection and
 /// then says nothing would otherwise cost the whole request timeout each time.
-/// A local runtime answers a tiny GET immediately or not at all (tickets/06).
+/// A local runtime answers a tiny GET immediately or not at all.
 pub const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// The completion budget one request gets at `thinking`.
@@ -162,8 +160,8 @@ enum RouteOutcome<T> {
     Failed(ProviderError),
 }
 
-/// The API key, wrapped so that a `Debug` on anything holding one — this client
-/// today, some future error type — prints that there is a key and not the key.
+/// The API key, wrapped so that a `Debug` on anything holding one prints that
+/// there is a key and not the key.
 #[derive(Clone)]
 struct ApiKey(String);
 
@@ -324,9 +322,8 @@ impl ChatCompletions {
     ///
     /// Public because the shape is a contract with the endpoint rather than an
     /// implementation detail: the nesting of `response_format`, the thinking
-    /// spelling and the token budget are exactly what a provider notices. This
-    /// is the OpenAI-compatible route's body; Ollama's own route is
-    /// [`ChatCompletions::native_request_body`].
+    /// spelling and the token budget are exactly what a provider notices. This is
+    /// the OpenAI-compatible route's body.
     pub fn request_body(&self, request: &ExplainRequest) -> Value {
         let mut body = json!({
             "model": self.setup.model,
@@ -394,8 +391,8 @@ impl ChatCompletions {
     ///
     /// Thinking is deliberately not switched here. Below Ollama 0.31.2 a
     /// `think` field silently disables `format` as well, and that version floor
-    /// belongs to the local discovery path (tickets/06) — guessing here would
-    /// trade a verified schema for an unverifiable switch.
+    /// belongs to local discovery. Guessing here would trade a verified schema
+    /// for an unverifiable switch.
     pub fn native_request_body(&self, request: &ExplainRequest) -> Value {
         json!({
             "model": self.setup.model,
@@ -461,8 +458,8 @@ impl ChatCompletions {
     /// The tiny body a probe sends on the OpenAI-compatible route.
     ///
     /// Public for the same reason [`ChatCompletions::request_body`] is: what a
-    /// probe puts on the wire *is* the experiment (tickets/05), so it is pinned
-    /// by a test rather than inferred from behaviour.
+    /// probe puts on the wire *is* the experiment, so it is pinned by a test
+    /// rather than inferred from behaviour.
     pub fn probe_request_body(&self, probe: &ProbeRequest) -> Value {
         let mut body = json!({
             "model": self.setup.model,
@@ -494,10 +491,10 @@ impl ChatCompletions {
     ///
     /// `probe.disable_thinking` is deliberately not sent: this route's switch is
     /// not the canonical field, and below Ollama 0.31.2 sending it silently
-    /// disables `format` as well (tickets/06 owns that version floor). A probe
-    /// that asked here would be answered about a request nobody makes, which is
-    /// why [`crate::probe::reprobe`] does not put the switch question to a
-    /// surface whose route cannot carry the field.
+    /// disables `format` as well (local discovery owns that version floor). A
+    /// probe that asked here would be answered about a request nobody makes,
+    /// which is why [`crate::probe::reprobe`] does not put the switch question to
+    /// a surface whose route cannot carry the field.
     pub fn native_probe_body(&self, probe: &ProbeRequest) -> Value {
         let format = match probe.schema {
             SchemaSupport::Enforced => wire_schema(),
@@ -527,17 +524,16 @@ impl ChatCompletions {
     ///
     /// The client's own budget is what a cut-off answer is reported against:
     /// which budget was in play is the first thing to look at when an answer is
-    /// truncated, and the two modes do not share one (tickets/04).
+    /// truncated, and the two modes do not share one.
     pub fn answer_from(&self, body: &Value) -> Result<String, ProviderError> {
         let max_tokens = self.max_tokens();
         // `status: "incomplete"` is how OpenAI's Responses API reports an answer
-        // that ran out of budget; the Chat Completions route this adapter uses
-        // marks the same thing with `finish_reason` instead, so in practice this
-        // branch is defensive — a compatible gateway may pass the field through,
-        // and spec §7 asks for it by name. Either way it is checked before the
-        // content, because what an incomplete answer carries is a prefix of
-        // JSON, and reporting that as a contract violation would send the retry
-        // policy after the model when the cause is the budget (spec §6).
+        // that ran out of budget. The Chat Completions route marks the same thing
+        // with `finish_reason`, so this branch is defensive, but spec §7 asks for
+        // it by name. It is checked before the content because an incomplete
+        // answer carries a prefix of JSON, and reporting that as a contract
+        // violation would send the retry policy after the model when the cause is
+        // the budget (spec §6).
         if body.get("status").and_then(Value::as_str) == Some("incomplete") {
             let reason = body
                 .get("incomplete_details")
@@ -568,10 +564,8 @@ impl ChatCompletions {
             return Err(refused(refusal));
         }
 
-        // Truncation is checked before the content is handed over, because the
-        // content of a truncated answer is a prefix of JSON that will fail the
-        // contract — which would send the retry policy after the model when the
-        // real cause is the budget (spec §6).
+        // Checked before the content: a truncated answer is a JSON prefix, and
+        // the contract check would blame the model when the budget ran out.
         if choice.get("finish_reason").and_then(Value::as_str) == Some("length") {
             return Err(ProviderError::truncated(format!(
                 "the answer was cut off at max_tokens = {max_tokens}; \
@@ -607,13 +601,13 @@ impl ChatCompletions {
         }
 
         // The documented LM Studio routing bug: the schema-constrained answer
-        // lands in `reasoning_content` and `content` is left empty. Recovering
-        // it beats failing a good answer — but only when it is a JSON object.
-        // A reasoning model that put its chain of thought there and then stopped
+        // lands in `reasoning_content` and `content` is left empty. Recovering it
+        // beats failing a good answer, but only when it is a JSON object. A
+        // reasoning model that put its chain of thought there and then stopped
         // produced no answer at all, and handing prose to the contract check
-        // would report it as a malformed answer and spend the retries on it
-        // (tickets/04). Whether the object *is* an Explanation is the explain
-        // path's question, asked in one place.
+        // would report it as a malformed answer and spend the retries on it.
+        // Whether the object *is* an Explanation is the explain path's question,
+        // asked in one place.
         if let Some(reasoning) = non_blank(message.get("reasoning_content").and_then(Value::as_str))
         {
             if serde_json::from_str::<Value>(reasoning).is_ok_and(|value| value.is_object()) {
@@ -632,10 +626,10 @@ impl ChatCompletions {
     /// A 400 or 422 on a request whose shape *we* chose is read as a rejection
     /// of that shape: the capability we assumed for this endpoint is wrong, so
     /// asking again would fail identically and the answer is a downgrade and a
-    /// fresh probe instead (tickets/05). Distinguishing "the shape" from "the
-    /// model name" by searching the body would be a guess; the consequence of
-    /// guessing this way is one cheap probe, and the consequence of the other
-    /// way is an endpoint that can never be used.
+    /// fresh probe instead. Distinguishing "the shape" from "the model name" by
+    /// searching the body would be a guess; the consequence of guessing this way
+    /// is one cheap probe, and the consequence of the other way is an endpoint
+    /// that can never be used.
     pub fn http_error(&self, status: u16, body: &str) -> ProviderError {
         http_error(&self.setup.label, self.api_key.secret(), status, body)
     }
@@ -815,10 +809,10 @@ impl ProbeEndpoint for ChatCompletions {
     /// The models the endpoint lists on its OpenAI-compatible surface.
     ///
     /// One request, and no conclusion when it does not answer: which models a
-    /// runtime has is discovery rather than capability (tickets/06), so a failure
-    /// here is a shorter list, not a failed run. The native route is deliberately
-    /// not consulted as well — the compatibility surface is the one every runtime
-    /// in the spec serves, and two lists that can disagree would need a rule for
+    /// runtime has is discovery rather than capability, so a failure here is a
+    /// shorter list, not a failed run. The native route is deliberately not
+    /// consulted as well. The compatibility surface is the one every runtime in
+    /// the spec serves, and two lists that can disagree would need a rule for
     /// which one wins.
     fn models(&self) -> Result<Vec<EndpointModel>, ProviderError> {
         read_models(&self.agent, &self.api_key, &self.setup.endpoint)
@@ -828,11 +822,11 @@ impl ProbeEndpoint for ChatCompletions {
 /// Reads the model list at a base URL, before any model has been chosen.
 ///
 /// The one piece of this adapter that is useful without a [`ProviderSetup`]:
-/// local discovery asks a port what it serves and cannot name a model yet
-/// (tickets/06). The credential comes with each call rather than being held
-/// here, because it belongs to the *name* a candidate would be configured
-/// under, and that is a decision for the caller ([`crate::discover`]); the short
-/// timeout is this type's own, because a scan bounds what one silent port costs.
+/// local discovery asks a port what it serves and cannot name a model yet. The
+/// credential comes with each call rather than being held here, because it
+/// belongs to the *name* a candidate would be configured under, and that is a
+/// decision for the caller ([`crate::discover`]). The short timeout is this
+/// type's own, because a scan bounds what one silent port costs.
 pub struct ModelReader {
     agent: ureq::Agent,
 }
@@ -892,7 +886,7 @@ fn ollama_root(endpoint: &str) -> &str {
 /// "none listed" about one and "could not be listed" about the other.
 ///
 /// Public because the shapes it tolerates are a fact about the endpoints rather
-/// than about this adapter, and the ones a runtime volunteers are what tickets/06
+/// than about this adapter, and the ones a runtime volunteers are what discovery
 /// selects between.
 ///
 /// Tolerant on purpose, and documented rather than guessed at: the endpoints in
@@ -927,9 +921,9 @@ fn model_from(entry: &Value) -> Option<EndpointModel> {
 ///
 /// `loaded` is what LM Studio answers with, `state` is a spelling in the same
 /// family, and `status.value` is what the llama.cpp router on this machine
-/// answers with — observed, not read in a document (tickets/06). A value none of
-/// them means is `None`: a runtime that says `"loading"` has not said whether the
-/// model is up.
+/// answers with, observed rather than read in a document. A value none of them
+/// means is `None`, because a runtime that says `"loading"` has not said whether
+/// the model is up.
 fn loaded_from(entry: &Value) -> Option<bool> {
     if let Some(loaded) = entry.get("loaded").and_then(Value::as_bool) {
         return Some(loaded);
@@ -954,9 +948,8 @@ fn loaded_from(entry: &Value) -> Option<bool> {
 /// A field of its own where the runtime has one, and otherwise the model's
 /// launch argv: the llama.cpp router answers `"args": [… "--ctx-size", "16384" …]`
 /// and reports nothing else, and reading it is exactly how a model's context is
-/// known while the model is still unloaded (spec §7, tickets/06). Both spellings
-/// of the flag are read, because an argv is written by whoever launched the
-/// server.
+/// known while the model is still unloaded (spec §7). Both spellings of the flag
+/// are read, because an argv is written by whoever launched the server.
 fn context_from(entry: &Value) -> Option<u64> {
     let field = ["max_context_length", "context_length", "n_ctx"]
         .into_iter()

@@ -1,9 +1,7 @@
 //! The Artifact: an Explanation with its Passage and the app's metadata.
 //!
-//! This is the shape `plainly explain --format json` prints and the shape a
-//! Record is written from, so it stays one flat document — the model's four
-//! fields sit beside the ones the app appends, and no field is nested behind a
-//! wrapper the reader has to unwrap.
+//! It is one flat document: the model's four fields sit beside the ones the app
+//! appends, and no field is nested behind a wrapper the reader has to unwrap.
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -11,13 +9,13 @@ use crate::{Explanation, Level, Thinking};
 
 /// The version of the Explanation data model, stamped on every Artifact.
 ///
-/// `1` is the v0 shape; **`2` adds the Gloss Example** — a Gloss carries
-/// `expression`, `gloss` and `example`, and a row stamped `1` is a Gloss without
-/// one. Reading such a row is not an error: its Example is empty, and a surface
-/// shows no Example line ([ADR 0002]).
+/// A `1` row is a Gloss without an Example. A Gloss carries `expression`,
+/// `gloss` and `example`, and reading a `1` row is not an error: its Example is
+/// empty, and a surface shows no Example line ([ADR 0002]).
 ///
-/// It is deliberately not part of the Lookup Key: a change of shape does not make
-/// an old answer wrong, so bumping it must not throw the cache away (spec §9).
+/// Deliberately not part of the Lookup Key, because a change of shape does not
+/// make an old answer wrong and bumping it must not throw the cache away
+/// (spec §9).
 ///
 /// [ADR 0002]: ../../../docs/adr/0002-the-example-is-required-but-not-backfilled.md
 pub const ARTIFACT_VERSION: u32 = 2;
@@ -137,8 +135,8 @@ impl Timestamp {
         // The range is applied here too rather than assumed: both ways in go
         // through the same check, so neither can build a `Timestamp` the other
         // would refuse. If the range ever narrows, the boundary tests are the
-        // alarm — a stored timestamp outside it comes back as unreadable rather
-        // than as a panic on somebody's history.
+        // alarm, because a stored timestamp outside it comes back as unreadable
+        // rather than as a panic on somebody's history.
         Self::from_unix_seconds(seconds)
     }
 }
@@ -177,7 +175,7 @@ impl<'de> Deserialize<'de> for Timestamp {
 ///
 /// Everything the model is not trusted with is here: the Passage verbatim, the
 /// Level and Native Language the Explanation was pitched at, the provider profile
-/// that answered, and the two versions — the shape's and the prompt's — that say
+/// that answered, and the two versions, the shape's and the prompt's, that say
 /// what this document is and what produced it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Artifact {
@@ -191,14 +189,13 @@ pub struct Artifact {
     pub thinking: Thinking,
     /// The data model's version, not the prompt's: [`ARTIFACT_VERSION`].
     pub artifact_version: u32,
-    /// The content hash of the prompt that produced this Explanation, which is
-    /// what makes two runs comparable (tickets/07).
+    /// The content hash of the prompt that produced this Explanation.
     pub prompt_version: String,
     /// That prompt's human-readable name, for people rather than for identity.
     pub prompt_label: String,
     /// When this Explanation was first created. Equal to `generated_at` on a
-    /// freshly generated Artifact; they part ways once a Record is reused or
-    /// regenerated (tickets/08).
+    /// freshly generated Artifact. They part ways once a Record is reused or
+    /// regenerated.
     pub created_at: Timestamp,
     /// When this Explanation was generated.
     pub generated_at: Timestamp,

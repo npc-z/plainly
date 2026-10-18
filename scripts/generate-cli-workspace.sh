@@ -1,28 +1,25 @@
 #!/usr/bin/env bash
 #
-# Generates the CLI's synthetic workspace — `nix/cli-workspace/Cargo.toml` and
-# `nix/cli-workspace/Cargo.lock` — from the real workspace's root `Cargo.toml`
+# Generates the CLI's synthetic workspace, `nix/cli-workspace/Cargo.toml` and
+# `nix/cli-workspace/Cargo.lock`, from the real workspace's root `Cargo.toml`
 # and `Cargo.lock`.
 #
 # The CLI package (`.#plainly`) is built from a workspace of just two crates.
 # That is not tidiness: a workspace containing the GUI crates resolves
-# `libdbus-sys`, whose build script panics in a build sandbox (flake.nix carries
-# the long version). The split is frozen by ticket 02's Q5; this script only
-# replaces the *hand-copied* manifest and lock that used to live inside
-# flake.nix.
+# `libdbus-sys`, whose build script panics in a build sandbox.
 #
-# The manifest is a projection of the root one. What the projection *is* lives
-# in `scripts/cli_workspace.py`, shared with `scripts/check-cli-workspace.sh`,
-# so the rule has one owner.
+# The manifest is a projection of the root one. What the projection is lives in
+# `scripts/cli_workspace.py`, shared with `scripts/check-cli-workspace.sh`, so
+# the rule has one owner.
 #
 # The lock cannot be projected by pruning alone. `Cargo.lock` does not record
 # which features were enabled, so the root lock over-approximates the CLI's
-# optional edges (the GUI activates them); `cargo --locked`, which crane always
-# passes, rejects the over-approximation. So cargo normalises it: the script
-# seeds cargo with the pruned root lock — which pins the versions to the root
-# workspace's choices — and lets `cargo metadata` write the exact lock. Nothing
-# is upgraded: the versions in the seed are kept, cargo only drops what the CLI
-# does not need.
+# optional edges (the GUI activates them), and `cargo --locked`, which crane
+# always passes, rejects the over-approximation. So cargo normalises it: the
+# script seeds cargo with the pruned root lock, which pins the versions to the
+# root workspace's choices, and lets `cargo metadata` write the exact lock.
+# Nothing is upgraded. The seed's versions are kept and cargo drops only what
+# the CLI does not need.
 #
 # Usage:
 #   scripts/generate-cli-workspace.sh           # write nix/cli-workspace/
@@ -57,11 +54,11 @@ command -v cargo >/dev/null || fail "cargo is not on PATH — run this inside \`
 command -v python3 >/dev/null || fail "python3 is not on PATH — run this inside \`nix develop\`"
 python3 -c 'import tomllib' 2>/dev/null || fail "python3 has no tomllib (needs 3.11+)"
 
-# The lock must be written by the same cargo the build uses; a host cargo is a
-# different resolver and would normalise the seed differently. The expected
-# version is read from flake.nix rather than repeated here — the sed pattern
-# mirrors the `channel = "...";` line there, so a toolchain refactor updates
-# both.
+# The lock must be written by the same cargo the build uses, because a host
+# cargo is a different resolver and would normalise the seed differently. The
+# expected version is read from flake.nix rather than repeated here: the sed
+# pattern mirrors the `channel = "...";` line there, so a toolchain refactor
+# updates both.
 channel=$(sed -n 's/^[[:space:]]*channel = "\([^"]*\)";.*$/\1/p' flake.nix | head -n 1)
 [ -n "$channel" ] || fail "cannot read the Rust toolchain channel from flake.nix"
 cargo_version=$(cargo --version 2>/dev/null || true)
@@ -106,7 +103,6 @@ try:
 except KeyError as error:
     die(error.args[0])
 
-# --- the seed lock: the root lock cut down to the CLI's transitive closure ---
 try:
     kept = cli_workspace.root_lock_closure(cli_workspace.load("Cargo.lock")["package"])
 except KeyError as error:
@@ -132,7 +128,6 @@ for package in kept:
     seed_lines.append("")
 generated_seed = "\n".join(seed_lines)
 
-# --- let cargo normalise the seed -------------------------------------------
 os.makedirs(os.path.join(work, "crates"), exist_ok=True)
 for member in cli_workspace.MEMBERS:
     shutil.copytree(member, os.path.join(work, member))
@@ -143,9 +138,9 @@ with open(os.path.join(work, "Cargo.lock"), "w") as handle:
 work_lock = os.path.join(work, "Cargo.lock")
 
 # Offline first: a machine that has built the workspace already has the crates
-# cached. The online retry is only for a genuine cache miss — any other failure
-# (a manifest this cargo cannot read, a malformed seed) is reported as itself,
-# not blamed on the cache.
+# cached. The online retry is only for a genuine cache miss, and any other
+# failure (a manifest this cargo cannot read, a malformed seed) is reported as
+# itself rather than blamed on the cache.
 CACHE_MISS_MARKERS = (
     "offline",
     "no matching package",

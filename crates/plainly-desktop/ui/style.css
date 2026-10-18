@@ -1,6 +1,5 @@
-/* The main window's look, following the prototype ticket 16 settled on:
-   the paper-ish list, the white detail, the accent used only for the current
-   row and for section headings. */
+/* The main window's look: the paper-ish list, the white detail, the accent used
+   only for the current row and for section headings. */
 
 :root {
   --bg: #e9e7e1;
@@ -10,8 +9,7 @@
   --rule: #e3e1db;
   /* The rule beside quoted prose (an Example): the same weight as `--rule` and
      deliberately firmer, because it marks one line of a block rather than a
-     section edge. The panel draws the same 2px beside an Example from its own
-     theme — a layer surface has no palette to borrow. */
+     section edge. */
   --quote: #d5d2c9;
   --accent: #3b6fd4;
   --chip: #f1efe9;
@@ -154,13 +152,12 @@ h3 {
 [data-kind="comprehensible-english"] .prose { font-size: 14px; margin: 10px 0; }
 .gl { margin: 0 0 16px; color: #3c4250; }
 .gl code { background: var(--chip); padding: 1px 5px; border-radius: 4px; font: 12px ui-monospace, monospace; }
-/* One Gloss is three things with three jobs, and each is drawn in its own voice:
-   the expression is quoted from the Passage, so it keeps the chip; the meaning is
-   the answer, so it is ordinary body text; the Example is a sample of prose
-   rather than more definition, so it sits behind a rule in a serif italic and
-   steps further in. Three signals for one part is deliberate — the first pass at
-   this had italics alone, and italics alone did not read as a different thing.
-   The 16px between Glosses is what keeps three-line blocks from merging. */
+/* One Gloss is three things with three jobs, each drawn in its own voice: the
+   expression is quoted from the Passage, so it keeps the chip; the meaning is the
+   answer, so it is ordinary body text; the Example is a sample of prose rather
+   than more definition, so it sits behind a rule in a serif italic and steps
+   further in. The 16px between Glosses is what keeps three-line blocks from
+   merging. */
 .gl .gloss { margin: 5px 0 0 12px; color: var(--ink); }
 .gl .eg {
   margin: 6px 0 0 12px;

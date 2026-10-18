@@ -2,17 +2,17 @@
 //! start from for that endpoint.
 //!
 //! A preset is a starting point, not a capability table. The shape here is what
-//! these endpoints are known to look like *today*; tickets/05 replaces it with
-//! what a probe of the actual endpoint finds, because the same vendor changes
-//! under you — DeepSeek answers `json_object` and rejects `json_schema`, and no
-//! amount of knowing the name tells you that. The endpoint and the model can be
-//! overridden in configuration; the capability shape belongs to the endpoint, so
+//! these endpoints are known to look like offline, and a probe of the actual
+//! endpoint replaces it, because the same vendor changes under you. DeepSeek
+//! answers `json_object` and rejects `json_schema`, and no amount of knowing the
+//! name tells you that. The endpoint and the model can be overridden in
+//! configuration. The capability shape belongs to the endpoint, so
 //! [`crate::setup`] stops trusting it the moment the endpoint names another
 //! service.
 //!
-//! Presets for the local runtimes deliberately name no model: llama.cpp router,
-//! Ollama and LM Studio all serve whatever the user happens to have, and ticket
-//! 06 discovers the list rather than this table inventing a name that would 404.
+//! Presets for the local runtimes deliberately name no model. llama.cpp router,
+//! Ollama and LM Studio all serve whatever the user happens to have, and
+//! discovery lists it rather than this table inventing a name that would 404.
 
 use serde::{Deserialize, Serialize};
 
@@ -87,9 +87,9 @@ pub struct Preset {
     pub model: Option<&'static str>,
     /// Which call surface the vendor serves.
     pub surface: Surface,
-    /// What to assume when the endpoint cannot be probed (tickets/05). A probe
-    /// replaces it: the same vendor changes what it accepts, so knowing the
-    /// name is not knowing the call surface.
+    /// What to assume when the endpoint cannot be probed. A probe replaces it,
+    /// because the same vendor changes what it accepts, so knowing the name is
+    /// not knowing the call surface.
     pub schema: SchemaSupport,
     /// How thinking is turned off, if it can be.
     pub thinking: ThinkingSwitch,
@@ -105,9 +105,9 @@ pub const PRESETS: &[Preset] = &[
         endpoint: "https://api.deepseek.com/v1",
         model: Some("deepseek-flash"),
         surface: Surface::OpenAi,
-        // DeepSeek's `response_format.type` accepts text and json_object only
-        // (a probe finds this out; the value here is the offline fallback).
-        // The call is still held to the contract — by us, after the fact.
+        // DeepSeek's `response_format.type` accepts text and json_object only.
+        // A probe finds this out, and the value here is the offline fallback.
+        // The call is still held to the contract, by us, after the fact.
         schema: SchemaSupport::BestEffort,
         // The one endpoint where the canonical form is verified: it drops
         // reasoning_tokens to zero, while {"thinking":false} is a 422.
@@ -132,7 +132,7 @@ pub const PRESETS: &[Preset] = &[
         name: "llamacpp",
         label: "llama.cpp",
         // llama.cpp's own default. A router on another port is found by the
-        // probe in tickets/06, and the endpoint is editable either way.
+        // probe, and the endpoint is editable either way.
         endpoint: "http://127.0.0.1:8080/v1",
         // The model comes from the user's server; `/v1/models` lists it.
         model: None,
@@ -150,13 +150,13 @@ pub const PRESETS: &[Preset] = &[
         endpoint: "http://127.0.0.1:11434/v1",
         // Model tags are whatever has been pulled, e.g. qwen3.5:4b.
         model: None,
-        // The native route, where `format` carries structured output; `/v1` is
-        // the fallback when the native one is not there (tickets/05).
+        // The native route, where `format` carries structured output. `/v1` is
+        // the fallback when the native one is not there.
         surface: Surface::Ollama,
         // Structured outputs are documented on the OpenAI-compatible surface.
         // Thinking is deliberately left alone here: disabling it silently
-        // disabled `format` below Ollama 0.31.2, and the local path (tickets/06)
-        // is where that version floor belongs.
+        // disabled `format` below Ollama 0.31.2, and the local path is where
+        // that version floor belongs.
         schema: SchemaSupport::Enforced,
         thinking: ThinkingSwitch::Unsupported,
         key: KeyRequirement::Optional,

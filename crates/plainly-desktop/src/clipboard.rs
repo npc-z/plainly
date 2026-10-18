@@ -2,23 +2,18 @@
 //!
 //! The main window never has to read the clipboard: it is a focused window, and
 //! everything it does with a selection is *writing* it ([`crate::copy`]). The
-//! listener is the other way round — it has no surface at all and no focus to
-//! ask for, because taking focus on every copy would be the opposite of what
-//! "explain on copy" is for. So this is the panel's reader (spec §12) again, in
-//! the one shape the listener needs: the Passage, plus the MIME types its owner
-//! published, which is half of the data-control offer and the half that says
-//! what was published with it.
+//! listener is the other way round: it has no surface and no focus to ask for,
+//! because taking focus on every copy would be the opposite of what "explain on
+//! copy" is for. So this is the panel's reader (spec §12) in the one shape the
+//! listener needs: the Passage, plus the MIME types its owner published.
 //!
 //! **The duplication with `plainly-panel` is deliberate and the reason is a
-//! boundary, not convenience.** Core must not depend on Wayland — it is the
-//! crate that has to compile for a macOS or Windows build (spec §1) — and the
-//! panel is a binary-only crate, so sharing this would mean a new crate holding
-//! a Wayland client, which is the same trade tickets/14 refused for the
-//! twenty-line protocol probe. What is duplicated is the *reading*, not the
-//! criterion: the judgement of what the types mean lives in
-//! `plainly_core::clipboard` and is written once (spec §11). The listener reads
-//! the types only to tell one clipboard state from the next; the panel reads
-//! them to decide whether anything may be sent, and that is the one that decides.
+//! boundary, not convenience.** Core must not depend on Wayland, because it is
+//! the crate that has to compile for a macOS or Windows build (spec §1), and the
+//! panel is a binary-only crate, so sharing a Wayland client would mean a new
+//! crate. What is duplicated is the *reading*, not the criterion: the judgement
+//! of what the types mean lives in `plainly_core::clipboard` (spec §11). The
+//! listener reads the types only to tell one clipboard state from the next.
 
 use std::io::Read;
 use std::time::{Duration, Instant};
@@ -29,11 +24,10 @@ use wl_clipboard_rs::watch::{ClipboardEvent, ClipboardType, Offer};
 /// What one clipboard change published.
 ///
 /// The Passage and the types, and nothing judged: which types matter is core's
-/// question, and the listener does not answer it — it only notices that the
-/// answer would be different from last time. The types are part of the reading
-/// because they are part of the offer: the same words copied from a terminal and
-/// from a browser are two different offers, and the panel that the second one
-/// opens is the one that explains what the second copy put there.
+/// question, and the listener only notices that the answer would be different
+/// from last time. The types are part of the reading because they are part of
+/// the offer, and the same words copied from a terminal and from a browser are
+/// two different offers.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Observation {
     /// The Passage the clipboard holds, verbatim.
@@ -63,9 +57,9 @@ pub type Reading = Result<Observation, Unreadable>;
 /// Reading an offer is a request *to the application that owns the selection*,
 /// and nothing in the protocol makes it answer: a hung editor, a browser waiting
 /// on a modal, a program that is being debugged all leave the pipe open and
-/// silent. Two things behind the listener would wait with it — the panel is
+/// silent. Two things behind the listener would wait with it: the panel is
 /// spawned only after this read, and the stop channel is not looked at while it
-/// is blocked — so a read that never ends is a window that will not close and a
+/// is blocked. A read that never ends is a window that will not close and a
 /// `--watch` that will not stop.
 ///
 /// A well-behaved owner answers in well under a millisecond, so this is not a
@@ -75,17 +69,15 @@ const READ_TIMEOUT: Duration = Duration::from_secs(2);
 /// Read the contents of the offer a watcher just reported.
 ///
 /// `receive` is asked for one type rather than a list, because the marker's
-/// *value* is read by the surface that acts on it: the panel asks for
-/// `x-kde-passwordManagerHint` as well, and the criterion is core's
-/// (`Clipboard::reading`). A listener that read the value too would be a second
-/// place where "secret" is spelled.
+/// *value* is read by the surface that acts on it: the criterion is core's
+/// (`Clipboard::reading`), and a listener that read the value too would be a
+/// second place where "secret" is spelled.
 ///
-/// The read is bounded by [`READ_TIMEOUT`] and it is done on a thread of its own
-/// because the pipe has no timeout of its own. A read that outlives the deadline
-/// is **detached rather than killed** — there is no way to interrupt it from
-/// here — and the wait that owns it moves on; the thread ends when its owner
-/// closes the pipe, or with the process. The cost of that is one blocked thread
-/// per stalled owner, which is the price of not blocking the listener on one.
+/// The read is bounded by [`READ_TIMEOUT`] and done on a thread of its own
+/// because the pipe has no timeout. A read that outlives the deadline is
+/// **detached rather than killed**, because there is no way to interrupt it from
+/// here. The cost is one blocked thread per stalled owner, which is the price of
+/// not blocking the listener on one.
 pub fn observe(offer: &mut Offer<'_>, mime_types: &[String]) -> Reading {
     let Some(mime) = text_type(mime_types) else {
         return Err(Unreadable::Nothing);
@@ -122,8 +114,8 @@ pub fn observe(offer: &mut Offer<'_>, mime_types: &[String]) -> Reading {
 ///
 /// The first text-ish one, by the same rule `wl-clipboard` uses: `wl-paste` with
 /// the generic name `text` asks for exactly this, and a reader that hard-coded
-/// `text/plain` would miss the applications that publish only
-/// `text/plain;charset=utf-8` or `UTF8_STRING` (tickets/12).
+/// `text/plain` would miss applications that publish only
+/// `text/plain;charset=utf-8` or `UTF8_STRING`.
 ///
 /// An offer with no text type is the "nothing to explain" answer, which is why
 /// an image on the clipboard produces no panel rather than an error.
@@ -161,7 +153,7 @@ fn is_text(mime: &str) -> bool {
 ///
 /// The library's messages are matched loosely on purpose. It words them, and a
 /// reworded one must not turn "the clipboard is empty" into a failure worth
-/// printing — but it also must not turn a broken session into silence, so the
+/// printing, but it also must not turn a broken session into silence, so the
 /// fallback is the loud one.
 fn unreadable(reason: &str) -> Unreadable {
     if reason.contains("empty") || reason.contains("No suitable type") {
@@ -175,16 +167,15 @@ fn unreadable(reason: &str) -> Unreadable {
 ///
 /// Only the regular clipboard is watched. The primary selection is what a text
 /// *selection* is, not what a copy is: popping a panel every time somebody
-/// highlights a word while reading would be a different feature, and not one
-/// anybody asked for.
+/// highlights a word would be a different feature.
 ///
 /// **A watcher is used for one wait and then dropped.** `wl-clipboard-rs` has
-/// exactly one way out of a blocked `next_event`: cancel the watcher — and a
-/// cancelled watcher is finished for good, because the pipe its `wait` polls is
-/// still readable. Keeping one around would mean every wait after the first
-/// returns instantly and a copy that arrived in between is never seen. So each
-/// wait opens its own connection and lets it go, which also means the reconnect a
-/// compositor restart needs is not a separate path: it is the same one.
+/// exactly one way out of a blocked `next_event`: cancel the watcher, and a
+/// cancelled watcher is finished for good because the pipe its `wait` polls is
+/// still readable. Keeping one around would make every wait after the first
+/// return instantly, and a copy that arrived in between would never be seen. So
+/// each wait opens its own connection and lets it go, which is also the
+/// reconnect a compositor restart needs.
 pub struct Changes {
     /// The last reading the watch produced, so that "is there anything a panel
     /// could be asked for" can be answered without consuming an event.
@@ -194,8 +185,9 @@ pub struct Changes {
 impl Changes {
     /// Start watching.
     ///
-    /// Nothing is read here: the listener's first [`Observer::quiet`] is what
-    /// reports what the session holds, and that first reading is the arm.
+    /// Nothing is read here: the listener's first
+    /// [`crate::watch::Observer::quiet`] is what reports what the session holds,
+    /// and that first reading is the arm.
     pub fn open() -> Result<Self, String> {
         // A connection is opened and dropped so that "there is no session" is
         // reported by `--watch` at startup rather than by the first copy, hours
@@ -207,25 +199,23 @@ impl Changes {
     /// Wait until the clipboard changes, or until the deadline.
     ///
     /// `Err` is the watch ending: the compositor stopped answering. It is told
-    /// apart from a cancellation because the two want different things — one is a
-    /// reason to ask again, and the other is a reason to stop being a listener.
+    /// apart from a cancellation because the two want different things, one a
+    /// reason to ask again and the other a reason to stop being a listener.
     ///
-    /// ## One connection per wait, and why it is not a poll
+    /// ## One connection per wait
     ///
     /// `wl-clipboard-rs`'s `Watcher` has two properties that shape this function:
     ///
     /// - its **first** `next_event` reports the selection *already on the
-    ///   clipboard* — a level, not an event — and returns at once rather than
-    ///   waiting;
-    /// - it is finished for good once it is cancelled, so a deadline cannot be put
-    ///   on one and then waited on again.
+    ///   clipboard*, a level rather than an event, and returns at once;
+    /// - it is finished for good once cancelled, so a deadline cannot be put on
+    ///   one and then waited on again.
     ///
     /// So this opens one connection, reads its first report as the level, and if
     /// that level is the reading already in hand it **keeps waiting on the same
     /// connection** until something genuinely changes or the deadline cancels it.
-    /// Returning the level would make every wait report something, no wait would
-    /// ever be quiet, and the settle window the listener counts could never close
-    /// — a clipboard that was merely being watched would never open a panel.
+    /// Returning the level would make every wait report something, and the settle
+    /// window the listener counts could never close.
     ///
     /// One call is therefore one slice of real time that reports either a change
     /// or silence, and never the clipboard repeating itself.
@@ -342,11 +332,6 @@ fn connect() -> Result<wl_clipboard_rs::watch::Watcher, String> {
 impl crate::watch::Observer for Changes {
     /// Wait one slice: a change if one arrives, silence if the deadline does, and
     /// the end of the watch if the compositor stops answering.
-    ///
-    /// The deadline is honoured even when something was read: the *level* of the
-    /// clipboard is re-reported by every connection, so a reading equal to the one
-    /// in hand is not a change and the wait continues until the time is spent.
-    /// That is what makes a slice cost a slice.
     fn quiet(&mut self, deadline: Instant) -> crate::watch::Waiting {
         use crate::watch::Waiting;
 

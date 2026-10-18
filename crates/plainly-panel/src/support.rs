@@ -6,9 +6,6 @@
 //! The shape is a module rather than a crate because only this crate's tests use
 //! it, and it is behind `#[cfg(test)]` in `main.rs`, so a release panel does not
 //! carry a builder it never calls.
-//!
-//! Same arrangement as `plainly-core/tests/support`, which is pulled in with
-//! `mod support;` for the same reason.
 
 use plainly_core::{Artifact, Explanation, Gloss, Level, Thinking, Timestamp};
 
@@ -16,8 +13,8 @@ use plainly_core::{Artifact, Explanation, Gloss, Level, Thinking, Timestamp};
 /// else fixed.
 ///
 /// `local` is not stored on an Artifact — locality is a fact about the endpoint the
-/// configuration resolves to — so callers that need a `Provenance` build it with
-/// [`plainly_core::ProviderSetup`] or pass the flag themselves.
+/// configuration resolves to — so callers that need a `Provenance` pass the flag
+/// themselves.
 pub fn artifact(passage: &str, provider: &str, model: &str) -> Artifact {
     Artifact {
         passage: passage.to_string(),
@@ -52,8 +49,7 @@ pub fn explanation(
 }
 
 /// A person whose provider is a model on this machine — and who has, as they must
-/// have, named the model, because the shipped local presets name none
-/// (tickets/06).
+/// have, named the model, because the shipped local presets name none.
 pub fn local_config() -> plainly_core::Config {
     plainly_core::Config {
         app: plainly_core::App {

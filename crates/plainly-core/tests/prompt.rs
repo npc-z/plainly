@@ -1,14 +1,10 @@
 //! The prompt data: what Plainly asks the model for, and the version derived
 //! from the content that is in effect.
 //!
-//! The factory prompt, the user's appendix and the level descriptors are one
-//! body of data (spec §5); these tests pin what reaches the model, what the
-//! version covers, and what a user's change can and cannot do.
-//!
-//! The expected wording is written out here rather than read back from
-//! [`factory_descriptor`]: a test that recomputes its expectation from
-//! the code cannot disagree with it, and the point of these rows is that they
-//! are a decision, not whatever the constant happens to say.
+//! The expected wording is written out here rather than read back from the
+//! factory descriptor: a test that recomputes its expectation from the code
+//! cannot disagree with it, and the point of these rows is that they are a
+//! decision, not whatever the constant happens to say.
 
 use plainly_core::prompt::{FACTORY_PROMPT, PROMPT_LABEL, Prompt};
 use plainly_core::retry::FailureKind;
@@ -28,8 +24,6 @@ fn the_prompt_fills_in_the_level_and_the_native_language() {
 
 #[test]
 fn the_prompt_asks_for_json_and_names_every_field_in_words() {
-    // Providers that cannot enforce a schema need the answer asked for in so
-    // many words; DeepSeek's JSON mode in particular wants the literal word.
     let prompt = Prompt::factory().system_prompt(Level::B2, "Chinese");
 
     for expected in [
@@ -49,8 +43,6 @@ fn the_prompt_asks_for_json_and_names_every_field_in_words() {
 
 #[test]
 fn the_prompt_is_never_returned_unchanged_by_instructions() {
-    // The insurance against the staged variant's failure mode: five of twelve
-    // paraphrases came back byte-identical to the Passage.
     let prompt = Prompt::factory().system_prompt(Level::B2, "Chinese");
 
     assert!(prompt.contains("never return the passage unchanged"));
@@ -58,10 +50,6 @@ fn the_prompt_is_never_returned_unchanged_by_instructions() {
 
 #[test]
 fn the_level_travels_with_its_meaning_and_not_just_its_label() {
-    // A bare label is close to sending nothing: two of three levels produced
-    // byte-identical paraphrases without a meaning beside them
-    // (bench/FINDINGS.md). The four rows are the source contract's wording,
-    // except C1 (spec §5).
     for (level, meaning) in [
         (Level::A1, A2_MEANING),
         (Level::A2, A2_MEANING),
@@ -83,9 +71,6 @@ fn the_level_travels_with_its_meaning_and_not_just_its_label() {
 
 #[test]
 fn a_descriptor_is_data_and_never_scanned_for_placeholders() {
-    // The descriptor is text a person wrote. Substituting `{{LEVEL}}` first and
-    // then scanning the result for `{{NATIVE}}` would treat their text as
-    // template; both placeholders are filled in one pass instead.
     let mut prompts = Prompts::default();
     prompts.level_descriptors.insert(
         Level::A2.as_str().to_string(),
@@ -100,9 +85,6 @@ fn a_descriptor_is_data_and_never_scanned_for_placeholders() {
 
 #[test]
 fn the_c1_descriptor_does_not_contradict_the_restatement_rule() {
-    // "keep most of the original structure" was the sentence that fought the
-    // prompt's own hard rule and lost — which is why B2 and C1 collapsed into
-    // the same output (bench/FINDINGS.md).
     let factory = Prompt::factory();
     let descriptor = factory.descriptor(Level::C1);
 
@@ -137,8 +119,6 @@ fn the_appendix_is_appended_and_cannot_remove_a_factory_rule() {
 
 #[test]
 fn an_empty_appendix_is_no_appendix() {
-    // A file with `appendix = ""` is the factory prompt, not a prompt that
-    // happens to end in blank lines: the two must have one version.
     let factory = Prompt::factory();
     let prompt = Prompt::from_config(&Prompts {
         appendix: "  \n".to_string(),
@@ -183,9 +163,6 @@ fn the_appendix_changes_the_version() {
 
 #[test]
 fn one_changed_descriptor_changes_the_version() {
-    // The hole this closes: a descriptor that changes the model's output but
-    // not the version is a stale hit waiting to happen, because the Lookup Key
-    // carries the version and not the prompt text (spec §5).
     let factory = Prompt::factory();
     let mut prompts = Prompts::default();
     prompts
@@ -215,8 +192,6 @@ fn a_descriptor_written_back_verbatim_is_not_a_change() {
 
 #[test]
 fn the_level_and_the_native_language_are_not_in_the_version() {
-    // They are separate components of the Lookup Key (spec §9), so substituting
-    // them into the hash would give one question two identities.
     let factory = Prompt::factory();
 
     assert_ne!(
@@ -248,8 +223,7 @@ fn the_display_toggles_do_not_touch_the_prompt_the_schema_or_the_version() {
         Prompt::from_config(&showing.prompts).system_prompt(Level::B2, "Chinese")
     );
 
-    // The schema still asks for all four fields: a hidden section is hidden, not
-    // ungenerated (spec §5).
+    // A hidden section is hidden, not ungenerated (spec §5).
     let schema = wire_schema();
     for field in ["comprehensible", "glosses", "grammar", "translation"] {
         assert!(
@@ -272,9 +246,6 @@ fn a_prompt_that_keeps_failing_the_contract_offers_the_factory_one() {
     assert!(fallback.is_factory());
     assert_ne!(fallback.version(), prompt.version());
 
-    // A provider failure is not the prompt's doing, and neither is an endpoint
-    // that answered without a chat completion at all — `Empty` covers those too,
-    // so offering a fallback would blame the prompt for the endpoint.
     assert!(
         prompt
             .fallback_after(FailureKind::Unavailable, Level::B2)
@@ -286,7 +257,6 @@ fn a_prompt_that_keeps_failing_the_contract_offers_the_factory_one() {
             .is_none()
     );
 
-    // And a run already sending the factory text has nothing to fall back from.
     assert!(
         Prompt::factory()
             .fallback_after(FailureKind::Malformed, Level::B2)
@@ -296,9 +266,6 @@ fn a_prompt_that_keeps_failing_the_contract_offers_the_factory_one() {
 
 #[test]
 fn a_descriptor_reworded_for_another_level_is_not_a_fallback_for_this_one() {
-    // The retry has to change the text this run sends. A row that is never
-    // substituted at this level does not, so the offered retry could only fail
-    // the same way.
     let mut prompts = Prompts::default();
     prompts
         .level_descriptors

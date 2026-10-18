@@ -1,13 +1,9 @@
 //! What a history row and a history detail are, as the window draws them.
 //!
-//! The frontend is a thin renderer: it is handed one value per row, already
-//! carrying every fact the spec says a row has to show — provider, model,
-//! Level, Tags, the moment, and the **prompt version** (spec §13). The prompt
-//! version is the reason this module exists rather than a `Record` traveling
-//! whole: the store's `Record` is the wrong shape for a list — it carries the
-//! Explanation, which no row shows — and a row that lacked the version would
-//! read as a duplicate the moment the factory prompt changed for the same
-//! Passage, which is exactly what ticket 09 warned about.
+//! One value per row, carrying every fact the spec says a row has to show
+//! (spec §13). The view exists rather than the store's `Record` traveling whole:
+//! a `Record` carries the Explanation, which no row shows, and a row needs the
+//! prompt version to tell two versions of one Passage apart.
 
 use serde::Serialize;
 
@@ -21,15 +17,14 @@ use plainly_core::{Config, Record, Timestamp, local_of};
 const SNIPPET: usize = 72;
 
 /// How many characters of the prompt hash a row shows. Eight is what the CLI
-/// prints and more than a person needs to see that two versions differ; the
-/// detail shows the whole hash, because that is the one place it can be read.
+/// prints and enough to see that two versions differ; the detail shows the whole
+/// hash.
 const SHORT_HASH: usize = 8;
 
 /// One row of the history list.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RecordView {
     pub id: i64,
-    /// The Passage on one line, cut to about [`SNIPPET`] characters.
     pub snippet: String,
     pub level: String,
     pub provider: String,
@@ -39,22 +34,20 @@ pub struct RecordView {
     pub prompt_label: String,
     /// The whole prompt hash: what tells two prompt versions apart.
     pub prompt_version: String,
-    /// The first [`SHORT_HASH`] characters, for the row.
     pub prompt_short: String,
     pub tags: Vec<String>,
     /// When this question was last asked, in seconds since the epoch.
     ///
-    /// Seconds rather than a rendered string: the date groups in the sidebar
-    /// are **local** (今天 / 昨天 / 更早), and only the webview knows this
-    /// machine's offset. A UTC-rendered moment grouped into UTC days would put
-    /// an evening Passage under tomorrow's heading.
+    /// Seconds rather than a rendered string, because the sidebar groups by
+    /// local day and only the webview knows this machine's offset. A UTC moment
+    /// grouped into UTC days would put an evening Passage under tomorrow's
+    /// heading.
     pub last_seen: i64,
     /// The same instant in UTC, for a tooltip.
     pub last_seen_utc: String,
     /// Whether the model that answered runs on this machine. It is what makes
     /// the detail's "this may be confidently wrong" note apply, and it is a
-    /// fact about the *endpoint* rather than about the provider's name
-    /// (spec §12).
+    /// fact about the endpoint rather than the provider's name (spec §12).
     pub local: bool,
 }
 
@@ -84,9 +77,8 @@ impl RecordView {
 /// One Record, in full: the detail pane's content, and the input to its two
 /// export actions.
 ///
-/// The Explanation arrives as [`SectionView`]s, not as five flat fields: the
-/// card renders the list it is given, so presentation and copy stay with the
-/// surface while the section rules stay in core (ADR-0005).
+/// The Explanation arrives as [`SectionView`]s, not five flat fields: core owns
+/// the order, the empty-section policy and each Gloss's settled shape (ADR-0005).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct DetailView {
     pub id: i64,
@@ -98,7 +90,6 @@ pub struct DetailView {
     pub thinking: String,
     pub prompt_label: String,
     pub prompt_version: String,
-    /// The same hash, abbreviated the one way this crate abbreviates it.
     pub prompt_short: String,
     pub artifact_version: u32,
     pub created_at: String,
@@ -108,16 +99,14 @@ pub struct DetailView {
     pub last_seen_unix: i64,
     pub local: bool,
     pub tags: Vec<String>,
-    /// The card's content as the section list core renders: the order, the
-    /// empty-section policy and every Gloss's settled shape come from there, so
-    /// the window draws values instead of re-deriving them (ADR-0005).
+    /// The card's sections as core renders them (ADR-0005).
     pub sections: Vec<SectionView>,
     /// The whole Record as the five-section markdown document, which is what
     /// "复制 markdown" puts on the clipboard and what "导出这一条" writes.
     ///
-    /// Rendered here rather than in the frontend because
-    /// [`plainly_core::render`] is the one renderer of an Explanation, and a
-    /// second renderer in JavaScript would be a second thing to keep in step.
+    /// Rendered here because [`plainly_core::render`] is the one renderer of an
+    /// Explanation, and a second one in JavaScript would be a second thing to
+    /// keep in step.
     pub markdown: String,
 }
 
@@ -166,8 +155,7 @@ impl DetailView {
 ///
 /// `kind` is the section's identity for the stylesheet (`data-kind`), `title` is
 /// the interface copy, and `body` says which of the three drawings the section
-/// wants. The list this comes in is core's order: the frontend renders the array
-/// it is handed and decides none of those things (ADR-0005).
+/// wants.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SectionView {
     pub kind: &'static str,
@@ -177,10 +165,8 @@ pub struct SectionView {
 
 /// A section's body, in the terms the window's template draws it in.
 ///
-/// Internally tagged for the wire: `{ "type": "prose", "text": … }`,
-/// `{ "type": "note", "text": … }` and `{ "type": "glosses", "glosses": […] }`.
-/// `Note` is the sentence a surface says where the model left a section empty —
-/// not the Explanation talking — which is what lets the card keep its quieter
+/// `Note` is the sentence a surface says where the model left a section empty,
+/// not the Explanation talking, which is what lets the card keep its quieter
 /// material for it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -193,8 +179,8 @@ pub enum SectionBodyView {
 /// One Gloss, as the wire carries it: the expression, its explanation, and the
 /// Example only when there is one.
 ///
-/// The presence and the text are core's decision ([`plainly_core::render::GlossView`]);
-/// this type exists because the wire is the desktop crate's contract and core's
+/// The presence and the text are core's decision ([`plainly_core::render::GlossView`]).
+/// This type exists because the wire is the desktop crate's contract and core's
 /// render types stay free of serde (ADR-0005).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct GlossView {
@@ -216,7 +202,6 @@ impl From<render::GlossView> for GlossView {
     }
 }
 
-/// One core section as the wire form, with the window's own title attached.
 fn section_view(section: render::Section) -> SectionView {
     let (kind, title) = section_identity(section.kind);
     SectionView {
@@ -235,8 +220,8 @@ fn section_view(section: render::Section) -> SectionView {
 /// The two names a section needs on the wire: its identity for the stylesheet
 /// (and the wire test) and its heading in the interface's own copy.
 ///
-/// One table rather than two matches, because a new section has to appear in
-/// both and a forgotten arm should fail where the section is built.
+/// One table rather than two matches, so a forgotten arm fails where the section
+/// is built.
 fn section_identity(kind: render::SectionKind) -> (&'static str, &'static str) {
     match kind {
         render::SectionKind::Original => ("original", STRINGS.detail_original),
@@ -258,8 +243,8 @@ pub struct ExportOffer {
     pub summary: String,
 }
 
-/// The one renderer of an export, so that the two global exports and the
-/// single-record export cannot drift from the CLI's (spec §9, tickets/10).
+/// The one renderer of an export, so the window's exports cannot drift from the
+/// CLI's (spec §9).
 pub fn export_text(format: plainly_core::ExportFormat, records: &[Record]) -> String {
     match format {
         plainly_core::ExportFormat::Markdown => export::markdown(records),
@@ -288,10 +273,10 @@ pub fn short_hash(hash: &str) -> String {
 
 /// A moment as `YYYY-MM-DD HH:MM:SS` in **UTC**, with the trailing `Z` dropped.
 ///
-/// The window groups its sidebar by local days, which it does itself; this is
-/// the tooltip form of the same instant, where the offset would only be
-/// confusing. Deriving it here rather than parsing RFC 3339 in JavaScript keeps
-/// one spelling of a moment in the process.
+/// The window groups its sidebar by local days itself; this is the tooltip form
+/// of the same instant, where the offset would only be confusing. Deriving it
+/// here rather than parsing RFC 3339 in JavaScript keeps one spelling of a
+/// moment in the process.
 pub fn utc_text(moment: Timestamp) -> String {
     let text = moment.to_rfc3339();
     text.trim_end_matches('Z').replace('T', " ")

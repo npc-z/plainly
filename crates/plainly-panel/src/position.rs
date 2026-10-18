@@ -1,14 +1,13 @@
 //! Where the panel goes, and which screen it follows.
 //!
 //! The spec offers four corners and "follow the current output" rather than free
-//! coordinates (spec §12), and the reason is that a corner is
-//! **resolution-independent**: changing resolution, scale or monitor cannot put
-//! the panel outside the screen, because "top-left plus a margin" is re-evaluated
-//! by the compositor against whatever the screen is now. That property is worth
-//! keeping in the code as well as in the configuration, so this module is a pure
-//! function of `(corner, screens)` — the GTK caller only supplies the list of
-//! screens and applies the answer, and the interesting cases are unit-testable
-//! without a compositor.
+//! coordinates, because a corner is **resolution-independent**: "top-left plus a
+//! margin" is re-evaluated by the compositor against whatever the screen is now,
+//! so changing resolution, scale or monitor cannot put the panel outside it. That
+//! property is worth keeping in the code as well as in the configuration, so this
+//! module is a pure function of `(corner, screens)` — the GTK caller only supplies
+//! the list of screens and applies the answer, and the interesting cases are
+//! unit-testable without a compositor.
 //!
 //! The other half of the decision lives in the output picker: the settings screen
 //! stores `output-1`, `output-2`, … because `xdg-output` names (`eDP-1`,
@@ -71,8 +70,7 @@ impl Display {
     /// compositor should decide, which is what both "the current output" and "a
     /// name this session does not have" come to. Landing on the current output
     /// for an unknown name is deliberate: a monitor unplugged since the setting
-    /// was written must not leave the panel nowhere, and the person's next look
-    /// at the settings screen shows the name that could not be found.
+    /// was written must not leave the panel nowhere.
     pub fn resolve(&self, screens: &[String]) -> Option<usize> {
         match self {
             Display::Current => None,
@@ -85,7 +83,7 @@ impl Display {
 ///
 /// `output-1`, `output-2`, … — the spelling the settings screen writes and the
 /// panel reads back, and therefore part of the *file's* contract between two
-/// crates that cannot share a constant (spec §13's `app.panel_display`).
+/// crates that cannot share a constant.
 ///
 /// The desktop writes the same string from its own count of `wl_output`s
 /// (`plainly-desktop`'s `capability::outputs`), and nothing in one crate can see
@@ -98,12 +96,10 @@ pub fn screen_name(index: usize) -> String {
 
 /// Where a **plain window** at a corner goes, in the screen's own coordinates.
 ///
-/// The layer surface gets this from the compositor: anchoring an edge is a
-/// request the compositor re-evaluates against the screen it is now, which is
-/// what "resolution-independent" means. The GTK fallback — a focused window on a
-/// session with no layer shell, such as GNOME — has no anchors, so the panel
-/// computes the corner itself from the screen's geometry. The same corner and the
-/// same margin, and the same difference from a free position: `right` is
+/// The layer surface gets this from the compositor: anchoring an edge is a request
+/// the compositor re-evaluates against the screen it is now. The GTK fallback — a
+/// focused window on a session with no layer shell, such as GNOME — has no anchors,
+/// so the panel computes the corner itself from the screen's geometry. `right` is
 /// measured from the screen's right edge rather than from the origin, so a
 /// resolution change cannot leave the panel past it.
 pub fn window_origin(

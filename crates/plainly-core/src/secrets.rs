@@ -1,11 +1,10 @@
 //! API keys, in three tiers: the environment, then the OS keyring, then this
-//! session's memory — and never a plaintext file.
+//! session's memory, and never a plaintext file.
 //!
-//! The environment comes first for a reason that is not only about safety:
-//! scripts and agents can hand a key to one invocation without touching the
-//! user's keyring at all. The last tier exists so a machine with no usable
-//! keyring is not simply blocked; it is told, in as many words, that the key
-//! dies with the process.
+//! The environment comes first because scripts and agents can hand a key to one
+//! invocation without touching the user's keyring. The last tier exists so a
+//! machine with no usable keyring is not simply blocked. It is told, in as many
+//! words, that the key dies with the process.
 //!
 //! The keyring is reached through a [`SecretStore`] rather than directly, so
 //! the precedence and the fallback are testable without a D-Bus session.
@@ -14,7 +13,7 @@ use std::collections::BTreeMap;
 use std::ffi::{OsStr, OsString};
 use std::sync::Mutex;
 
-/// The keyring *service* name; the provider name is the keyring *user*.
+/// The keyring *service* name. The provider name is the keyring *user*.
 pub const KEYRING_SERVICE: &str = "plainly";
 
 /// Set this (to `1`, `true`, `yes` or `on`) to skip the keyring entirely — for
@@ -92,7 +91,7 @@ pub trait SecretStore: Send + Sync {
 ///
 /// Values are kept as the OS handed them over. Converting lossily here would
 /// rewrite a stray byte as U+FFFD and hand the keyring a *different* secret than
-/// the one that was exported — a silent authentication failure with nothing to
+/// the one that was exported, a silent authentication failure with nothing to
 /// see. A value that is not valid UTF-8 is reported instead.
 #[derive(Debug, Clone, Default)]
 pub struct EnvSecrets {
@@ -230,8 +229,8 @@ impl SecretStore for MemorySecrets {
     }
 }
 
-/// The OS keyring, through the pure-Rust Secret Service client — no libsecret,
-/// and nothing to install.
+/// The OS keyring, through the pure-Rust Secret Service client. No libsecret, and
+/// nothing to install.
 #[derive(Debug, Clone)]
 pub struct KeyringSecrets {
     service: String,
@@ -338,9 +337,9 @@ impl Secrets {
     /// [`SecretError::NotUtf8`] for an exported value we cannot use,
     /// [`SecretError::Unavailable`] or [`SecretError::Backend`] for the keyring.
     ///
-    /// Note the consequence: a locked keyring stops the search rather than
-    /// falling through to a key held in memory. Using a different credential
-    /// than the stored one, without saying so, is the worse failure.
+    /// A locked keyring stops the search rather than falling through to a key
+    /// held in memory, because using a different credential than the stored one
+    /// without saying so is the worse failure.
     pub fn resolve(&self, provider: &str) -> Result<Option<ResolvedKey>, SecretError> {
         if let Some(secret) = self.env.get(provider)? {
             return Ok(Some(ResolvedKey {
@@ -368,8 +367,8 @@ impl Secrets {
     /// Where the key for this provider would come from.
     ///
     /// This asks the stores, keyring included, but never returns the secret
-    /// itself. Prefer [`Secrets::environment_provides`] when all you need is
-    /// the precedence note: that one stays off the D-Bus.
+    /// itself. Prefer [`Secrets::environment_provides`] when all you need is the
+    /// precedence note, because that one stays off the D-Bus.
     pub fn key_source(&self, provider: &str) -> Result<Option<KeySource>, SecretError> {
         Ok(self.resolve(provider)?.map(|key| key.source))
     }

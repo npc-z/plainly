@@ -17,7 +17,6 @@ pub const REFUSED: u8 = 4;
 mod tests {
     use super::*;
 
-    /// The numbers are the contract scripts branch on; pin them.
     #[test]
     fn the_exit_codes_are_the_documented_ones() {
         assert_eq!(

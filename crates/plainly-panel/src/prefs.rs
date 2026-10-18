@@ -3,46 +3,33 @@
 //! The panel is its own process and has no window to be configured from, so it
 //! reads the same file the settings screen writes, once per trigger. That read is
 //! what makes everything the screen offers take effect at the next key press rather
-//! than at the next login (spec §12), and it is why the panel's facts — the corner,
-//! the timer, the section switches, and the provider the note and ⟳ talk about —
-//! are gathered here rather than each caller opening the file for the one thing it
-//! wants: the position, the timer, the switches and the provider are four questions
-//! about one document, and four reads of it are four chances to disagree.
+//! than at the next login, and it is why the corner, the timer, the section
+//! switches and the provider are gathered here: they are four questions about one
+//! document, and four reads of it are four chances to disagree.
 //!
 //! **The worker opens the file again for the run itself** (`worker::run`), and that
-//! is deliberate rather than an oversight: the run needs the level, the native
-//! language and the prompt appendix, none of which the panel has an opinion about,
-//! and it reads them where the run happens. The cost is a window — the panel reads
-//! at the start of the trigger, the worker when its thread gets there, which on the
-//! data-control path is after the clipboard read — so a settings write in between
-//! leaves the two disagreeing. What that can and cannot do is bounded: the chip is
-//! unaffected, because it comes from the Artifact and so names whoever really
-//! answered, but the note under the content could promise 本地模型 for a run that
-//! goes to the cloud. ⟳ closes that window when there is a cloud move to make, by
-//! carrying the provider name in [`Recall::Bypass`]; when there is none, the
-//! `provider: None` arm leaves the worker to resolve the configured provider, and
-//! the window is open for that press as it is for an ordinary one.
+//! is deliberate: the run needs the level, the native language and the prompt
+//! appendix, none of which the panel has an opinion about, and it reads them where
+//! the run happens. The cost is a window between the two reads, so a settings write
+//! in between leaves them disagreeing: the chip is unaffected, because it comes
+//! from the Artifact and so names whoever really answered, but the note under the
+//! content could promise 本地模型 for a run that goes to the cloud. ⟳ closes that
+//! window when there is a cloud move to make, by carrying the provider name in
+//! [`Recall::Bypass`]; when there is none, the worker resolves the configured
+//! provider and the window is open for that press.
 //!
-//! The pair that matters most here is the auto-dismiss one: **an on/off switch
-//! and a duration, two independent keys**. A duration of `0` is deliberately not
-//! a second spelling of "never" (spec §12) — "off" already has a switch, and two
-//! spellings of one state eventually disagree about which one is in effect. A
-//! duration outside the range core accepts on write is therefore *refused here
-//! too*, by falling back to the default rather than by dismissing the panel
-//! instantly or keeping it up for a week: a hand-edited file must not produce a
-//! surface that cannot be reached.
+//! The auto-dismiss pair is **an on/off switch and a duration, two independent
+//! keys**: "off" already has a switch, so a duration of `0` is deliberately not a
+//! second spelling of "never".
 //!
-//! The provider is here because two things on the panel turn on it and nothing
-//! else does: the note under the content, and ⟳'s cloud move. The chip above the
-//! body is **not** one of them — it comes from the Artifact, so it names whoever
-//! really answered rather than whoever was configured when the panel read the
-//! file.
+//! The provider is here because two things on the panel turn on it: the note under
+//! the content, and ⟳'s cloud move.
 
 use plainly_core::render::SectionKind;
 // The legal domain of these three keys is core's, because the write side (`config
 // set`, the settings screen) and this read side have to agree on it. Reading is
 // still tolerant — a hand-edited file is clamped or defaulted below — but the
-// numbers themselves are not repeated here (spec §4).
+// numbers themselves are not repeated here.
 use plainly_core::config::{AUTO_HIDE_RANGE, PANEL_HEIGHT_RANGE, PANEL_WIDTH_RANGE};
 use plainly_core::{Config, ConfigFile, PanelCorner, Paths, Secrets};
 
@@ -51,7 +38,7 @@ use crate::provider::ProviderChoice;
 use crate::worker::Recall;
 
 /// How long the panel stays when auto-dismiss is on and the file names no usable
-/// duration — the settings screen's own default (spec §12).
+/// duration — the settings screen's own default.
 pub const DEFAULT_AUTOHIDE_SECONDS: u32 = 20;
 
 /// What a trigger reads out of the configuration.
@@ -64,19 +51,18 @@ pub struct Prefs {
     /// The most of the screen the whole panel may take, in pixels.
     ///
     /// A ceiling, not a size: how much of it the content uses is the content's
-    /// business, and how much of *that* fits before scrolling is this.
+    /// business, and how much of that fits before scrolling is this.
     pub panel_height: u32,
     /// When the panel dismisses itself, in seconds — `None` when it does not.
     ///
-    /// One value rather than the switch and the duration travelling separately:
-    /// the two keys are independent in the file, which is the point (a `0` is not
-    /// a second "off"), and everything downstream of here asks one question.
+    /// One value rather than the switch and the duration travelling separately,
+    /// because everything downstream of here asks one question.
     pub autohide: Option<u32>,
     /// The provider the next run will talk to, and whether it is on this machine.
     pub provider: ProviderChoice,
     /// The cloud provider ⟳ would move to, when there is one. `None` means the
     /// button regenerates with the same model, and the note under the content says
-    /// so in as many words (spec §12).
+    /// so in as many words.
     pub cloud: Option<ProviderChoice>,
     pub show_original: bool,
     pub show_comprehensible: bool,
@@ -131,9 +117,8 @@ impl Prefs {
     /// A configuration that cannot be read is not a reason for no panel: the
     /// defaults are what a first run would get, and the panel's job at a key
     /// press is to show an Explanation, not to report a broken file. The worker
-    /// thread says the same thing in its own words when the run actually needs
-    /// the file (it cannot proceed without a provider), so nothing is hidden —
-    /// it is just not this module's failure to report.
+    /// thread says the same thing in its own words when the run actually needs the
+    /// file.
     pub fn read() -> Self {
         Self::from(Paths::discover().ok(), Secrets::from_process_env())
     }
@@ -157,13 +142,7 @@ impl Prefs {
     /// named one is the cloud move, and it is offered **only from a model on this
     /// machine**: a hosted provider has a cloud alternative sitting beside it in
     /// [`Prefs::cloud`] (the first shipped preset that is usable), and pressing ⟳
-    /// there means "ask this provider again", not "switch me to DeepSeek"
-    /// (spec §12).
-    ///
-    /// It lives on `Prefs` rather than beside the provider facts because it is a
-    /// decision *about* those facts, and because the two modules it would
-    /// otherwise reach through — the provider table and the trigger state — are
-    /// what would make a cycle out of a leaf.
+    /// there means "ask this provider again", not "switch me to DeepSeek".
     pub fn regenerate_recall(&self) -> Recall {
         match self.provider.local {
             false => Recall::Bypass { provider: None },
@@ -197,9 +176,9 @@ impl Prefs {
 
 /// The auto-dismiss duration, from the file's switch and its duration.
 ///
-/// A duration outside the range is not accepted and not fatal: the switch is the
-/// authority on *whether* the panel dismisses, and the default is the answer for
-/// *how long* when the file's number is one no surface should honour.
+/// The switch is the authority on *whether* the panel dismisses, and the default
+/// is the answer for *how long* when the file's number is one no surface should
+/// honour.
 fn autohide(enabled: bool, seconds: u32) -> Option<u32> {
     if !enabled {
         return None;
@@ -218,8 +197,7 @@ fn autohide(enabled: bool, seconds: u32) -> Option<u32> {
 /// Clamped to the nearest bound rather than replaced by the default, which is what
 /// [`autohide`] does with a duration and deliberately not what happens here: a
 /// panel larger or smaller than the range is still a panel somebody can read and
-/// close, so the closest thing to what the file asked for is the friendly answer,
-/// where a duration outside its range is one no surface should honour at all.
+/// close, so the closest thing to what the file asked for is the friendly answer.
 fn size(pixels: u32, range: (u32, u32)) -> u32 {
     pixels.clamp(range.0, range.1)
 }
@@ -269,8 +247,7 @@ mod tests {
     }
 
     /// A hand-edited size is clamped to the range core accepts on write, not
-    /// replaced by the default: a panel of the wrong size is still a panel
-    /// somebody can read and close, so the nearest bound is the friendly answer.
+    /// replaced by the default.
     #[test]
     fn a_size_outside_the_range_is_clamped_to_the_nearest_bound() {
         let squeezed = Prefs::of(
@@ -322,7 +299,7 @@ mod tests {
         assert_eq!(on.autohide, Some(45));
     }
 
-    /// `0` is the second spelling of "off" the spec refuses: a hand-edited file
+    /// `0` is the second spelling of "off" that is refused: a hand-edited file
     /// that carries one gets the default duration, not an instantly vanishing
     /// panel and not a panel that never goes away.
     #[test]
@@ -346,8 +323,7 @@ mod tests {
     }
 
     /// The note under the content is the button's instructions, so it has to
-    /// follow the same fact ⟳ acts on: with a cloud provider and a key for it,
-    /// "换成云端"; with neither, the same local model.
+    /// follow the same fact ⟳ acts on.
     #[test]
     fn the_local_note_follows_whether_a_cloud_move_exists() {
         let local = crate::support::local_config();

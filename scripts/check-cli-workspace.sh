@@ -1,28 +1,23 @@
 #!/usr/bin/env bash
 #
-# Guards the property the generation in `scripts/generate-cli-workspace.sh`
-# would otherwise only state in a comment: the committed CLI workspace
-# (`nix/cli-workspace/Cargo.toml` and `Cargo.lock`) still agrees with the root
-# `Cargo.toml` and `Cargo.lock`.
+# Guards that the committed CLI workspace (`nix/cli-workspace/Cargo.toml` and
+# `Cargo.lock`) still agrees with the root `Cargo.toml` and `Cargo.lock`.
 #
-# Why a guard exists at all: `cargo --locked` inside `nix build` catches most
-# staleness (a changed requirement fails the lock). It does not catch the quiet
-# one — a root `cargo update` moving a shared dependency to a new version while
-# the committed CLI lock keeps the old one, which still satisfies the
-# requirement and so passes `--locked`. That is the check this script exists
-# for; the manifest checks say whether the committed projection is the one the
-# generator writes.
+# `cargo --locked` inside `nix build` catches a changed requirement, but not a
+# root `cargo update` that moves a shared dependency while the committed CLI
+# lock keeps the old version: the old version still satisfies the requirement
+# and passes `--locked`. That is the quiet drift this script exists for.
 #
-# The projection rule itself lives in `scripts/cli_workspace.py`, shared with
-# the generator, so the two cannot drift. This script is deliberately cheap:
-# pure python3, offline, no Nix and no cargo — the normalisation cargo performs
-# is only needed to *regenerate* the data, not to ask whether it is stale.
+# The projection rule lives in `scripts/cli_workspace.py`, shared with the
+# generator, so the two cannot drift. This script stays cheap: pure python3,
+# offline, no Nix and no cargo, because cargo's normalisation is only needed to
+# *regenerate* the data, not to ask whether it is stale.
 #
 # Usage:
 #   scripts/check-cli-workspace.sh             # the guard; expects no change
 #
-# It reads the files on disk (the worktree), not HEAD: stage or commit the root
-# manifests/lock and `nix/cli-workspace/` before trusting a green run.
+# It reads the worktree, not HEAD: commit the root manifests/lock and
+# `nix/cli-workspace/` before trusting a green run.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -49,8 +44,8 @@ import os
 import sys
 import tomllib
 
-# The guard imports the shared projection; do not leave `scripts/__pycache__/`
-# behind in a checkout this script is supposed to leave untouched.
+# Importing the shared projection must not leave `scripts/__pycache__/` behind
+# in a checkout this script only reads.
 sys.dont_write_bytecode = True
 
 # The projection rule is shared with the generator; `scripts/` is on the path
@@ -111,9 +106,8 @@ changed_values = [
 
 failures = []
 
-# 1. The manifest's shape and its dependency *declarations* are the projection;
-#    presence and extra names are checks 3 and 4, so each failure names exactly
-#    one fact instead of restating the same broken manifest three times.
+# Shape and declarations only: presence and extra names are reported below, so
+# a broken manifest fails once instead of three times.
 manifest_ok = True
 extra_sections = sorted(set(committed_manifest) - {"workspace"})
 if extra_sections:
@@ -134,10 +128,6 @@ if manifest_ok:
 else:
     failures.append(f"{manifest_path} is not the projection of the root Cargo.toml")
 
-# 2. The committed lock agrees with the root lock: its versions are pinned by
-#    it, it holds nothing outside the root lock's CLI closure, and every
-#    dependency edge resolves inside the lock. (Whether the *requirements* still
-#    match the manifests is `cargo --locked`'s job at build time.)
 root_packages = cli_workspace.load("Cargo.lock")["package"]
 root_versions = {}
 for package in root_packages:
@@ -190,7 +180,6 @@ if dangling:
 if not (drifted or outside or dangling):
     print("ok   every CLI lock version, package and edge agrees with the root lock")
 
-# 3. Every dependency the crates inherit is covered by the committed manifest.
 if missing:
     failures.append(
         f"{manifest_path} is missing [workspace.dependencies] for: "
@@ -199,7 +188,6 @@ if missing:
 else:
     print("ok   every workspace-inherited dependency is declared")
 
-# 4. And the manifest carries no dependency no crate uses.
 if unused:
     failures.append(
         f"{manifest_path} declares workspace dependencies no crate uses: "

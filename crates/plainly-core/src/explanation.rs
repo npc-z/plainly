@@ -18,10 +18,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-/// One Gloss: the expression that blocked the Passage, a plain-English line
-/// that must not be harder than the expression it explains, and one Example —
-/// a sentence of the model's own that uses the expression in the sense the
-/// Passage gives it.
+/// One Gloss as the wire carries it: the expression, its plain-English
+/// explanation, and one Example sentence.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Gloss {
     pub expression: String,
@@ -79,10 +77,8 @@ pub fn wire_schema() -> Value {
 
 /// Why the model's answer is not an Explanation.
 ///
-/// The two arms are different problems and get different treatment downstream:
-/// a malformed answer is a sample the model can be asked to redo, while an answer
-/// of the wrong shape repeated twice is drift, and redoing it wastes the learner's
-/// time (tickets/04).
+/// The two arms are kept apart because the retry policy identifies a repeated
+/// failure by them ([`crate::retry`]).
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ContractError {
     /// The answer was not JSON at all.
@@ -120,13 +116,12 @@ impl Explanation {
 
 /// Check `value` against `schema` and describe every violation.
 ///
-/// The subset of JSON Schema implemented here is exactly what the wire schema
-/// uses — `type`, `properties`, `required`, `additionalProperties` and `items`,
-/// and nothing else. It is a validator and not a library because the schema we
-/// send and the schema we enforce must be one document, and reaching for a
-/// general implementation would buy generality this contract does not want. The
-/// contract tests hold the schema to that keyword list, so a keyword the
-/// validator would ignore cannot get in.
+/// It implements exactly the keywords the wire schema uses: `type`,
+/// `properties`, `required`, `additionalProperties` and `items`. It is a
+/// validator and not a library because the schema we send and the schema we
+/// enforce must be one document, and a general implementation would buy
+/// generality this contract does not want. The contract tests hold the schema to
+/// that keyword list, so a keyword the validator ignores cannot get in.
 fn validate(schema: &Value, value: &Value) -> Vec<String> {
     let mut problems = Vec::new();
     validate_at(schema, value, "output", &mut problems);

@@ -78,7 +78,6 @@ fn a_passage_on_stdin_comes_back_as_the_five_sections() {
         "the Key Help section:\n{product}"
     );
 
-    // Human information goes to stderr, so the pipeline sees only the product.
     assert!(
         stderr(&output).contains("explaining with"),
         "{}",
@@ -135,9 +134,8 @@ fn a_custom_provider_is_sent_the_nested_schema() {
 
 /// A shipped name pointed at another machine is an endpoint nobody has probed
 /// yet, so the request takes what the *probe* found rather than what the preset
-/// knew. The preset's own shape (json_object plus the canonical thinking switch)
-/// is a property of api.deepseek.com and is asserted in core's `tests/chat.rs`,
-/// which needs no network to ask for the body.
+/// knew. The preset's own shape is a property of api.deepseek.com and is
+/// asserted in core's `tests/chat.rs`.
 #[test]
 fn an_overridden_endpoint_is_probed_rather_than_trusted() {
     let dir = TempDir::new("explain-wire-overridden");
@@ -388,7 +386,7 @@ fn an_answer_that_is_not_the_contract_exits_one() {
 
 /// A 4xx that rejects the request's shape is not retried as-is: the capability
 /// is what is wrong, so the endpoint is probed again and the Passage is asked
-/// for once more with the shape the endpoint says it takes (tickets/05).
+/// for once more with the shape the endpoint says it takes.
 #[test]
 fn a_rejected_request_shape_is_probed_again_and_asked_once_more() {
     let dir = TempDir::new("explain-unsupported");
@@ -746,7 +744,7 @@ fn a_probe_result_that_cannot_be_cached_is_said_so() {
 }
 
 /// A local provider is named as local: the model that answered is provenance,
-/// and so is the fact that nobody can vouch for it (spec §12, tickets/06).
+/// and so is the fact that nobody can vouch for it (spec §12).
 #[test]
 fn a_local_provider_is_named_as_local_beside_its_model() {
     let dir = TempDir::new("explain-local-provenance");

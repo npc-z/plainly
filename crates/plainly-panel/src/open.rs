@@ -2,16 +2,14 @@
 //!
 //! The panel does not open a window of its own. It spawns `plainly-desktop`,
 //! which takes the session's window lock and either becomes the window or asks the
-//! one that already exists to come forward (spec §13, tickets/14). Running the
-//! process is therefore the whole handover protocol, and the panel is not a second
-//! implementation of it — it is one more caller, like a desktop shortcut.
+//! one that already exists to come forward. Running the process is therefore the
+//! whole handover protocol, and the panel is not a second implementation of it.
 
 use std::ffi::OsStr;
 use std::path::PathBuf;
 use std::process::Command;
 
-/// The program's name, as `PATH` knows it and as the compositor's own key binding
-/// spends it (`spawn "plainly-panel" "--clipboard"`).
+/// The program's name, as `PATH` knows it.
 const PROGRAM: &str = "plainly-desktop";
 
 /// Open the main window.
@@ -25,18 +23,16 @@ const PROGRAM: &str = "plainly-desktop";
 /// panel are started from the same shell or key binding, and a spawned child that
 /// inherited a deleted directory would fail in a way nobody could read.
 pub fn main_window() -> Result<(), String> {
-    // Which arm this is decides how the child is spawned, and the two arms are a
-    // type rather than a guess: the `PATH` arm is spawned by **name**, so the
-    // kernel walks the `PATH` and skips a candidate it cannot run (a half-installed
-    // copy, a file that lost its mode) instead of the panel stopping at it — the
-    // ownership and group rules `access(2)` applies are not something a check here
-    // could reproduce. The beside-the-binary arm is spawned by its path, because
-    // that directory is not on the `PATH` the kernel would walk.
+    // Which arm this is decides how the child is spawned: on the `PATH` arm it is
+    // spawned by **name**, so the kernel walks the `PATH` and skips a candidate it
+    // cannot run (a half-installed copy, a file that lost its mode) instead of
+    // stopping at it. The beside-the-binary arm is spawned by path, because that
+    // directory is not on the `PATH` the kernel would walk.
     //
     // A named `Found` rather than "does the path look like the program's name": a
-    // later change that returned the found file on the `PATH` arm — to name it in
-    // the error sentence, say — would silently flip this back to spawning by path
-    // and reopen exactly the shadowing case the name-spawn closed.
+    // later change that returned the found file on the `PATH` arm would silently
+    // flip this back to spawning by path and reopen the shadowing case the
+    // name-spawn closed.
     let (mut command, subject) = match find()? {
         Found::OnPath => (Command::new(PROGRAM), PROGRAM.to_string()),
         Found::Beside(path) => {
@@ -46,9 +42,7 @@ pub fn main_window() -> Result<(), String> {
     };
 
     let child = command.current_dir("/").spawn().map_err(|error| {
-        // `impl Display` rather than `&str` arguments: the name and the system's
-        // error are both already displayable, and formatting them here would only
-        // add two temporary `String`s.
+        // The sentence names the program and the system's own words.
         crate::strings::window_would_not_start(subject, error)
     })?;
 
@@ -148,16 +142,11 @@ mod tests {
 
     /// A `PATH` that cannot hold the program finds nothing.
     ///
-    /// The first version of this test asked `find().err()`, which is `None` on
-    /// any machine that *does* have `plainly-desktop` installed — so it passed by
-    /// finding the real binary and asserted nothing about the lookup. Driving
-    /// `on_path` with the `PATH` as data is the assertion it looked like.
-    ///
     /// Deliberately no `""` case: `split_paths("")` yields one empty path, and
-    /// `PathBuf::from("").join(PROGRAM)` is the *relative* `plainly-desktop` —
-    /// `is_file()` on that is a fact about the working directory the tests happen
-    /// to run in, not about this function. The positive test below is what keeps
-    /// these two from passing vacuously.
+    /// `PathBuf::from("").join(PROGRAM)` is the *relative* `plainly-desktop`.
+    /// `is_file()` on that is a fact about the working directory the tests happen to
+    /// run in, not about this function. The positive test below is what keeps these
+    /// two from passing vacuously.
     #[test]
     fn a_path_that_cannot_hold_the_program_finds_nothing() {
         assert!(!on_path(Some(OsStr::new("/nonexistent/plainly"))));

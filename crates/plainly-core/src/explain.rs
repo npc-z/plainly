@@ -23,15 +23,15 @@ use crate::setup::ProviderSetup;
 
 /// The Passage's language. v0 explains English and never detects it: a detector
 /// would either cost a model call or fork the cache on a guess, so the field is
-/// a constant that is still stored, for provenance and for a later v1 (spec §9).
+/// a constant that is still stored, for provenance (spec §9).
 pub const SOURCE_LANGUAGE: &str = "en";
 
 /// Why an Explanation was not produced.
 ///
 /// This distinction is the one the whole error policy rests on: the provider
 /// failed, or it answered and the answer did not hold the contract. They read
-/// differently to the learner and they are handled differently — one is retried
-/// or rerouted, the other questions the prompt (tickets/04, tickets/07).
+/// differently to the learner and are handled differently. One is retried or
+/// rerouted, and the other questions the prompt.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ExplainError {
     /// The provider answered, but not with an Explanation.
@@ -46,12 +46,11 @@ pub enum ExplainError {
 ///
 /// A surface does not call this directly: [`crate::retry::explain`] drives it,
 /// decides whether a failure is worth asking about again, and reports what
-/// happened. This is the attempt itself — ask, hold the answer to the contract,
-/// attach everything the model is not trusted with.
+/// happened.
 ///
-/// `now` is a value rather than a call to the system clock: the only use this
-/// path has for the time is stamping the Artifact, so a caller — and a test —
-/// can hand over a fixed instant instead of a clock seam being invented for it.
+/// `now` is a value rather than a call to the system clock: the time's only use
+/// here is stamping the Artifact, so a caller and a test can hand over a fixed
+/// instant.
 pub fn explain(
     provider: &dyn Provider,
     request: &ExplainRequest,
@@ -72,7 +71,6 @@ pub fn explain(
         prompt_version: request.prompt_version.clone(),
         prompt_label: request.prompt_label.clone(),
         // Nothing has been stored or reused yet, so the two timestamps agree.
-        // They part ways once a Record is looked up a second time (tickets/08).
         created_at: now,
         generated_at: now,
         explanation,
@@ -81,11 +79,9 @@ pub fn explain(
 
 /// The request one Passage is explained with, from the run's own choices.
 ///
-/// Every surface that explains a Passage builds it here rather than in its own
-/// words: these are exactly the fields the Lookup Key is made of (spec §9), so a
-/// field one surface set differently would fork the cache instead of sharing it.
-/// A surface chooses the Passage, the configuration, the provider profile and
-/// the effective prompt, which is all this needs.
+/// Every surface that explains a Passage builds the request here: these are
+/// exactly the fields the Lookup Key is made of (spec §9), so a field one surface
+/// set differently would fork the cache instead of sharing it.
 pub fn request(
     passage: &str,
     config: &Config,
@@ -135,7 +131,7 @@ pub struct Run {
 pub struct RunFailure {
     /// The retry policy's own account of the last attempt.
     pub failure: Failure,
-    /// The resolution behind the attempt that failed — the capability it was
+    /// The resolution behind the attempt that failed, the capability it was
     /// *sent* under, which is the one a surface has to report. A later probe's
     /// conclusion is not what this error is about.
     pub resolution: Resolution,
@@ -151,20 +147,19 @@ pub struct RunFailure {
 /// endpoint rejects the shape.
 ///
 /// `connect` builds a transport for a capability-resolved setup. It is a closure
-/// because the API key belongs to the surface — the CLI holds it, and the panel
-/// will hold its own — while everything this function decides is the same for
-/// both. It is called at most four times: once to read the capability and once
-/// for the attempt, then the same pair again after a rejected shape — and only
-/// when the re-probe turns up something the next request can actually use.
+/// because the API key belongs to the surface: the surface holds it while
+/// everything this function decides is the same for all surfaces. It is called at
+/// most four times: once to read the capability and once for the attempt, then
+/// the same pair again after a rejected shape, and only when the re-probe turns
+/// up something the next request can actually use.
 ///
 /// A 4xx that rejects the request's shape is not retried as-is ([`crate::retry`]
-/// stops there on purpose). It is instead the evidence that the capability in
-/// effect is wrong: the endpoint is probed again, and only if that probe *answers*
-/// and reaches a different conclusion is the Passage asked for a second time. An
-/// endpoint that rejects a shape its own probe says it accepts is contradicting
-/// itself, and asking it the same question again is exactly the wasted call the
-/// policy refuses to make; an endpoint that will not answer the probe either has
-/// told us nothing to ask with.
+/// stops there on purpose). It is the evidence that the capability in effect is
+/// wrong, so the endpoint is probed again, and only if that probe *answers* and
+/// reaches a different conclusion is the Passage asked for a second time. An
+/// endpoint that rejects a shape its own probe accepts is contradicting itself,
+/// so asking again is the wasted call the policy refuses to make. An endpoint
+/// that will not answer the probe has told us nothing to ask with.
 pub fn run(
     setup: &ProviderSetup,
     request: &ExplainRequest,
@@ -201,12 +196,11 @@ pub fn run(
     cache.forget(&setup.name);
     let second = reprobe(&*connect(setup), setup, cache, now);
 
-    // Asking again takes a *conclusion*, not merely a different guess: a probe
-    // that learned nothing (the endpoint did not answer it either) leaves the
-    // cautious shape in hand, and reporting that as the outcome of a re-probe
-    // would put words in the endpoint's mouth. The failure stands — reported
-    // under the capability the request actually carried — with the re-probe
-    // alongside it.
+    // Asking again takes a conclusion, not merely a different guess: a probe that
+    // learned nothing leaves the cautious shape in hand, and reporting that as the
+    // outcome of a re-probe would put words in the endpoint's mouth. The failure
+    // stands, reported under the capability the request actually carried, with the
+    // re-probe alongside it.
     let learned = second.origin == Origin::Probed
         && changes_the_request(setup, &first.capability, &second.capability);
     if !learned {
@@ -243,10 +237,10 @@ pub fn run(
 ///
 /// A capability the request cannot reflect is not a correction. The thinking
 /// switch reaches the wire only when the user asked for thinking off, on the
-/// route that carries the canonical spelling; a change to it under any other
-/// circumstances would buy a byte-identical second ask, which is exactly the
-/// wasted call [`crate::retry`] exists to refuse. The schema, by contrast, is
-/// always on the wire in one of its two forms.
+/// route that carries the canonical spelling. A change to it under any other
+/// circumstances would buy a byte-identical second ask, the wasted call
+/// [`crate::retry`] exists to refuse. The schema, by contrast, is always on the
+/// wire in one of its two forms.
 fn changes_the_request(setup: &ProviderSetup, from: &Capability, to: &Capability) -> bool {
     let sends_switch = |capability: &Capability| {
         setup.thinking == Thinking::Off

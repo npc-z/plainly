@@ -3,8 +3,7 @@
 //!
 //! Each integration test is its own crate, so a helper one test file does not
 //! use still has to compile: `cli.rs` pulls in the provider stub without ever
-//! starting one. Shared on purpose — the alternative is copying this into every
-//! test file.
+//! starting one.
 #![allow(dead_code)]
 
 pub mod provider;
@@ -74,10 +73,6 @@ impl TempDir {
 
     /// The same, but stated as an X11 session rather than the pinned Wayland
     /// one: `DISPLAY` set, no `WAYLAND_DISPLAY`.
-    ///
-    /// The session is stated per test rather than inherited: what the CLI says
-    /// on an X11 session must not depend on whether the machine running the tests
-    /// is itself Wayland.
     pub fn plainly_on_x11(
         &self,
         args: &[&str],
@@ -125,8 +120,8 @@ impl TempDir {
         // binary not waiting for input it will never use, which one of these
         // tests asserts on purpose
         // (`a_missing_key_is_reported_without_waiting_for_stdin_to_end`). A
-        // release build makes the child that fast, so this used to fail only in
-        // `nix build`. Every other write error is still a failure.
+        // release build makes the child that fast, so only `BrokenPipe` is
+        // tolerated here; every other write error is a failure.
         let written = child
             .stdin
             .as_mut()

@@ -2,12 +2,9 @@
 //! configuration, does it need a key, is a key there (and from which tier) or is
 //! the store unable to answer, and is its endpoint on this machine.
 //!
-//! The same question used to be answered by each surface on its own, and the
-//! answers had already drifted — the panel took the key requirement from the
-//! preset's name while the run path took it from the endpoint-filtered setup, and
-//! the desktop treated an exported key as usable before asking whether it
-//! resolves. This value composes the existing core facts once ([`Readiness::of`])
-//! and lets a surface translate them into its own words (ADR 0004).
+//! This value composes the existing core facts once ([`Readiness::of`]) so every
+//! surface answers that question from one value and words it for itself
+//! (ADR 0004).
 //!
 //! It is deliberately not a probe: capability is a different axis, and a display
 //! path must not turn into a request nobody asked for.
@@ -82,10 +79,8 @@ impl Readiness {
             Ok(setup) => setup.key,
             Err(_) => setup::requirement_of(name, config),
         };
-        // Only a provider that resolves can run, and only then does a surface
-        // display its key. Asking the secret stores while the setup is broken
-        // would turn drawing the settings screen into a keyring round trip for a
-        // name that cannot be used anyway.
+        // Only a resolvable provider can run, so a broken setup must not cost a
+        // keyring round trip.
         let key = match &resolution {
             Ok(_) => classify(secrets.resolve(name)).presence(),
             Err(_) => KeyPresence::Missing,
@@ -169,8 +164,7 @@ impl Judgement {
 
     /// Whether this judgement stops a provider with `requirement` from running.
     ///
-    /// Delegates to [`KeyPresence::blocks`] so the rule stays in one place; the
-    /// caller does not have to project the judgement into a `KeyPresence` first.
+    /// Delegates to [`KeyPresence::blocks`] so the rule stays in one place.
     pub(crate) fn blocks(&self, requirement: KeyRequirement) -> bool {
         self.presence().blocks(requirement)
     }

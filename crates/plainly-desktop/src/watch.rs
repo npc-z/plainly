@@ -1,23 +1,19 @@
 //! The copy listener: one resident process, only while the switch is on.
 //!
 //! "Explain on copy" is off by default, and the default path has nothing
-//! resident (spec §12). Turning it on is what buys a process: this one, started
-//! as `plainly-desktop --watch`, holding a data-control watch on the clipboard
-//! and spawning the panel the key binding would have spawned. It is the *only*
-//! thing `--watch` adds — a plain `plainly-desktop` still watches nothing, and
-//! the main window never starts a listener behind the switch's back, because a
-//! window that spawned one would break the same promise from the other side.
+//! resident (spec §12). Turning it on starts this process as
+//! `plainly-desktop --watch`: it holds a data-control watch on the clipboard and
+//! spawns the panel the key binding would have spawned. It is the *only* thing
+//! `--watch` adds.
 //!
 //! **The listener decides nothing.** When a copy arrives it starts
-//! `plainly-panel --clipboard`, exactly as the compositor's binding does, and
-//! the panel reads the clipboard again itself. That is what makes the automatic
-//! trigger and the key press one behaviour rather than two: the sensitive-content
-//! rule, the reuse of an open panel, the Lookup Key cache and the ⟳ semantics are
-//! the panel's, and they cannot drift from the key-bound path because they are
-//! the same path (spec §11, §12). The listener only answers "is this clipboard
-//! state new", and that answer is the whole of its logic — which is why it is a
-//! value with an [`Observer`] injected, and why it can be tested without a
-//! Wayland session or a clipboard.
+//! `plainly-panel --clipboard`, exactly as the compositor's binding does, and the
+//! panel reads the clipboard again itself. The sensitive-content rule, the reuse
+//! of an open panel, the Lookup Key cache and the ⟳ semantics are the panel's, so
+//! the automatic trigger and the key press cannot drift apart because they are the
+//! same path (spec §11, §12). The listener only answers "is this clipboard state
+//! new", which is why it is a value with an [`Observer`] injected and testable
+//! without a Wayland session.
 //!
 //! ## What ends it
 //!
@@ -25,14 +21,12 @@
 //!
 //! - the switch is read again on every pass, and a listener that finds it off
 //!   **exits**. That makes the config the one truth about whether the feature is
-//!   on, so a crash cannot resurrect it and a hand-edit of `config.toml` needs no
-//!   second step;
-//! - a handover from another launch says whether that launch was a watcher. A
-//!   later `plainly-desktop` **without** `--watch` — what a desktop shortcut or
-//!   the panel's ⤢ starts — turns this one off, because "open the window" and
-//!   "keep listening for copies" are different requests and the second launch
-//!   wins. (`--nowatch` is the word that request has on the wire, not a flag
-//!   anybody types.)
+//!   on, so a crash cannot resurrect it;
+//! - a handover from another launch says whether that launch was a watcher, and a
+//!   later `plainly-desktop` **without** `--watch` turns this one off, because
+//!   "open the window" and "keep listening for copies" are different requests.
+//!   (`--nowatch` is the word that request has on the wire, not a flag anybody
+//!   types.)
 //! - the clipboard watch itself ends: the compositor stops answering, or the
 //!   session goes away. Pretending to keep listening is the one thing a listener
 //!   must not do.
@@ -43,11 +37,10 @@
 //! panels would leave processes racing for the panel's single instance. So a copy
 //! is *settled* for [`SETTLE`]: the listener waits, a new copy restarts the wait,
 //! and when the clipboard has been still for one full window it starts **one**
-//! panel — for the last copy, which is the one the person is looking at.
+//! panel, for the last copy.
 //!
 //! The window is counted in slices of [`POLL`] rather than measured on a clock,
-//! and that is what lets the tests reach it without spending it. It is the same
-//! window either way: the loop sleeps for a slice and for nothing else.
+//! which is what lets the tests reach it without spending it.
 
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
@@ -69,8 +62,7 @@ pub const POLL: Duration = Duration::from_millis(50);
 ///
 /// Long enough to swallow the `Ctrl-C`, `Ctrl-V`, `Ctrl-C` a person does without
 /// thinking; short enough that a single copy's panel is not noticeably late. The
-/// panel's own start-up is 1.3–2 seconds on a cold model, so this is not the part
-/// anybody waits for.
+/// panel's own start-up is 1.3–2 seconds on a cold model.
 pub const SETTLE: Duration = Duration::from_millis(250);
 
 /// The panel, and the one argument that says what to explain (spec §12).
@@ -80,28 +72,23 @@ const PANEL_CLIPBOARD: &str = "--clipboard";
 /// A source of clipboard changes, as one question: wait a slice.
 ///
 /// A trait rather than the Wayland watcher directly, because the decisions worth
-/// testing are all *about* the stream — what counts as new, what a burst is, when
-/// to stop — and none of them need a compositor. The real implementation is
-/// [`crate::clipboard::Changes`], which is glue over `wl-clipboard-rs`.
+/// testing are all *about* the stream (what counts as new, what a burst is, when
+/// to stop), and none of them need a compositor.
 ///
-/// One question, asked about the stream: [`Observer::quiet`] is a slice of real
-/// time, reporting a change if one arrived and silence if the deadline did.
 /// Silence and "the watch is over" are different answers ([`Waiting::Quiet`]
-/// against [`Waiting::Ended`]), because one is a reason to wait again and the
-/// other is a reason to stop being a listener — and neither is the clipboard
-/// repeating what it already held, which is no answer at all.
+/// against [`Waiting::Ended`]): one is a reason to wait again, the other a reason
+/// to stop being a listener. Neither is the clipboard repeating what it already
+/// held, which is no answer at all.
 pub trait Observer {
     /// Wait for a change until `deadline`.
     ///
-    /// The deadline is what makes a settle window measurable at all: with only a
-    /// blocking read, a listener would wait for as long as the clipboard took,
-    /// which is the opposite of "has the copying stopped".
+    /// The deadline is what makes a settle window measurable: with only a blocking
+    /// read, a listener would wait for as long as the clipboard took.
     ///
-    /// [`Waiting::Arrived`] **consumes** the change it reports: an event is
-    /// reported once, and the next question is about whatever comes after it. And
-    /// a slice costs a slice — a reading equal to the one already in hand is the
-    /// clipboard's *level* being re-reported by a fresh connection, not a change,
-    /// so the wait goes on until the deadline.
+    /// [`Waiting::Arrived`] **consumes** the change it reports. And a slice costs
+    /// a slice: a reading equal to the one already in hand is the clipboard's
+    /// *level* being re-reported by a fresh connection, not a change, so the wait
+    /// goes on until the deadline.
     fn quiet(&mut self, deadline: Instant) -> Waiting;
 }
 
@@ -120,7 +107,7 @@ pub enum Waiting {
 ///
 /// Injected for the reason every clock in this workspace is: a test about a
 /// 250-millisecond window should not take 250 milliseconds. It is used for one
-/// thing only — the deadline handed to [`Observer::quiet`] — because the window
+/// thing only, the deadline handed to [`Observer::quiet`], because the window
 /// itself is counted in slices.
 pub trait Clock {
     fn now(&self) -> Instant;
@@ -146,17 +133,11 @@ pub struct Watch<'a> {
     reading: Option<Reading>,
     /// Whether a copy has arrived that no panel has been opened for yet.
     ///
-    /// This is the whole of the settle rule, and it is one flag: **a panel opens
-    /// for a copy, once, after the copying stops.** The flag is raised by a copy
-    /// and lowered by the panel it opened, so:
-    ///
-    /// - the arm never opens one — nothing raised the flag for it;
-    /// - a burst opens one, for its last copy, because every copy raises the same
-    ///   flag and none of them lowers it;
-    /// - the same words copied again after the panel was dismissed open another,
-    ///   because the dismissal is what tells the two apart;
-    /// - a clipboard that merely holds still opens nothing, however many windows
-    ///   it holds still for: there is nothing to open for.
+    /// This is the whole of the settle rule: **a panel opens for a copy, once,
+    /// after the copying stops.** The flag is raised by a copy and lowered by the
+    /// panel it opened, so the arm never opens one, a burst opens one for its last
+    /// copy, the same words copied again after the panel was dismissed open
+    /// another, and a clipboard that merely holds still opens nothing.
     armed: bool,
 
     /// How much quiet has passed, in slices of [`POLL`].
@@ -197,11 +178,9 @@ impl<'a> Watch<'a> {
 
     /// The same, with the time supplied.
     ///
-    /// The listener measures nothing against the clock — the settle window is
-    /// counted in slices, and the only instant it asks for is the deadline of one
-    /// slice — so a test's clock only has to answer `now()` honestly. It is a
-    /// parameter rather than a call inside `run` so that the deadline the observer
-    /// is handed can be inspected at all.
+    /// The listener measures nothing against the clock, so a test's clock only
+    /// has to answer `now()` honestly. It is a parameter so that the deadline the
+    /// observer is handed can be inspected.
     pub fn with_clock(mut self, clock: impl Clock + 'a) -> Self {
         self.clock = Box::new(clock);
         self
@@ -211,31 +190,27 @@ impl<'a> Watch<'a> {
     ///
     /// One shape, repeated:
     ///
-    /// 1. nothing a panel could be asked for — the clipboard is empty, holds an
-    ///    image, or the session will not give it up — so wait for a copy;
+    /// 1. nothing a panel could be asked for (the clipboard is empty, holds an
+    ///    image, or the session will not give it up), so wait for a copy;
     /// 2. a reading is in hand, so wait one slice. A reading the watch has not
-    ///    seen restarts the wait; a slice that comes back empty adds to the
-    ///    quiet, and so does the clipboard repeating what it already held;
-    /// 3. a full window of quiet starts one panel — for the reading in hand,
-    ///    which is the last copy of the burst.
+    ///    seen restarts the wait; a slice that comes back empty adds to the quiet,
+    ///    and so does the clipboard repeating what it already held;
+    /// 3. a full window of quiet starts one panel, for the last copy of the burst.
     ///
-    /// **The first reading is never acted on.** The watch reports the clipboard
-    /// as it already stands when it opens, and a panel for it would mean
-    /// `--watch` explained whatever happened to be on the clipboard. It is still
-    /// the reading every later one is compared against, which is what makes
-    /// "copy the same words again" a new copy rather than a repeat.
+    /// **The first reading is never acted on.** The watch reports the clipboard as
+    /// it already stands when it opens, and a panel for it would mean `--watch`
+    /// explained whatever happened to be on the clipboard. It is still the reading
+    /// every later one is compared against, which is what makes "copy the same
+    /// words again" a new copy rather than a repeat.
     pub fn run(mut self, stop: &Receiver<bool>) -> Ended {
-        // The arm: the clipboard as the watch finds it. It is not acted on — the
-        // window is counted only from a reading that arrives after this — but it
+        // The arm: the clipboard as the watch finds it. It is not acted on, but it
         // is what the first copy is compared against.
         //
-        // A wait rather than a read, because that is the only way the question is
-        // asked: what the session holds is the *first thing the watch reports*,
-        // and a read that did not wait would return before there is anything to
-        // report. If the report does not land inside one slice — a slow connect,
-        // or a compositor that had to be waited for — the wait may come back
-        // empty, and the first reading that arrives later is then the arm rather
-        // than a copy, which is what `None` in hand means below.
+        // A wait rather than a read, because the session's contents are only the
+        // first thing the watch reports. If the report does not land inside one
+        // slice (a slow connect), the wait may come back empty, and the first
+        // reading that arrives later is then the arm, which is what `None` in hand
+        // means below.
         match self.observer.quiet(self.clock.now() + POLL) {
             Waiting::Arrived(reading) => self.reading = Some(reading),
             Waiting::Ended => return Ended::WatchOver,
@@ -249,58 +224,44 @@ impl<'a> Watch<'a> {
 
             match stop.try_recv() {
                 // The reason travels with the stop: a handover asked for the
-                // window, or the process is going away. Both end the listener and
-                // only one of them is something a person did.
+                // window, or the process is going away.
                 Ok(true) => return Ended::Asked,
                 Ok(false) | Err(mpsc::TryRecvError::Disconnected) => return Ended::ShutDown,
                 Err(mpsc::TryRecvError::Empty) => {}
             }
 
-            // The level first: a clipboard with nothing to explain — the arm, an
-            // empty clipboard, an image — has nothing a window could close on, so
-            // the only thing left to do is wait for a copy. It is one wait either
-            // way, and asking first means the common case of "the clipboard is
-            // empty" does not count quiet towards a panel it cannot open.
-            // One slice. Whether anything is on the clipboard changes only what
-            // a reading *means* — the arm, or a copy — never whether it is read.
+            // One slice. Whether anything is on the clipboard changes only what a
+            // reading *means* (the arm, or a copy), never whether it is read.
             match self.observer.quiet(self.clock.now() + POLL) {
-                // The clipboard changed but could not be read — the owner never
-                // delivered, or the session would not answer. Nothing is opened
-                // for it, and it is *said*: a resident process that silently
-                // drops copies is the one thing this must not be.
+                // The clipboard changed but could not be read. Nothing is opened
+                // for it, and it is *said*: a resident process that silently drops
+                // copies is the one thing this must not be.
                 Waiting::Arrived(Err(Unreadable::Failed(reason))) => {
                     eprintln!("{}", crate::strings::watch_read_failed(&reason));
                     self.reading = Some(Err(Unreadable::Nothing));
                     self.quiet = Duration::ZERO;
                 }
-                // The arm, arriving late: the first reading the watch reports is
-                // the clipboard as it found it, not a copy somebody made after
-                // `--watch` started. It is adopted — it *is* the reading a window
-                // can close on — but it arms nothing, so no panel opens for it.
+                // The arm, arriving late: it is adopted, because it *is* the
+                // reading a window can close on, but it arms nothing.
                 Waiting::Arrived(reading) if self.reading.is_none() => {
                     self.reading = Some(reading);
                     self.quiet = Duration::ZERO;
                 }
-                // A copy: it is what a panel would be asked for. That is the
-                // whole of "a burst is one panel for the last copy" — nothing
-                // opens here, the window below decides when, and by then the
-                // reading in hand is the last copy of the burst.
+                // A copy: what a panel would be asked for. Nothing opens here; the
+                // window below decides when, and by then the reading in hand is
+                // the last copy of the burst.
                 Waiting::Arrived(reading) => {
-                    // Two questions, and they are not the same one.
-                    //
                     // *Is this a copy?* A reading the watch has not seen, or the
-                    // same words arriving while no panel is owed for them — which
-                    // is somebody copying them again after the last panel was
-                    // opened and dismissed. A re-announcement of the offer already
-                    // in hand, with a panel already owed, is neither.
+                    // same words arriving while no panel is owed for them (somebody
+                    // copied them again after the last panel was dismissed). A
+                    // re-announcement with a panel already owed is neither.
                     let copy = self.reading.as_ref() != Some(&reading) || !self.armed;
 
                     // *Does the window start over?* Only for a reading the watch
                     // has not seen. A re-announcement must **not** restart it, or
                     // it could never close: every connection reports the selection
-                    // already on the clipboard, so a clipboard that is merely
-                    // being watched would push the end of the window away forever
-                    // and no panel would ever open at all.
+                    // already on the clipboard, so a clipboard merely being watched
+                    // would push the end of the window away forever.
                     let moved = self.reading.as_ref() != Some(&reading);
 
                     self.reading = Some(reading);
@@ -315,7 +276,7 @@ impl<'a> Watch<'a> {
                 // pause, so nothing is opened for it.
                 Waiting::Ended => return Ended::WatchOver,
                 // A slice of silence. A full window of them is what says the
-                // copying has stopped, and this slice is one of them.
+                // copying has stopped.
                 Waiting::Quiet => {
                     self.quiet += POLL;
                     if self.quiet < SETTLE {
@@ -324,10 +285,9 @@ impl<'a> Watch<'a> {
 
                     self.quiet = Duration::ZERO;
 
-                    // One panel, for the reading in hand — the last copy of the
-                    // burst. A window that closes with nothing armed is a window
-                    // that closed on the arm, or on a clipboard merely holding
-                    // still, and neither of those is a copy to open for.
+                    // One panel, for the last copy of the burst. A window that
+                    // closes with nothing armed closed on the arm, or on a
+                    // clipboard merely holding still, and neither is a copy.
                     if self.armed {
                         self.open();
                     }
@@ -339,14 +299,13 @@ impl<'a> Watch<'a> {
     /// Start the panel, if the switch is still on and there is something to
     /// explain.
     ///
-    /// The switch is read again here, because it is the one thing that has to be
-    /// seen before a panel is started: turning the switch off is how a person
-    /// stops the feature, and a copy that was already in flight must not open one
-    /// panel after they did.
+    /// The switch is read again here, because turning it off is how a person stops
+    /// the feature, and a copy already in flight must not open one panel after they
+    /// did.
     fn open(&mut self) {
-        // Lowered whether or not a panel is actually started: the switch being
-        // off means there is nothing to open for, and a flag left up would open a
-        // panel the moment it came back on, for a copy nobody has made since.
+        // Lowered whether or not a panel is actually started: a flag left up would
+        // open a panel the moment the switch came back on, for a copy nobody has
+        // made since.
         self.armed = false;
 
         if self.enabled()
@@ -360,10 +319,8 @@ impl<'a> Watch<'a> {
     /// Whether the switch is on right now.
     ///
     /// A configuration that cannot be read is **off**. It is the safe direction
-    /// for a feature whose default is off, and it is the true one for the
-    /// commonest failure — a config file that was deleted under a running
-    /// listener — where the alternative is a resident process with no switch to
-    /// turn it off.
+    /// for a feature whose default is off, and it is the true one for a config
+    /// file that was deleted under a running listener.
     fn enabled(&self) -> bool {
         ConfigFile::open(&self.config)
             .and_then(|file| file.config())
@@ -374,13 +331,12 @@ impl<'a> Watch<'a> {
 
 /// Start the panel, as the compositor's own binding does.
 ///
-/// By **name**, and from `/` — the same two choices the panel's ⤢ makes for
-/// `plainly-desktop`, and for the same reasons (spec §12, tickets/14): the
-/// kernel's `PATH` lookup skips a candidate it cannot run, and a child that
-/// inherited a deleted working directory fails in a way nobody can read.
+/// By **name**, and from `/`, for the same reasons the panel's ⤢ makes those two
+/// choices for `plainly-desktop` (spec §12): the kernel's `PATH` lookup skips a
+/// candidate it cannot run, and a child that inherited a deleted working directory
+/// fails in a way nobody can read.
 ///
-/// The child is reaped on a thread of its own. The panel can outlive many
-/// copies — a reused panel is the point — and a child nobody waits for stays a
+/// The child is reaped on a thread of its own. A child nobody waits for stays a
 /// zombie for as long as the listener does, which is hours.
 pub fn spawn_panel() -> Result<(), String> {
     let child = Command::new(PANEL)
@@ -405,11 +361,10 @@ fn reap(mut child: Child) {
 
 /// A running listener, as the window holds it.
 ///
-/// The window does not manage the loop — it only has to be able to say one thing
-/// to it: a later `plainly-desktop` that is not `--watch` means "the window, not
-/// a watcher", and a listener that kept watching after that would be a resident
-/// process nobody asked for. Nothing else crosses the boundary, so this is a sender and
-/// a handle and not an interface.
+/// The window does not manage the loop, it only has to be able to say one thing to
+/// it: a later `plainly-desktop` that is not `--watch` means "the window, not a
+/// watcher", and a listener that kept watching after that would be a resident
+/// process nobody asked for. Nothing else crosses the boundary.
 #[derive(Clone)]
 pub struct Handle {
     /// Sends whether the stop was a handover asking for the window, or the
@@ -421,10 +376,9 @@ pub struct Handle {
 impl Handle {
     /// Whether the listener is still listening.
     ///
-    /// A listener ends on its own when the switch is turned off, and a handle to
-    /// a thread that has finished is not a listener any more: a window that
-    /// treated it as one would report "already listening" and never start
-    /// another.
+    /// A listener ends on its own when the switch is turned off, and a handle to a
+    /// finished thread is not a listener any more: a window that treated it as one
+    /// would report "already listening" and never start another.
     pub fn running(&self) -> bool {
         self.thread
             .lock()
@@ -435,10 +389,9 @@ impl Handle {
 
     /// A handle over a thread the caller owns.
     ///
-    /// For the tests that are about *when* a listener is started and stopped
-    /// rather than about what it does: starting a real one needs a Wayland
-    /// session and a panel binary, and the decision being tested is a layer above
-    /// both.
+    /// For the tests that are about *when* a listener is started and stopped rather
+    /// than about what it does: starting a real one needs a Wayland session and a
+    /// panel binary.
     pub fn of(stop: std::sync::mpsc::Sender<bool>, thread: std::thread::JoinHandle<()>) -> Self {
         Self {
             stop,
@@ -452,9 +405,8 @@ impl Handle {
     /// window, and a listener still holding the clipboard watch would go on
     /// spawning panels behind it.
     ///
-    /// `asked` says **why**, because the listener says how it ended and the two
-    /// reasons are different facts: a handover asked for the window, or this
-    /// process is going away and the listener goes with it.
+    /// `asked` says **why**, because the two endings are different facts: a
+    /// handover asked for the window, or this process is going away.
     pub fn stop(&self, asked: bool) {
         let _ = self.stop.send(asked);
 
@@ -471,15 +423,12 @@ impl Handle {
 
 /// Start the listener on a thread of its own.
 ///
-/// Returns as soon as the thread is up, because the caller is the window: the
-/// process may already have a surface to build, and a watcher that failed to open
-/// its connection reports that from its own thread rather than blocking the
-/// window on a clipboard it may never be able to read.
+/// Returns as soon as the thread is up, because the caller is the window and a
+/// watcher that failed to open its connection reports that from its own thread
+/// rather than blocking the window on a clipboard it may never be able to read.
 ///
 /// The session's capabilities are checked **first**, because they are the same
-/// fact the settings screen greys the switch with: on a compositor with no
-/// data-control there is nothing to watch and the sentence is already written
-/// (spec §12).
+/// fact the settings screen greys the switch with (spec §12).
 pub fn start(config: PathBuf) -> Result<Handle, String> {
     if !crate::capability::desktop().data_control() {
         return Err(crate::strings::watch_needs_data_control().to_string());
@@ -603,24 +552,23 @@ mod tests {
     ///
     /// Three steps, and they are the three things a real watch can do:
     ///
-    /// - [`Step::Copy`] — a selection event: the clipboard changed, so this is a
-    ///   copy and the listener hears about it the moment it asks;
-    /// - [`Step::Still`] — one slice the clipboard went through without
-    ///   changing; the watch produces *nothing* here, no event and no reading,
-    ///   which is what the listener measures the settle window with;
-    /// - the end of the timeline — the watch is over, which is how a test
-    ///   reaches [`Ended::WatchOver`] on purpose.
+    /// - [`Step::Copy`]: a selection event, so the listener hears about it the
+    ///   moment it asks;
+    /// - [`Step::Still`]: one slice the clipboard went through without changing;
+    ///   the watch produces *nothing* here, which is what the listener measures
+    ///   the settle window with;
+    /// - the end of the timeline: the watch is over, which is how a test reaches
+    ///   [`Ended::WatchOver`] on purpose.
     ///
-    /// A literal list rather than a queue plus counters: earlier versions tried to
-    /// say "holding still" with a queued empty reading or a placeholder, and both
-    /// were wrong — an empty clipboard is a selection event that *clears* what was
-    /// there, and a queue that has run out is not silence. A timeline cannot say
-    /// either of those by accident.
+    /// A literal list rather than a queue plus counters, because "holding still" is
+    /// neither a queued empty reading (an empty clipboard is a selection event that
+    /// clears what was there) nor a queue that has run out (that is the watch
+    /// ending).
     ///
-    /// A step is one report, and the fixture does **not** insert the level
-    /// reports that a real watch makes: `what_was_already_on_the_clipboard_is_not_a_copy`
-    /// writes them into its own timeline instead, which is where the rule that
-    /// decides them — a re-report must not restart the settle window — is pinned.
+    /// A step is one report, and the fixture does **not** insert the level reports
+    /// a real watch makes: `what_was_already_on_the_clipboard_is_not_a_copy`
+    /// writes them into its own timeline, which is where the rule that decides them
+    /// (a re-report must not restart the settle window) is pinned.
     struct Script {
         current: Option<Reading>,
         steps: VecDeque<Step>,
@@ -667,10 +615,9 @@ mod tests {
     impl Observer for Script {
         fn quiet(&mut self, _deadline: Instant) -> Waiting {
             match self.steps.pop_front() {
-                // A reading is reported and consumed: reporting it is how the
-                // listener hears about it, and consuming it is what keeps the
-                // next slice a slice of the future rather than the same reading
-                // counted twice.
+                // A reading is reported and consumed: consuming it is what keeps
+                // the next slice a slice of the future rather than the same
+                // reading counted twice.
                 Some(Step::Copy(reading)) => {
                     self.current = Some(reading.clone());
                     Waiting::Arrived(reading)
@@ -681,11 +628,10 @@ mod tests {
         }
     }
 
-    // The clock the tests use is the real one ([`SystemClock`]), and that is not
-    // a shortcut: the listener measures nothing against it. The settle window is
-    // counted in slices, and the only instant it asks for is the deadline of one
-    // slice — which the fixture's [`Observer::quiet`] ignores and answers from its
-    // own timeline. A test clock would be a fake with nothing to fake.
+    // The clock the tests use is the real one ([`SystemClock`]), because the
+    // listener measures nothing against it: the settle window is counted in
+    // slices, and the only instant it asks for is one slice's deadline, which the
+    // fixture's [`Observer::quiet`] ignores.
 
     /// A running total of what the listener asked for.
     #[derive(Clone, Default)]
@@ -741,21 +687,17 @@ mod tests {
         // The watch opens with these words on the clipboard and holds still for a
         // window: that is the **arm**, nothing is armed for it, and no panel opens.
         //
-        // Then something is copied — and reported again and again with no window
-        // closing between the reports. That is what a real watch produces, because
-        // every data-control connection reports the selection already on the
-        // clipboard before it waits for anything.
+        // Then something is copied and reported again and again with no window
+        // closing between the reports, which is what a real watch produces: every
+        // data-control connection reports the selection already on the clipboard
+        // before it waits for anything.
         //
-        // **One panel**, and that is a decision rather than an accident: the first
-        // report is the copy, and the four that follow are the clipboard
-        // describing itself, so the window runs on and closes once. Counting the
-        // re-reports as copies would mean a window that could never close while
-        // the clipboard sat still — every wait opens a connection, every
-        // connection reports the level — and a panel would never open at all. A
-        // re-report is not distinguishable from a real copy of the same words, so
-        // "one panel" is the only rule that works; the alternative spelling,
-        // where the same words after the panel was opened and dismissed *are* a
-        // copy, is the test below this one.
+        // **One panel**, and that is a decision rather than an accident. Counting
+        // the re-reports as copies would mean a window that could never close while
+        // the clipboard sat still, and a panel would never open at all. A re-report
+        // is not distinguishable from a real copy of the same words, so "one panel"
+        // is the only rule that works. The alternative spelling, where the same
+        // words after the panel was dismissed *are* a copy, is the test below.
         let ended = listener(
             &home,
             Script::holding(same.clone())

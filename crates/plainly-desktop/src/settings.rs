@@ -1,31 +1,26 @@
-//! The settings screen, as data: five sections, each one a placement of choices
-//! that other tickets settled (spec §13).
+//! The settings screen, as data: five sections of choices (spec §13).
 //!
-//! The screen is five sections — 语言与等级 / Provider / 提示词 / 行为 / 数据 —
-//! and every value in them is decided here rather than in the frontend, because
-//! the rules are domain rules: which providers a person may choose, whether a
-//! key has been found, what each Level means, and whether this compositor can
-//! offer "explain on copy" at all. The frontend's job is to draw what it is
-//! handed and to own no sentence of its own (spec §12), which is why every
-//! label in these sections travels as a field rather than being written into the
-//! JavaScript.
+//! Every value is decided here rather than in the frontend, because the rules
+//! are domain rules: which providers a person may choose, whether a key has been
+//! found, what each Level means, and whether this session can offer "explain on
+//! copy". The frontend draws what it is handed and owns no sentence of its own
+//! (spec §12).
 //!
 //! Three of these placements are constraints rather than preferences:
 //!
 //! - a Level is shown **with its meaning**, because a bare label measurably
-//!   produced identical Explanations for neighbouring levels (tickets/09);
+//!   produced identical Explanations for neighbouring levels;
 //! - "复制自动弹" is **disabled with a sentence**, never hidden, when the session
-//!   has no data-control (spec §12, tickets/07), and the same rule is enforced
-//!   where the setting is written rather than only where it is drawn;
+//!   has no data-control (spec §12), and the same rule is enforced where the
+//!   setting is written;
 //! - the prompt appendix is **append-only**, and the screen shows the factory
-//!   text it extends so that "you can only add" is something a person can see
-//!   (tickets/09).
+//!   text it extends so that "you can only add" is something a person can see.
 
 use serde::Serialize;
 
 // The numeric ranges are core's: a write refuses a value outside them wherever
-// it comes from, and this screen only draws their ends. Reading stays tolerant —
-// a hand-edited file still opens and is shown as written (spec §4).
+// it comes from, and this screen only draws their ends. Reading stays tolerant,
+// so a hand-edited file still opens and is shown as written (spec §4).
 use plainly_core::config::{AUTO_HIDE_RANGE, PANEL_HEIGHT_RANGE, PANEL_WIDTH_RANGE};
 use plainly_core::presets::{self, KeyRequirement};
 use plainly_core::{
@@ -39,8 +34,8 @@ use crate::strings;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SettingsView {
     /// The five section titles, in the order the list draws them. They are here
-    /// rather than in the frontend because they are the window's copy, and the
-    /// copy lives in one place (spec §12).
+    /// rather than in the frontend because they are the window's copy, which
+    /// lives in one place (spec §12).
     pub sections: Vec<&'static str>,
     pub levels: LevelsView,
     pub provider: ProvidersView,
@@ -60,7 +55,7 @@ pub struct LevelsView {
     pub native_language: String,
     /// The languages a person can pick without typing. The field also accepts
     /// any other string: this is the shipped prompt's own translation
-    /// instruction, and the language it names is what v0 was measured with.
+    /// instruction.
     pub native_language_options: Vec<String>,
 }
 
@@ -97,10 +92,8 @@ pub struct ProvidersView {
     /// Whether the screen should open on the "nothing to talk to yet" state
     /// (spec §13): no provider that both resolves and can be used.
     ///
-    /// The same answer as [`ProvidersView::usable`], asked the other way round,
-    /// and derived from it rather than computed beside it: a window that opened
-    /// on the history screen and a screen that showed the empty state must not
-    /// be able to disagree about whether there is anything to talk to.
+    /// The same answer as [`ProvidersView::usable`], asked the other way round and
+    /// derived from it, so the two cannot disagree.
     pub first_run: bool,
 }
 
@@ -109,8 +102,7 @@ pub struct ProvidersView {
 pub struct ProviderOption {
     pub name: String,
     pub label: String,
-    /// Whether the endpoint is on this machine. Not a ranking: it is what makes
-    /// the panel's "this may be confidently wrong" note apply (spec §12).
+    /// Whether the endpoint is on this machine (spec §12).
     pub local: bool,
 }
 
@@ -186,10 +178,9 @@ pub struct BehaviorView {
     pub panel_autohide_seconds: u32,
     pub autohide_min: u32,
     pub autohide_max: u32,
-    /// Whether this session can explain on copy at all.
+    /// Whether the switch reads on: the stored setting and the session's
+    /// capability together.
     pub copy_auto_popup: bool,
-    /// One sentence, shown whether or not the switch can be used: a capability
-    /// that is missing is named rather than hidden (spec §12).
     pub copy_auto_popup_availability: Availability,
     pub sections: SectionsView,
 }
@@ -270,9 +261,9 @@ pub fn exports() -> Vec<ExportAction> {
 impl SettingsView {
     /// The settings screen for one configuration.
     ///
-    /// `prompt` is passed rather than rebuilt from `prompts` because the version
-    /// in effect is what the screen shows, and the version is derived from the
-    /// same value the next run will send.
+    /// `prompt` is passed rather than rebuilt from `prompts`, because the version
+    /// in effect is what the screen shows and it is derived from the same value
+    /// the next run will send.
     pub fn of(
         config: &Config,
         prompt: &plainly_core::Prompt,
@@ -303,11 +294,11 @@ impl ProvidersView {
 impl KeyView {
     /// The key as core's readiness reports it, in this screen's words.
     ///
-    /// Whether a key was found (and from which tier), whether there is none, or
-    /// whether a store could not answer is decided once in core; this only picks
-    /// the sentence. `needed` is the same readiness answer the history screen
-    /// opens on, read backwards: a provider whose required key is missing or
-    /// unreadable is the one thing that blocks a run.
+    /// Core decides whether a key was found (and from which tier), that there is
+    /// none, or that a store could not answer. This only picks the sentence.
+    /// `needed` is the same readiness answer the history screen opens on, read
+    /// backwards: a provider whose required key is missing or unreadable is the
+    /// one thing that blocks a run.
     fn of(readiness: &Readiness) -> Self {
         let variable = plainly_core::env_var_name(&readiness.name);
         let needed = !readiness.usable();
@@ -497,10 +488,9 @@ fn behavior(app: &App, facts: &Facts) -> BehaviorView {
         autohide_min: AUTO_HIDE_RANGE.0,
         autohide_max: AUTO_HIDE_RANGE.1,
         // A configuration that says "on" on a session that cannot do it is
-        // reported off: the control is drawn greyed, so a checked one would be
-        // a state the user could neither reach nor leave. The value in the file
-        // is not rewritten — the key is the user's, and a session that gains
-        // data-control brings it back.
+        // reported off: the control is drawn greyed, so a checked one would be a
+        // state the user could neither reach nor leave. The value in the file is
+        // not rewritten, and a session that gains data-control brings it back.
         copy_auto_popup: app.copy_auto_popup && copy_auto.enabled,
         copy_auto_popup_availability: copy_auto,
         sections: SectionsView {

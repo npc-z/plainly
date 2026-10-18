@@ -1,10 +1,8 @@
 //! Provider readiness: whether one provider can be used right now, and why not.
 //!
-//! Everything here is driven through [`Readiness`] and the pure `local_of`
-//! function — the seam the desktop, the panel and the CLI read — with injected
-//! secret stores. There is no network, no display and no real keyring: these
-//! tests keep their own local `SecretStore` fakes (the runner and secrets test
-//! binaries keep theirs), because each integration-test binary is its own seam.
+//! Driven through [`Readiness`] and the pure `local_of` function with injected
+//! secret stores, no network and no real keyring. Each integration-test binary
+//! keeps its own `SecretStore` fake because each binary is its own seam.
 
 use std::collections::BTreeMap;
 use std::sync::Mutex;
@@ -90,8 +88,8 @@ fn a_required_key_found_in_the_environment_is_usable() {
     assert!(readiness.usable());
 }
 
-/// The tier is part of the answer: a surface has to tell the user whether the
-/// key will still be there after a restart.
+/// The tier is part of the answer, because it says whether the key survives a
+/// restart.
 #[test]
 fn a_required_key_is_usable_from_any_tier_and_names_the_tier() {
     let config = config("[app]\nprovider = \"deepseek\"\n");
@@ -118,9 +116,6 @@ fn a_required_key_is_usable_from_any_tier_and_names_the_tier() {
     }
 }
 
-/// Missing and unreadable are different facts: one means "set a key", the other
-/// "the place the key should be is broken". Readiness reports both as unusable
-/// for a required provider, and never folds one into the other.
 #[test]
 fn a_required_key_that_is_missing_or_unreadable_is_unusable_and_the_two_stay_distinct() {
     let config = config("[app]\nprovider = \"deepseek\"\n");
@@ -144,9 +139,6 @@ fn a_required_key_that_is_missing_or_unreadable_is_unusable_and_the_two_stay_dis
     );
 }
 
-/// A provider that may authenticate nothing is not blocked by a store that
-/// cannot answer; the reason still travels, because it is not the same fact as
-/// having no key.
 #[test]
 fn an_optional_key_is_usable_when_missing_or_unreadable_and_keeps_the_reason() {
     let config =
@@ -169,8 +161,6 @@ fn an_optional_key_is_usable_when_missing_or_unreadable_and_keeps_the_reason() {
     );
 }
 
-/// Every reason a provider cannot be used is its own fact, and none of them is
-/// "there is no such provider" once a preset or a table names one.
 #[test]
 fn a_provider_that_does_not_resolve_is_unusable_whatever_the_key_says() {
     let secrets = Secrets::with_stores(EnvSecrets::empty(), None);
@@ -213,9 +203,6 @@ fn a_provider_that_does_not_resolve_is_unusable_whatever_the_key_says() {
     );
 }
 
-/// A provider that cannot resolve cannot run whatever the stores would say, and
-/// no surface draws its key. Readiness therefore must not turn a settings-screen
-/// render into a keyring round trip for such a name.
 #[test]
 fn a_provider_that_does_not_resolve_does_not_ask_the_stores() {
     /// A store that fails the test if it is asked at all.
@@ -256,10 +243,6 @@ fn a_provider_that_does_not_resolve_does_not_ask_the_stores() {
     }
 }
 
-/// Pointing a name elsewhere withdraws what its preset knew. Readiness answers
-/// from the endpoint the configuration names: a hosted preset pointed at loopback
-/// is local and asks for no key, and one pointed at another service does not
-/// inherit the preset's demand for one either.
 #[test]
 fn an_endpoint_override_moves_both_the_requirement_and_the_locality() {
     let secrets = Secrets::with_stores(EnvSecrets::empty(), None);
@@ -290,9 +273,6 @@ fn an_endpoint_override_moves_both_the_requirement_and_the_locality() {
     );
 }
 
-/// The pure locality question, without touching a secret store: endpoints that
-/// loop back are local, everything else (a LAN box, another service, an unknown
-/// name) is not.
 #[test]
 fn local_of_answers_from_the_configured_endpoint() {
     let config = config(
@@ -330,10 +310,6 @@ fn local_of_answers_from_the_configured_endpoint() {
     assert!(!local_of("deepseek", &Config::default()));
 }
 
-/// The run path and the display path are two projections of one judgement. For
-/// every requirement and key state they must reach the same conclusion: a
-/// required key that is missing or unreadable stops a run, an optional one does
-/// not, and the unreadable reason is the same on both sides.
 #[test]
 fn readiness_and_the_run_path_agree_on_every_requirement_and_key_state() {
     let required = || config("[app]\nprovider = \"deepseek\"\n");

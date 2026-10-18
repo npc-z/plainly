@@ -1,8 +1,5 @@
 //! `plainly config`: where the settings live, what they are, and how to change
 //! one.
-//!
-//! stdout carries the product (`config path`, `config show`) and nothing else;
-//! confirmations go to stderr so a pipeline stays clean.
 
 use plainly_core::{ConfigFile, Paths};
 

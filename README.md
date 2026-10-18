@@ -136,10 +136,11 @@ A home-manager user who wants only the command line writes
 building from another flake can name the same attributes. v0 exposes
 `x86_64-linux` only, so there is no package for any other system.
 
-The cache matters most here: a `nix run` or `nix profile install` against a
-pushed revision substitutes the packages, while a revision that was never pushed
-builds from source. "Binary cache" below is how to make sure the substitute is
-used.
+The cache holds only what was pushed, for the revision and `flake.lock` that
+produced it: a different nixpkgs input changes the derivations, and a miss is an
+ordinary source build. A `nix run` or `nix profile install` against a pushed
+revision substitutes the packages, while a revision that was never pushed builds
+from source. "Binary cache" below is how to make sure the substitute is used.
 
 ## Binary cache
 
@@ -151,10 +152,6 @@ declares it in `nixConfig`:
 extra-substituters         = https://plainly-npc-z.cachix.org
 extra-trusted-public-keys = plainly-npc-z.cachix.org-1:F7TqG/U7AJfUZ8McMct3VHbxchqKZSF/oSop0pv9/SE=
 ```
-
-The cache holds only what was pushed, for the revision and `flake.lock` that
-produced it: a different nixpkgs input changes the derivations, and a miss is an
-ordinary source build.
 
 Nix applies a flake's `nixConfig` only when it trusts the flake. Add
 `--accept-flake-config` to the `nix` command that reads it:
@@ -191,9 +188,8 @@ or run `cachix use plainly-npc-z` once on a machine that has Cachix.
 
 ### Filling it
 
-The cache is public to read and token-authenticated to write. Nothing is in it
-until it is pushed, so a revision nobody pushed builds from source for everyone.
-Authenticate once with the token from
+The cache is public to read and token-authenticated to write. Authenticate once
+with the token from
 <https://app.cachix.org/personal-auth-tokens> (or a per-cache token from the
 cache's settings):
 
@@ -338,12 +334,12 @@ Honest limits, from the spec's "必须传达到实现阶段的诚实记录":
 - **The level is a hint, not a contract.** Measured on 4 Passages × 1 model, B2
   and C1 came out indistinguishable (average word length 4.32 vs 4.29; similarity
   to the original 0.463 vs 0.462). The measurement was taken under the v6 prompt,
-  whose C1 descriptor still read "keep most of the original structure" — the wording
-  `crates/plainly-core/src/prompt.rs` names as the one that fought the prompt's own
-  rule, "It must be a real restatement: never return the passage unchanged" — and
-  the rule won. That descriptor has since been reworded; the numbers above are the
-  reason the hint is a hint. A2 is usually the simplest, but not reliably: on two of
-  the twelve samples its average word length was the highest of the three.
+  whose C1 descriptor read "keep most of the original structure". That wording
+  fought the prompt's own rule, "It must be a real restatement: never return the
+  passage unchanged", and the rule won; the descriptor has been reworded, and the
+  numbers above are why the level stays a hint. A2 is usually the simplest, but
+  not reliably: on two of the twelve samples its average word length was the
+  highest of the three.
 - **A local model will be confidently wrong.** The 4B this was calibrated on
   satisfies the contract 12/12 and answers in 1.87 s warm (7.2 s cold), and it got
   `bottled it` backwards, got `genteel` wrong, and produced no grammar note at all

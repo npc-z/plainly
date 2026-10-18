@@ -50,7 +50,6 @@ fn a_partial_file_falls_back_to_defaults_key_by_key() {
     let config = file.config().expect("the partial file parses");
 
     assert_eq!(config.app.level, Level::A1);
-    // Everything the file does not mention keeps its default.
     assert_eq!(config.app.provider, Config::default().app.provider);
     assert_eq!(config.app.panel_autohide_seconds, 20);
     assert_eq!(config.app.panel_width, Config::default().app.panel_width);
@@ -68,10 +67,8 @@ fn unknown_keys_load_and_survive_a_write() {
     .expect("the file is writable");
 
     let mut file = ConfigFile::open(&path).expect("the file opens");
-    // A key this version does not know must not break loading...
     file.config().expect("unknown keys are ignored");
 
-    // ...nor be dropped when we write something else.
     file.set("app.panel_autohide", "true")
         .expect("a known key is settable");
     file.save().expect("the save succeeds");
@@ -105,7 +102,6 @@ fn values_are_coerced_by_the_type_of_the_key() {
     let path = dir.join("config.toml");
     let mut file = ConfigFile::open(&path).expect("a missing file opens");
 
-    // No quotes needed on the command line; the key's type decides.
     file.set("app.level", "A2").expect("level");
     file.set("app.export_format", "raw").expect("export format");
     file.set("app.panel_corner", "bottom-right")
@@ -167,8 +163,6 @@ fn a_value_of_the_wrong_shape_is_refused() {
     for (key, value) in [
         ("app.level", "Z9"),
         ("app.export_format", "pdf"),
-        // Anki was a format v0 shipped and no longer does; the name is now
-        // refused like any other value the enum has no variant for.
         ("app.export_format", "anki"),
         ("app.panel_corner", "middle"),
         ("app.show_grammar", "maybe"),
@@ -186,8 +180,6 @@ fn a_value_of_the_wrong_shape_is_refused() {
     }
 }
 
-/// "Off" has a switch. A duration of zero would be a second spelling of it, and
-/// two spellings drift apart.
 #[test]
 fn a_zero_duration_is_refused_and_points_at_the_switch() {
     let dir = TempDir::new("config-zero");
@@ -200,8 +192,6 @@ fn a_zero_duration_is_refused_and_points_at_the_switch() {
     assert!(error.to_string().contains("app.panel_autohide"), "{error}");
 }
 
-/// A size of zero is nobody's: the panel would be a surface with nothing in it,
-/// and the key would read as written while doing nothing at all.
 #[test]
 fn a_zero_size_is_refused() {
     let dir = TempDir::new("config-zero-pixels");
@@ -213,8 +203,6 @@ fn a_zero_size_is_refused() {
     }
 }
 
-/// The legal ranges live in core now, so the settings screen, the panel and the
-/// CLI cannot each keep their own copy of the same three numbers (spec §4).
 #[test]
 fn the_legal_ranges_are_exported_from_core() {
     use plainly_core::config::{AUTO_HIDE_RANGE, PANEL_HEIGHT_RANGE, PANEL_WIDTH_RANGE};
@@ -224,9 +212,6 @@ fn the_legal_ranges_are_exported_from_core() {
     assert_eq!(PANEL_HEIGHT_RANGE, (240, 1200));
 }
 
-/// The write side is strict: the settings screen's range is now the file's
-/// range, so `config set` cannot write a number that screen would refuse. The
-/// boundary values themselves are legal.
 #[test]
 fn a_numeric_value_outside_the_range_is_refused_with_the_range_as_facts() {
     let dir = TempDir::new("config-range");
@@ -272,17 +257,12 @@ fn a_numeric_value_outside_the_range_is_refused_with_the_range_as_facts() {
             other => panic!("{key} = {value} should be out of range, got {other}"),
         }
 
-        // The sentence the CLI prints has to name the range, or the user has to
-        // go looking for it.
         assert!(message.contains(&value.to_string()), "{message}");
         assert!(message.contains(&min.to_string()), "{message}");
         assert!(message.contains(&max.to_string()), "{message}");
     }
 }
 
-/// Zero keeps its own dedicated messages: the range check comes after them, so
-/// `0` still says why zero is special rather than quoting a range that starts at
-/// a number the user may not have thought about.
 #[test]
 fn a_zero_is_refused_by_its_own_rule_before_the_range_is_considered() {
     let dir = TempDir::new("config-zero-first");
@@ -305,10 +285,6 @@ fn a_zero_is_refused_by_its_own_rule_before_the_range_is_considered() {
     }
 }
 
-/// The read side stays tolerant: a hand-edited file with an out-of-range number
-/// still opens, because the panel must always be able to appear and close. The
-/// panel clamps and the settings screen shows the file as written; the strictness
-/// is on the way in, not on the way out (spec §4).
 #[test]
 fn a_hand_edited_out_of_range_file_still_opens() {
     let dir = TempDir::new("config-range-read");
@@ -326,7 +302,6 @@ fn a_hand_edited_out_of_range_file_still_opens() {
     assert_eq!(config.app.panel_height, 0);
     assert_eq!(config.app.panel_autohide_seconds, u32::MAX);
 
-    // The same tolerance stated at the parse seam itself.
     let parsed = Config::parse("[app]\npanel_width = 4294967295\n").expect("parse is permissive");
     assert_eq!(parsed.app.panel_width, u32::MAX);
 }
@@ -376,8 +351,6 @@ fn saving_twice_in_a_row_is_fine() {
     assert!(text.contains("level = \"C1\""));
 }
 
-/// The CLI and the desktop app both write this file. Whoever writes second must
-/// notice, not overwrite.
 #[test]
 fn saving_refuses_to_clobber_an_edit_made_by_someone_else() {
     let dir = TempDir::new("config-external");
@@ -434,7 +407,6 @@ fn the_effective_configuration_fills_in_every_default() {
             "missing {section}: {effective}"
         );
     }
-    // And it round-trips: what `show` prints is what Plainly would use.
     assert_eq!(
         Config::parse(&effective).expect("the effective view parses"),
         file.config().expect("the file parses")

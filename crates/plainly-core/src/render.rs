@@ -1,34 +1,16 @@
 //! Rendering an Explanation into sections.
 //!
-//! The shape is the prototype's, settled in `issues/01-output-contract.md`:
-//! `### Original` / `### Comprehensible English` / `### Key Help` /
-//! `### Grammar` (only when there is one) / `### Translation`, with the
-//! Translation last. A reader of the markdown cannot tell it was rendered from
-//! JSON, which is the point.
+//! The shape is one value (ADR-0005): a list of [`Section`]s whose Key Help body
+//! is [`Body::Glosses`], the expression, its meaning and its Example already
+//! settled, and whose empty sections are [`Body::Note`]s where a surface asks for
+//! one. Every surface consumes that value instead of re-judging the raw fields,
+//! and rendering is a pure function of a Passage and an Explanation.
 //!
-//! The Key Help has a shape of its own since `v8-examples`: each Gloss is the
-//! expression, its meaning and its Example, and the arrow that used to join the
-//! first two is gone (`.scratch/gloss-examples/spec.md`). Its body is not a
-//! string, either: [`Body::Glosses`] keeps the three parts apart, so each surface
-//! draws them in its own terms — a document makes a bullet with a block quote, the
-//! panel draws three widgets — rather than re-parsing markup it was just handed.
-//! (The panel showed the literal `-`, backticks and `_` for a while; that is what
-//! handing a surface a document and hoping it draws one looks like.)
-//!
-//! The parts are settled values, not raw `Gloss`es: [`GlossView`] has already
-//! decided whether there is an Example at all (ADR-0005), and [`Body::Note`]
-//! tells a sentence a surface says where a section is empty from an Explanation's
-//! own prose. A renderer consumes those answers; it does not re-derive them.
-//!
-//! Rendering is a pure function of a Passage and an Explanation, and the CLI,
-//! the markdown export and the panel all go through it. The raw CSV does not:
-//! a spreadsheet cell is not a document. What differs between surfaces is
-//! one rule: the two sections that can be empty *because the model said nothing
-//! is here* — Grammar with no structural blocker, Key Help with no Glosses —
-//! disappear from the document but are *said* on a surface read in place, in the
-//! caller's own words. Such a surface is read once, where a missing section
-//! cannot be told from a section that was never generated; a document a person
-//! scrolls and re-reads does not have that problem, so it keeps the silence.
+//! The empty-section policy is the one rule a surface chooses between. Grammar
+//! with no structural blocker and Key Help with no Glosses disappear from the
+//! markdown document. A surface read in place keeps them and says so in its own
+//! words, because a reader there cannot tell a missing section from one that was
+//! never generated, while a document a person scrolls and re-reads can.
 
 use crate::{Explanation, Gloss};
 
@@ -52,7 +34,7 @@ impl SectionKind {
     /// The content of an Explanation is English, so the document's headings are
     /// too. The panel does not use this: it takes a [`SectionKind`] and words the
     /// heading itself, which is how an interface can be Chinese while the
-    /// Explanation stays English (spec §4; the strings live in tickets/15).
+    /// Explanation stays English (spec §4).
     pub fn title(self) -> &'static str {
         match self {
             SectionKind::Original => "Original",
@@ -74,14 +56,11 @@ pub struct Section {
 /// One Gloss as a surface draws it: the expression, its meaning, and the
 /// Example, settled.
 ///
-/// [`Gloss`] is the contract's word for the same three parts, and its `example`
-/// is a `String` because the wire schema requires one (ADR-0002). What a surface
-/// needs is a different fact: whether this Gloss has an Example at all, and what
-/// sentence to draw if it does. That decision lives here, once — at the only
-/// constructor — so a renderer consumes the answer instead of re-deriving it by
-/// trimming a string. `None` covers both a Record written before Examples
-/// existed and a model that left the field blank: the picture is the same, and
-/// ADR-0002's visible rule is "no Example, no Example line".
+/// [`Gloss`]'s `example` is a `String` because the wire schema requires one, and
+/// this is where the presence question is decided once, at the only constructor,
+/// so no renderer re-derives it by trimming a string. `None` covers both a Record
+/// written before Examples existed and a model that left the field blank
+/// (ADR-0002).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GlossView {
     pub expression: String,
@@ -108,12 +87,12 @@ impl GlossView {
 
 /// A section's body, in the terms a surface draws it in.
 ///
-/// The distinction is not decoration: prose is shown as it stands, while the Key
+/// The distinction is not decoration. Prose is shown as it stands, while the Key
 /// Help's Glosses have three parts each and every surface gives them different
-/// treatment — a document makes them a bullet and a block quote, the panel makes
-/// them three widgets with a rule beside the Example. Flattening both into one
-/// `String` would force every surface to either re-parse markdown or show its
-/// syntax, which is how `-`, backticks and `_` ended up on a layer surface.
+/// treatment: a document makes them a bullet and a block quote, and the panel
+/// makes them three widgets with a rule beside the Example. Flattening both into
+/// one `String` would force every surface to re-parse markdown or show its
+/// syntax.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Body {
     /// Text shown as it stands: the Original, the paraphrases, a Grammar note,
@@ -121,21 +100,18 @@ pub enum Body {
     Prose(String),
     /// The sentence a surface says where a section is empty, because the model
     /// said nothing there. It is not the Explanation talking, so a surface may
-    /// give it a quieter material than prose; a document prints it as text.
+    /// give it a quieter material than prose. A document prints it as text.
     Note(String),
     /// The Key Help: the Glosses themselves, in the model's order and already
     /// settled by [`GlossView::of`].
     Glosses(Vec<GlossView>),
 }
 
-/// The sections as markdown, in the prototype's shape, ending in one newline.
+/// The sections as markdown, ending in one newline.
 ///
 /// A section the model left nothing for is left out rather than headed and left
-/// blank: `Grammar` when there is no structural blocker, and `Key Help` when
-/// there are no Glosses at all. In both cases the emptiness is the model saying
-/// "nothing here", and a reader of the markdown loses nothing by its absence.
-/// Empty *prose* is not treated this way — an empty paraphrase is a bad answer,
-/// not a missing section (tickets/07).
+/// blank. Empty *prose* is not treated this way: an empty paraphrase is a bad
+/// answer, not a missing section.
 pub fn markdown(passage: &str, explanation: &Explanation) -> String {
     render_with(
         |kind| kind.title(),
@@ -145,10 +121,10 @@ pub fn markdown(passage: &str, explanation: &Explanation) -> String {
 
 /// The one place a list of [`Section`]s becomes a document.
 ///
-/// The panel copies an Explanation too (tickets/15), under the interface's own
-/// headings, and "`### heading`, blank line, body" is a format rather than a
-/// surface's choice — so both callers come through here and the two documents
-/// cannot drift apart in shape while agreeing about the sections.
+/// The panel copies an Explanation too, under the interface's own headings, and
+/// "`### heading`, blank line, body" is a format rather than a surface's choice.
+/// Both callers come through here so the two documents cannot drift apart in
+/// shape while agreeing about the sections.
 ///
 /// `title` is a function rather than a `&str` because the markdown headings are
 /// the section's own English name and the panel's are not: the caller that words
@@ -203,13 +179,9 @@ impl<'a> EmptyNotes<'a> {
 /// The sections of one Explanation, for a surface read in place.
 ///
 /// The section set, the order and the empty-section policy are this function's;
-/// only the wording of the two empty sections is the caller's. A document calls
-/// this with [`EmptyNotes::silent`] and gets the sections that have content; the
-/// panel and the desktop detail pass their own sentences and get every section,
-/// because they are read once, in place, where a gap cannot be told from a
-/// section that was never generated. The same rule that keeps an empty Grammar
-/// section keeps an empty Key Help (tickets/15), and every other rule —
-/// including the order — is shared by both policies.
+/// only the wording of the two empty sections is the caller's. A document passes
+/// [`EmptyNotes::silent`] and gets only the sections that have content, while the
+/// panel and the desktop detail pass their own sentences and get every section.
 pub fn sections(passage: &str, explanation: &Explanation, notes: &EmptyNotes) -> Vec<Section> {
     let mut sections = vec![
         Section {
@@ -227,8 +199,6 @@ pub fn sections(passage: &str, explanation: &Explanation, notes: &EmptyNotes) ->
             kind: SectionKind::KeyHelp,
             body: Body::Glosses(explanation.glosses.iter().map(GlossView::of).collect()),
         }),
-        // Nothing to explain is a legitimate answer, not a missing one, and a
-        // surface read in place says so rather than leaving a gap.
         (true, Some(note)) => sections.push(Section {
             kind: SectionKind::KeyHelp,
             body: Body::Note(note.to_string()),
@@ -259,19 +229,17 @@ pub fn sections(passage: &str, explanation: &Explanation, notes: &EmptyNotes) ->
 }
 
 /// The Key Help as a document: one bullet per Gloss, its meaning on the bullet's
-/// own continuation line, and its Example as a block quote under both — in the
+/// own continuation line, and its Example as a block quote under both, in the
 /// model's order, the order the prompt asks for, most blocking first.
 ///
 /// A block quote rather than a second continuation line, because the two things
 /// are not the same kind of text: the meaning is the Explanation talking, and the
-/// Example is a sample of prose it is quoting. Every markdown reader draws a
-/// quote inset and set apart; two plain lines it draws as one paragraph, which is
-/// what the CLI and the panel showed before this.
+/// Example is a sample of prose it is quoting. A markdown reader sets a quote
+/// apart, while it draws two plain lines as one paragraph. A Gloss with no
+/// Example is the bullet and its meaning, with no quote.
 ///
-/// A Gloss with no Example — one stored before Examples existed (ADR 0002), or
-/// one whose model left it empty — is the bullet and its meaning, with no quote.
-/// Items are separated by a blank line so the list is loose: with quotes in it,
-/// two Glosses flush against each other read as one.
+/// Items are separated by a blank line so the list is loose: with a quote in an
+/// item, two Glosses flush against each other read as one.
 fn glosses_markdown(glosses: &[GlossView]) -> String {
     glosses
         .iter()

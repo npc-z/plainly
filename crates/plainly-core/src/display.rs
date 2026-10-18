@@ -1,11 +1,11 @@
 //! Which display session Plainly is running under, as data.
 //!
 //! v0 is a Wayland application: niri and the wlroots family get the whole path,
-//! GNOME degrades in a documented way — and it degrades *within* Wayland — while
-//! X11 is excluded outright (spec §1). The exclusion is a sentence a person has
-//! to be able to read, so the session is decided once, here, and both surfaces
-//! that would otherwise print a Wayland client library's connection error use
-//! it: `plainly explain --clipboard` and `plainly-panel`.
+//! GNOME degrades within Wayland, and X11 is excluded outright (spec §1). The
+//! exclusion is a sentence a person has to be able to read, so the session is
+//! decided once, here, and both surfaces that would otherwise print a Wayland
+//! client library's connection error use it: `plainly explain --clipboard` and
+//! `plainly-panel`.
 //!
 //! The environment is an argument rather than a global read for the same reason
 //! every other platform observation in this crate is: the decision has to be
@@ -13,16 +13,14 @@
 //! safely. [`DisplaySession::from_process_env`] is the two-line wrapper the
 //! binaries call.
 //!
-//! The name is `DisplaySession` and not `Session` on purpose: `Session` already
-//! means something else in this crate — the tier a secret is held for, in
-//! [`crate::secrets`] — and the main window already imports `Desktop` under that
-//! name. Three meanings for one word is one too many.
+//! `DisplaySession` and not `Session`: [`crate::secrets`] already uses `Session`
+//! for the tier a secret is held for.
 //!
 //! Nothing here speaks Wayland. The answer is a fact about the environment, and
 //! what to do with it stays with the caller. [`DisplaySession::None`] is a refusal
-//! for anything that needs a display, whether that is a GUI surface with nothing
-//! to open or `plainly --clipboard`, whose reader has no session to reach — and
-//! no refusal at all for a Passage from a pipe or a file, which never asks the
+//! for anything that needs a display, whether a GUI surface with nothing to open
+//! or `plainly --clipboard`, whose reader has no session to reach. It is no
+//! refusal at all for a Passage from a pipe or a file, which never asks the
 //! question and works on a machine with no display whatsoever (spec §14).
 
 use std::ffi::OsString;
@@ -30,10 +28,10 @@ use std::fmt;
 
 /// The variable a Wayland client connects with, and the one that decides.
 ///
-/// `XDG_SESSION_TYPE` is deliberately not the decider: it is the login session's
-/// name, while `WAYLAND_DISPLAY` is what a client actually connects to, and the
-/// two disagree in exactly the case this module exists for — a Wayland session
-/// started from an X11 login. A client that trusts the name over the socket
+/// `XDG_SESSION_TYPE` is deliberately not the decider: it names the login
+/// session, while `WAYLAND_DISPLAY` is what a client actually connects to. The
+/// two disagree in exactly the case this module exists for, a Wayland session
+/// started from an X11 login, and a client that trusts the name over the socket
 /// connects nowhere.
 const WAYLAND_DISPLAY: &str = "WAYLAND_DISPLAY";
 
@@ -47,10 +45,10 @@ pub enum DisplaySession {
     /// The session publishes a Wayland display: the full v0 path.
     Wayland,
     /// A display is there and it is not Wayland. v0 does not support it (spec
-    /// §1) — this is the answer to report, not a failure to retry.
+    /// §1). It is the answer to report, not a failure to retry.
     X11,
     /// Neither variable is set: no display session at all. The command line
-    /// works here; a GUI surface has nothing to open.
+    /// works here and a GUI surface has nothing to open.
     None,
 }
 
@@ -92,16 +90,11 @@ impl DisplaySession {
     }
 
     /// The refusal for a surface that cannot work here, saying what it could not
-    /// offer — or `None` on the session v0 is built for.
+    /// offer, or `None` on the session v0 is built for.
     ///
-    /// The check and the sentence are one call on purpose: every surface that
-    /// needs this wrote the same `if let … { return Err(…) }` around the same
-    /// test, and the two halves are one fact. A caller on Wayland gets `None` and
-    /// carries on, which is the branch it wanted.
+    /// The check and the sentence are one call on purpose: a surface cannot test
+    /// the session without having the sentence to report.
     pub fn refusal(&self, offering: &str) -> Option<SessionRefusal> {
-        // One match over the two refused sessions, so there is no second type to
-        // copy between and no arm left over for the one session that is not
-        // refused: Wayland returns, and the sentences below cannot describe it.
         let message = match self {
             DisplaySession::Wayland => return None,
             DisplaySession::X11 => format!(

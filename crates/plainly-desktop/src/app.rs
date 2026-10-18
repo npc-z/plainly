@@ -1,22 +1,15 @@
 //! The main window's own state: what a screen shows, and what an action does.
 //!
-//! One value, made once at startup and asked for everything — the same shape as
-//! everywhere else in this workspace. It owns the three things a window action
-//! can touch:
-//!
-//! - the **history store**, opened on `appDataDir` and long-lived, because the
-//!   window is long-lived: a search must not pay for a second connection, and a
-//!   Tag or a deletion must be visible to the next search without reconnecting;
-//! - the **configuration file** as an editable document, so that a setting the
-//!   user never touched keeps its comments and its place in the file, and so
-//!   that a file somebody else changed is refused rather than clobbered
-//!   ([`plainly_core::ConfigFile`]);
-//! - **secrets**, because whether the first run has a provider at all depends on
-//!   whether a key can be found (spec §13).
+//! It owns the three things a window action can touch: the **history store**,
+//! opened once on `appDataDir` because the window is long-lived; the
+//! **configuration file** as an editable document, so a setting keeps its comments
+//! and a file somebody else changed is refused rather than clobbered
+//! ([`plainly_core::ConfigFile`]); and **secrets**, because whether the first run
+//! has a provider depends on whether a key can be found (spec §13).
 //!
 //! Everything a surface shows is decided here and handed over as data
-//! ([`crate::view`], [`crate::settings`]). `src/commands.rs` is then a
-//! translation layer and nothing else.
+//! ([`crate::view`], [`crate::settings`]). `src/commands.rs` is then a translation
+//! layer and nothing else.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -37,15 +30,12 @@ use crate::view::{self, DetailView, ExportOffer, RecordView};
 /// The clock, as a value. The store orders by time and an export is named after
 /// the moment it was made, so a test needs to be able to say what time it is.
 pub trait Clock: Send + Sync {
-    /// The current instant, to the second. The store orders by it and an export
-    /// is named after it, so a test that means "today" has to be able to say so.
+    /// The current instant, to the second.
     fn now(&self) -> Timestamp;
 }
 
 /// The system clock. A clock before 1970 or after the year 9999 is refused by
-/// [`Timestamp`], and a window has no better answer than the earliest instant
-/// this build can name — so the fallback is a plain one and is not worth a
-/// dialog.
+/// [`Timestamp`], so the fallback is the epoch.
 pub struct SystemClock;
 
 impl Clock for SystemClock {
@@ -63,12 +53,10 @@ impl Clock for SystemClock {
 
 /// What storing or clearing a key did, as the surface words it.
 ///
-/// The two store outcomes are different sentences because they are different
-/// facts: a key in the keyring survives the window, and a key in this session's
-/// memory does not — and the second is not really a success at all, which is why
-/// the outcome carries that distinction as a value rather than leaving the
-/// surface to read the sentence. The sentences themselves live in
-/// [`crate::strings`], where the rest of the interface's copy is.
+/// A key in the keyring survives the window and a key in this session's memory
+/// does not, and the second is not really a success. The outcome carries that
+/// distinction as a value rather than leaving the surface to read the sentence.
+/// The sentences themselves live in [`crate::strings`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct KeyOutcome {
     pub message: String,
@@ -193,9 +181,9 @@ pub struct Desktop {
     environment: Environment,
     clock: Box<dyn Clock>,
     /// The history screen's own state: what the search box holds and which Tag
-    /// is narrowing the list. It belongs to the window rather than to the
-    /// frontend for the same reason the query is sent back with every state:
-    /// the list and its filter are one thing.
+    /// is narrowing the list. It belongs to the window because the list and its
+    /// filter are one thing, which is also why the query is sent back with every
+    /// state.
     query: Mutex<(String, Option<String>)>,
 }
 
@@ -216,12 +204,9 @@ impl Desktop {
 
     /// The same, with every input supplied.
     ///
-    /// This is the constructor the tests drive, and it exists for the reason
-    /// [`plainly_core::Paths`] takes its environment as data: a test can point
-    /// the window at a temporary directory instead of the developer's home. It
-    /// is public because the alternative — a `#[cfg(test)]` door — would not be
-    /// reachable from an integration test, which is where this crate's tests
-    /// live.
+    /// This is the constructor the tests drive. It is public because the
+    /// alternative, a `#[cfg(test)]` door, would not be reachable from an
+    /// integration test, which is where this crate's tests live.
     pub fn open_at(
         paths: Paths,
         environment: Environment,
@@ -315,9 +300,7 @@ impl Desktop {
     }
 
     /// Narrow the list. The search covers the Passage, the Comprehensible
-    /// English and the Glosses and nothing else — the Translation is not
-    /// indexed, which is the sentence the search box carries under it
-    /// (spec §9, §13).
+    /// English and the Glosses; the Translation is not indexed (spec §9, §13).
     pub fn search(&self, query: &str, tag: Option<&str>) -> Result<HistoryView, WindowError> {
         {
             let mut state = self.query.lock().expect("the query lock is not poisoned");
@@ -379,9 +362,8 @@ impl Desktop {
     /// Write one export and say where it landed.
     ///
     /// The file goes to the **data directory**, beside the history it is a copy
-    /// of, with the moment in its name: there is no file dialog in v0, and a
-    /// path the window can always name back is worth more than a chooser that
-    /// would be the only thing standing between the user and their own history.
+    /// of, with the moment in its name: there is no file dialog in v0, and a path
+    /// the window can always name back is worth more than a chooser.
     pub fn export(
         &self,
         format: ExportFormat,
@@ -434,8 +416,7 @@ impl Desktop {
     pub fn update(&self, patch: &SettingsPatch) -> Result<SettingsView, WindowError> {
         // Refused rather than written and ignored: a configuration that says
         // "on" while the session cannot do it is the same lie the greyed switch
-        // exists to avoid (spec §12). The frontend disables the control; this is
-        // what makes that a rule rather than a habit.
+        // exists to avoid (spec §12).
         if patch.copy_auto_popup == Some(true) && !self.environment.desktop.data_control() {
             return Err(WindowError::Value {
                 message: crate::strings::update_failed(
@@ -490,7 +471,7 @@ impl Desktop {
 
     /// Put an API key where Plainly can find it, and say where it went. A
     /// keyring that is not there is a sentence rather than a failure: the key
-    /// still works for as long as the window is open, and the sentence says so.
+    /// still works for as long as the window is open.
     pub fn store_key(&self, provider: &str, secret: &str) -> KeyOutcome {
         KeyOutcome::of(self.secrets.store(provider, secret))
     }
@@ -513,10 +494,9 @@ impl Desktop {
 
     /// Where the configuration file is.
     ///
-    /// The listener reads it again on every copy (that is how the switch is
-    /// obeyed), and it is opened before the window is built, so the window hands
-    /// the path over rather than letting a second discovery of the same
-    /// environment produce a second opinion about where the file is.
+    /// The listener reads it again on every copy, and it is opened before the
+    /// window is built, so the window hands the path over rather than discovering
+    /// the environment a second time.
     pub fn config_file(&self) -> PathBuf {
         self.paths.config_file()
     }
@@ -619,8 +599,7 @@ impl SettingsPatch {
 /// Put the in-memory document back in step with the file after a save failed.
 ///
 /// The file is what every screen reads, and a handle holding bytes the file does
-/// not hold could never save again; re-reading is what lets the next edit start
-/// from what is actually there.
+/// not hold could never save again.
 fn reread(config: &mut ConfigFile, path: &Path) {
     if let Ok(fresh) = ConfigFile::open(path) {
         *config = fresh;
@@ -659,14 +638,12 @@ impl Refusal {
 
 /// How the screen words a write core refused.
 ///
-/// Which values are legal belongs to core's key definitions now, so the screen
-/// no longer compares before writing; it translates the facts back into the
-/// sentence it has always shown. One key match yields both facts this screen
-/// needs — the range to fall back on and the sentence that names it — and the
-/// error's own range wins when it carries one. Zero keeps its own core rule and is
-/// refused before the range, so it arrives as `ConfigError::Value`; the fallback
-/// range is what keeps that refusal worded as the range it falls outside of,
-/// exactly as this screen always said it.
+/// Which values are legal belongs to core's key definitions, so the screen does
+/// not compare before writing. It translates the facts back into the sentence it
+/// has always shown. One key match yields both the range to fall back on and the
+/// sentence that names it, and the error's own range wins when it carries one.
+/// Zero keeps its own core rule and arrives as `ConfigError::Value`, and the
+/// fallback range keeps that refusal worded as the range it falls outside of.
 fn write_refusal(key: &str, error: ConfigError) -> WindowError {
     let (fallback, refusal) = match key {
         "app.panel_autohide_seconds" => (AUTO_HIDE_RANGE, Refusal::AutoHide),
@@ -703,10 +680,8 @@ fn usher(usable: bool) -> usize {
 /// The moment in the name is only accurate to the second and the window does not
 /// stop existing between two clicks, so the counter is what makes two exports in
 /// one second two files. The name is **created**, not checked and then written:
-/// `create_new` fails if the file appeared in between, which is the difference
-/// between a counter and a race — two windows, or a file left by an earlier run,
-/// can otherwise resolve to the same name and the second export silently
-/// replaces the first, the one outcome the name exists to prevent.
+/// `create_new` fails if the file appeared in between, so two windows or a file
+/// left by an earlier run cannot silently replace the first export.
 fn write_export(
     directory: &Path,
     format: ExportFormat,
@@ -770,10 +745,9 @@ fn thinking_key(provider: &str) -> String {
 
 /// Every Tag the history carries, without repeats.
 ///
-/// Sorted rather than in the order the Records were read, because the order the
-/// chip row is drawn in must not change every time a search reorders the list:
-/// the chips are the learner's own vocabulary, and a stable alphabetical row is
-/// the one a person can learn the position of.
+/// Sorted rather than in the order the Records were read, because the chip row
+/// must not change every time a search reorders the list, and a stable
+/// alphabetical row is one a person can learn the position of.
 fn tags_of(records: &[plainly_core::Record]) -> Vec<String> {
     let mut tags: Vec<String> = Vec::new();
     for record in records {
@@ -789,11 +763,8 @@ fn tags_of(records: &[plainly_core::Record]) -> Vec<String> {
 
 /// The name an export would be written under, before the directory is asked.
 ///
-/// The moment is in the name and so is a counter, because the moment is only
-/// accurate to the second and the window does not stop existing between two
-/// clicks: a second export of the same history in the same second would
-/// otherwise land on the first one's path, and an export that silently replaces
-/// another is the one outcome this name exists to prevent.
+/// The moment is in the name and so is a counter, because a second export of the
+/// same history in the same second would otherwise land on the first one's path.
 fn export_name(format: ExportFormat, only: Option<i64>, now: Timestamp, attempt: u32) -> String {
     let stamp = view::utc_text(now).replace(' ', "-").replace(':', "");
     let extension = match format {

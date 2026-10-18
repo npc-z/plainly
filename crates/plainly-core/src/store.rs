@@ -1,30 +1,9 @@
 //! The history store: what Plainly has already explained, and the identity that
 //! makes a question the same question.
 //!
-//! The store is both the learner's history and the cache (spec §9), which is why
-//! the identity matters so much: a **Lookup Key** that is too loose hands back an
-//! explanation another model produced, and one that is too tight pays for the same
-//! Passage twice. The key is the SHA-256 of the normalized Passage plus the whole
-//! provider profile and the prompt version — and *not* the artifact version,
-//! because a change of data shape does not make an old answer wrong.
-//!
-//! Two facts about the Passage are deliberately different from each other:
-//!
-//! - The Passage is **stored verbatim**, because it is the authority a learner
-//!   checks the Explanation against.
-//! - The Passage is **normalized for identity only** — leading and trailing
-//!   whitespace, and CRLF against LF. Interior whitespace is meaning, so
-//!   changing it is a different question.
-//!
-//! A hit reuses the same row and moves it to the top of the history by
-//! `last_seen`; there is no `lookup_count`, because Plainly is not a spaced
-//! repetition system. A regeneration overwrites the Explanation in place and
-//! keeps `created_at` and `last_seen`: the record is the same record, and only
-//! what it holds is new.
-//!
-//! The store is relational rather than a JSON blob because the Glosses are what
-//! search indexes: one row each (tickets/10). `ord` keeps the model's order,
-//! which is the order of how much each expression blocks comprehension.
+//! The identity is a **Lookup Key**. If it is too loose it hands back an
+//! explanation another model produced, and if it is too tight it pays for the
+//! same Passage twice.
 
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -42,14 +21,12 @@ use crate::{Level, Thinking};
 /// writer must wait for a writer rather than fail.
 const BUSY_TIMEOUT_MS: u32 = 5_000;
 
-/// The schema, created on open. One version of Plainly ships one shape; the
+/// The schema, created on open. One version of Plainly ships one shape, and the
 /// `artifact_version` on every row is what tells a later reader how to read an
 /// old row.
 ///
-/// It creates the *current* shape, and a file written by an older Plainly stays
-/// at the older one: `CREATE TABLE IF NOT EXISTS` creates nothing in a file that
-/// already has the table. That is what [`migrate`] is for, and `user_version` is
-/// the file's own record of how far along it is.
+/// It creates the *current* shape only. A file written by an older Plainly keeps
+/// its older shape, which is what [`migrate`] corrects.
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS records (
     id               INTEGER PRIMARY KEY,
@@ -102,40 +79,32 @@ CREATE VIRTUAL TABLE IF NOT EXISTS gloss_fts USING fts5(
 
 /// The step that gave a Gloss its Example, and the `user_version` it leaves
 /// behind (ADR 0002).
-///
-/// Every step is named for the version it produces, and [`STORE_VERSION`] is the
-/// last of them. The step is guarded by the column it adds rather than by a
-/// version comparison — see [`migrate`].
 const GLOSS_EXAMPLE_STEP: i64 = 1;
 
-/// The store's own shape version, kept in SQLite's `user_version`: the version
-/// the last step produces.
-///
-/// [`SCHEMA`] above creates the current shape in a new file, and [`migrate`]
-/// brings an old file up to it; this number is what says which of the two a file
-/// is, so the steps run once.
+/// The shape version the last step produces, kept in SQLite's `user_version`.
 const STORE_VERSION: i64 = GLOSS_EXAMPLE_STEP;
 
 /// Bring a store written by an older Plainly up to the current shape.
 ///
 /// `CREATE TABLE IF NOT EXISTS` creates nothing in a file that already has the
 /// table, so a column added to [`SCHEMA`] reaches an old history only through an
-/// explicit step. Two things keep this honest: a step is guarded by the thing it
-/// creates — the column's presence, not the version number that claims it — so a
-/// file that predates `user_version` ever being written is handled, and so is one
-/// whose version lies; and a step that is guarded that way is safe to run again.
+/// explicit step here.
+///
+/// A step is guarded by the thing it creates, the column's presence rather than
+/// the version number that claims it. That handles a file from before
+/// `user_version` was written and a file whose version lies, and it makes a step
+/// safe to run again.
 fn migrate(conn: &Connection) -> Result<(), rusqlite::Error> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
 
     // A Gloss written before Examples existed has none. Empty is how that is
     // stored, and every reader treats an empty Example as "no Example line"
-    // (ADR 0002) — nothing backfills one.
+    // (ADR 0002). Nothing backfills one.
     //
     // The column's presence is the whole guard, not `version < GLOSS_EXAMPLE_STEP`:
-    // the `ALTER` is idempotent once it is written this way, and a history whose
-    // `user_version` says this step ran while the column is missing — restored
-    // from a partial backup, or edited by hand — would otherwise fail on every
-    // read with "no such column" and never repair itself.
+    // a history whose `user_version` claims the step ran while the column is
+    // missing, restored from a partial backup or edited by hand, would otherwise
+    // fail on every read with "no such column" and never repair itself.
     if !has_column(conn, "glosses", "example")? {
         conn.execute_batch("ALTER TABLE glosses ADD COLUMN example TEXT NOT NULL DEFAULT ''")?;
     }
@@ -161,7 +130,7 @@ fn has_column(conn: &Connection, table: &str, name: &str) -> Result<bool, rusqli
 /// NULL Gloss columns when there are none.
 ///
 /// Reading a Record this way is one statement, so its Glosses belong to the same
-/// snapshot as its columns — a `recall` racing a regeneration can come back with
+/// snapshot as its columns. A `recall` racing a regeneration can come back with
 /// the old Explanation or the new one, never half of each.
 const READ: &str = "SELECT r.id, r.lookup_key, r.passage, r.level, r.source_language, \
                     r.native_language, r.provider, r.model, r.thinking, \
@@ -174,10 +143,10 @@ const READ: &str = "SELECT r.id, r.lookup_key, r.passage, r.level, r.source_lang
 
 /// Everything that would make two lookups the same question (spec §9).
 ///
-/// The Passage is the one field that has to be normalized before it counts; every
-/// other field is already a choice, and a change to any of them is a different
-/// question. `artifact_version` is deliberately absent: bumping the data model
-/// must not throw the cache away.
+/// The Passage is the one field that has to be normalized before it counts.
+/// Every other field is already a choice, and a change to any of them is a
+/// different question. `artifact_version` is deliberately absent, because bumping
+/// the data model must not throw the cache away.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Lookup<'a> {
     pub passage: &'a str,
@@ -206,7 +175,8 @@ impl<'a> From<&'a ExplainRequest> for Lookup<'a> {
 }
 
 impl Lookup<'_> {
-    /// The Lookup Key: SHA-256 over the normalized Passage and the profile.
+    /// The Lookup Key: SHA-256 over the normalized Passage and the rest of the
+    /// question.
     pub fn key(&self) -> LookupKey {
         let mut material = String::new();
         push_field(&mut material, &normalize(self.passage));
@@ -226,8 +196,8 @@ impl Lookup<'_> {
 ///
 /// A type of its own rather than a `String`, so that a Passage or a bare provider
 /// name cannot be passed where a key belongs. It is hashable so a caller holding
-/// several questions — the CLI's batch — can ask whether two of them are the same
-/// question without hashing the Passage again.
+/// several questions can ask whether two of them are the same question without
+/// hashing the Passage again.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct LookupKey(String);
 
@@ -252,14 +222,10 @@ pub struct Record {
     /// When this question was last asked. The history is ordered by it.
     pub last_seen: Timestamp,
     /// The learner's own Tags for this Record, in tag order.
-    ///
-    /// Tags are added by hand and are the learner's vocabulary, not Plainly's:
-    /// nothing infers one from the Passage, because a wrong Tag is worse than no
-    /// Tag when the point of a Tag is that the learner chose it.
     pub tags: Vec<String>,
-    /// The Passage, the Explanation, and every piece of provenance — including
-    /// the Level and Native Language the Explanation was pitched at, which is
-    /// what makes changing a setting leave old records alone.
+    /// The Passage, the Explanation and the provenance, including the Level and
+    /// Native Language it was pitched at, so changing a setting leaves old
+    /// records alone.
     pub artifact: Artifact,
 }
 
@@ -280,7 +246,7 @@ pub enum StoreError {
     },
     /// The file opened but is not a store this build can use: not SQLite at all,
     /// read-only where WAL has to be written, or a schema that will not create.
-    /// It is the likeliest way opening fails, so it says *which* file — the
+    /// It is the likeliest way opening fails, so it says *which* file. The
     /// failures that can only happen later are [`StoreError::Sqlite`].
     #[error("the history store at {path} is not usable: {source}")]
     Unusable {
@@ -295,8 +261,7 @@ pub enum StoreError {
     },
     #[error("record {record} of the history store holds {value} where {expected} was expected")]
     Corrupt {
-        /// The row to look at: nothing else in the store identifies it to a
-        /// person, and this is the id `history delete` takes.
+        /// The row, because nothing else in the store identifies it to a person.
         record: i64,
         value: String,
         expected: &'static str,
@@ -326,8 +291,8 @@ pub struct Store {
 impl Store {
     /// Open (or create) the store at `path`, creating its directory.
     ///
-    /// WAL is what lets the panel read while the main window writes; the busy
-    /// timeout is what makes a concurrent writer wait instead of failing.
+    /// WAL lets the panel read while the main window writes, and the busy timeout
+    /// makes a concurrent writer wait instead of failing.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, StoreError> {
         let path = path.as_ref();
         if let Some(dir) = path.parent() {
@@ -345,16 +310,13 @@ impl Store {
         Self::prepare(conn, Some(path.to_path_buf()))
     }
 
-    /// A store that lives in memory and disappears with the value. This is how a
-    /// test gets a real store without a real file.
+    /// A store that lives in memory and disappears with the value. A test gets a
+    /// real store without a real file.
     pub fn in_memory() -> Result<Self, StoreError> {
         Self::prepare(Connection::open_in_memory()?, None)
     }
 
     fn prepare(conn: Connection, path: Option<PathBuf>) -> Result<Self, StoreError> {
-        // Everything that can go wrong here is about the file rather than about
-        // a statement, so it names the file; a failure later in the session is a
-        // [`StoreError::Sqlite`], which has no path left to add.
         let unusable = |source: rusqlite::Error| match &path {
             Some(path) => StoreError::Unusable {
                 path: path.clone(),
@@ -370,17 +332,13 @@ impl Store {
         // lock, and it should be the one that waits rather than failing.
         conn.pragma_update(None, "journal_mode", "WAL")
             .map_err(unusable)?;
-        // Deleting a Record has to take its Glosses with it (tickets/09), and a
-        // store that only enforces that from Rust is one forgotten call away
-        // from orphans.
+        // Deleting a Record has to take its Glosses with it. Enforcing that only
+        // in Rust puts every future deletion one forgotten call away from
+        // orphans.
         conn.pragma_update(None, "foreign_keys", "ON")
             .map_err(unusable)?;
         conn.execute_batch(SCHEMA).map_err(unusable)?;
         migrate(&conn).map_err(unusable)?;
-        // A store written before the search tables existed has none of their
-        // rows. They are derived data — every row in them is a copy of text that
-        // lives in `records` or `glosses` — so "empty while the history is not"
-        // means exactly that, and rebuilding is a no-op in every other case.
         reindex(&conn).map_err(unusable)?;
 
         Ok(Self { conn })
@@ -394,10 +352,11 @@ impl Store {
     ///
     /// The bump and the read are two statements, and whichever of them a
     /// concurrent writer lands between, the answer is a Record the store really
-    /// holds — the one from before the write or the one after it. Whether there
-    /// *was* a hit is the read's decision, not the write's: an `UPDATE` that sets
-    /// a row to the value it already has still counts as a change to SQLite, and
-    /// a recall in the same second as the insert is an ordinary thing to do.
+    /// holds, the one from before the write or the one after it. Whether there
+    /// *was* a hit is the read's decision, not the write's, because an `UPDATE`
+    /// that sets a row to the value it already has still counts as a change to
+    /// SQLite, and a recall in the same second as the insert is an ordinary thing
+    /// to do.
     pub fn recall(&self, key: &LookupKey, now: Timestamp) -> Result<Option<Record>, StoreError> {
         self.conn.execute(
             "UPDATE records SET last_seen = ?1 WHERE lookup_key = ?2",
@@ -409,11 +368,10 @@ impl Store {
 
     /// Store a generated Artifact under its key.
     ///
-    /// A key already in the store is overwritten in place — that is what
-    /// `--regenerate` means — and the row keeps its `created_at` and
-    /// `last_seen`: the record was made when it was made, and the learner has
-    /// seen it for as long as they have seen it. Only the Explanation and
-    /// `generated_at` are new.
+    /// A key already in the store is overwritten in place, which is what
+    /// regenerating means, and the row keeps its `created_at` and `last_seen`.
+    /// The record was made when it was made, and the learner has seen it for as
+    /// long as they have seen it.
     pub fn remember(&mut self, key: &LookupKey, artifact: &Artifact) -> Result<Record, StoreError> {
         let tx = self.conn.transaction()?;
 
@@ -469,7 +427,7 @@ impl Store {
         // The Explanation is replaced whole, so its Glosses are too: a
         // regeneration that changed the number of Glosses must not leave the old
         // ones behind. The search rows are rewritten from the same values in the
-        // same loop — a copy kept in step by being made in one place.
+        // same loop, kept in step by being made in one place.
         tx.execute("DELETE FROM glosses WHERE record_id = ?1", [id])?;
         tx.execute("DELETE FROM gloss_fts WHERE record_id = ?1", [id])?;
         {
@@ -524,8 +482,8 @@ impl Store {
     /// Tag a Record with the learner's own word for it.
     ///
     /// The Tag is trimmed, because what it was typed into is a text field and its
-    /// ends are not part of it; a Tag with nothing left after trimming is refused
-    /// rather than stored. Applying the same tag twice is not a mistake —
+    /// ends are not part of it. A Tag with nothing left after trimming is refused
+    /// rather than stored. Applying the same tag twice is not a mistake, because
     /// the second one has nothing left to do.
     ///
     /// The Tag comes back as it was stored, so a caller that reports what it did
@@ -586,8 +544,7 @@ impl Store {
         // aim at its Gloss rows.
         tx.execute("DELETE FROM record_fts WHERE rowid = ?1", [id])?;
         tx.execute("DELETE FROM gloss_fts WHERE record_id = ?1", [id])?;
-        // The Glosses and the Tags go with the Record: both reference it with
-        // ON DELETE CASCADE, and `foreign_keys` is on.
+        // The Glosses and the Tags go with the Record through `ON DELETE CASCADE`.
         tx.execute("DELETE FROM records WHERE id = ?1", [id])?;
         tx.commit()?;
 
@@ -613,21 +570,22 @@ impl Store {
     /// first, narrowed to one Tag when one is given.
     ///
     /// Two tables answer: one holds the Passage and the Comprehensible English,
-    /// the other holds each Gloss's expression and its words. A record both
-    /// answer for appears once — the history is a list of Records, not of
-    /// matches. Every term of the query has to be held somewhere, though not
-    /// necessarily in the same field. The Translation and the Grammar note are
-    /// deliberately not indexed (spec §9): `translation` is Chinese, and the
-    /// tokenizer is a property of the table, so searching it would need a third
-    /// table with a tokenizer of its own. That is a stated fact of v0 rather than
-    /// a defect to find later, and the surfaces that offer a search box say so.
+    /// the other holds each Gloss's expression and its words. A Record both
+    /// answer for appears once, because the history is a list of Records rather
+    /// than of matches. Every term of the query has to be held somewhere, though
+    /// not necessarily in the same field.
     ///
-    /// An empty query is not an error and not a miss: it matches everything,
-    /// which is what a search box holds before anything has been typed into it.
-    /// Terms are matched by prefix, because the box is typed into. The order is
-    /// `last_seen`, most recent first, with `id` breaking ties — `last_seen` is
-    /// only accurate to the second, and two questions asked in the same second
-    /// still have an order.
+    /// The Translation and the Grammar note are deliberately not indexed
+    /// (spec §9): `translation` is Chinese, and the tokenizer is a property of
+    /// the table, so searching it would need a third table with a tokenizer of
+    /// its own. That is a stated limit of v0 rather than a defect to find later,
+    /// and the surfaces that offer a search box say so.
+    ///
+    /// An empty query matches everything, which is what a search box holds before
+    /// anything has been typed into it. Terms are matched by prefix, because the
+    /// box is typed into. The order is `last_seen`, most recent first, with `id`
+    /// breaking ties, because `last_seen` is only accurate to the second and two
+    /// questions asked in the same second still have an order.
     pub fn search(&self, query: &str, tag: Option<&str>) -> Result<Vec<Record>, StoreError> {
         let terms = match_terms(query);
         let tag = tag.map(trim_tag).transpose()?;
@@ -635,7 +593,7 @@ impl Store {
         let mut values: Vec<&dyn rusqlite::ToSql> = Vec::new();
 
         // A clause per term, and the clauses are ANDed. One `a AND b` expression
-        // would not do: `MATCH` is evaluated per table, so it would ask the
+        // would not do, because `MATCH` is evaluated per table: it would ask the
         // Passage and the Glosses each for *both* words, and a query with one word
         // in each would find nothing. Asked this way, every term has to be held
         // somewhere, which is what the surfaces promise.
@@ -838,8 +796,6 @@ impl Raw {
         Some(Gloss {
             expression: self.gloss_expression.clone()?,
             gloss: self.gloss_gloss.clone()?,
-            // `gloss.example` is NOT NULL in the table, so this is only ever the
-            // old row's empty default.
             example: self.gloss_example.clone().unwrap_or_default(),
         })
     }
@@ -849,9 +805,10 @@ impl Raw {
     ///
     /// Every column here was written from a typed value, so a column that does
     /// not read back is a file somebody else has been editing. Reported rather
-    /// than defaulted: a Level of `B2` invented for a row that says `Z9` would
-    /// silently change what the stored Explanation claims to be. The record's id
-    /// is in the error because it is the only handle a person has on the row.
+    /// than defaulted, because a Level of `B2` invented for a row that says `Z9`
+    /// would silently change what the stored Explanation claims to be. The
+    /// record's id is in the error because it is the only handle a person has on
+    /// the row.
     fn decode(self) -> Result<Record, StoreError> {
         let corrupt = |value: String, expected: &'static str| StoreError::Corrupt {
             record: self.id,
@@ -910,26 +867,25 @@ fn timestamp(record: i64, column: &'static str, value: &str) -> Result<Timestamp
 
 /// Normalize a Passage for identity: trim its ends and read CRLF as LF.
 ///
-/// Interior whitespace is meaning — two spaces after a full stop are not the same
-/// question as one — so it is left alone. The normalized form is never stored;
-/// the Passage itself is.
+/// Interior whitespace is meaning, so it is left alone, because two spaces after
+/// a full stop are not the same question as one. The normalized form is never
+/// stored. The Passage itself is.
 pub fn normalize(passage: &str) -> String {
     passage.replace("\r\n", "\n").trim().to_string()
 }
 
-/// What a person typed, as one FTS5 `MATCH` expression per term — and nothing at
+/// What a person typed, as one FTS5 `MATCH` expression per term, and nothing at
 /// all when there is nothing to look for.
 ///
 /// Every term becomes a quoted phrase and every phrase is a prefix. Quoting is
 /// what keeps FTS5's query language out of a search box: `-`, `*`, `NEAR(` and a
 /// stray `"` are then literal text rather than an expression the person never
-/// meant to write, and a query of nothing but punctuation quietly matches
-/// nothing instead of failing. A double quote inside a term is escaped by
-/// doubling it, which is how FTS5 ends a string.
+/// meant to write, and a query of nothing but punctuation quietly matches nothing
+/// instead of failing. A double quote inside a term is escaped by doubling it,
+/// which is how FTS5 ends a string.
 ///
 /// The terms come back separately rather than joined into one expression, because
-/// the caller has to ask each of them of both search tables and AND the answers;
-/// see [`Store::search`].
+/// the caller has to ask each of them of both search tables and AND the answers.
 fn match_terms(query: &str) -> Vec<String> {
     query
         .split_whitespace()
@@ -940,8 +896,8 @@ fn match_terms(query: &str) -> Vec<String> {
 /// Rebuild the search tables from the history when they are empty.
 ///
 /// The guard is what makes this the upgrade path from a store written before the
-/// search tables existed rather than work on every open: in steady state they
-/// hold one row per Passage and one per Gloss, and the only way to be empty while
+/// search tables existed rather than work on every open. In steady state they
+/// hold one row per Passage and one per Gloss, so the only way to be empty while
 /// the history is not is to have been written by an earlier build. The two halves
 /// are decided separately because a history in which nothing was ever glossed is
 /// ordinary. Each guard asks whether *any* row is there rather than counting

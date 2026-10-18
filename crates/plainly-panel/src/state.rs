@@ -4,22 +4,18 @@
 //! screen has to be reachable without a compositor if it is to be tested at all.
 //! This module is that part: one trigger's outcome, the stack of Passages, the
 //! provenance chip, and whether a local model's warning applies. `panel.rs` then
-//! owns widgets and nothing else — it draws what this says and asks it what an
-//! action means.
+//! owns widgets and nothing else.
 //!
 //! It also owns what a trigger *means*: [`Trigger::press`] turns a key press or
 //! ⟳ into the [`Recall`] the run will use, and [`Trigger::read`] turns what the
-//! clipboard read came back with into a [`Showing`]. The press used to be resolved
-//! in `panel.rs`, and the read result used to be judged in two places at once —
-//! `clipboard::Error` to `Showing` in `panel.rs`, and a `Plan` in `plan.rs`
-//! re-matched one-for-one. Both decisions are here now, where they are reachable
-//! without a display.
+//! clipboard read came back with into a [`Showing`]. Both decisions are here,
+//! where they are reachable without a display.
 //!
 //! The shape of a trigger is **the four states the spec names** (loading, result,
 //! error, refusal), told apart as data rather than as the absence of a widget:
 //!
-//! - [`Showing::Loading`] — the clipboard has not been read yet;
-//! - [`Showing::Stack`] — Passages are up, each with its own outcome;
+//! - [`Showing::Loading`]: the clipboard has not been read yet;
+//! - [`Showing::Stack`]: Passages are up, each with its own outcome;
 //! - and the failures and refusals, which are one sentence and no artifacts.
 //!
 //! Telling "a refusal" from "a failed run" from "an empty clipboard" is what lets
@@ -77,7 +73,7 @@ pub enum Showing {
     Loading,
     /// The Passages, in the order the clipboard held them.
     Stack(Vec<Slot>),
-    /// The clipboard's owner marked the content secret (spec §11).
+    /// The clipboard's owner marked the content secret.
     Sensitive,
     /// The marker exists and its value could not be read.
     Unread,
@@ -93,12 +89,12 @@ pub enum Showing {
 
 /// Which state the panel is in, as one of the four the spec names.
 ///
-/// The spec counts four — loading, result, error, refusal (spec §12) — and the
-/// panel's exit paths have to work in all of them. The classification is a fact
-/// about [`Showing`] that the tests pin rather than something the widget code
-/// branches on: the title bar is above every state unconditionally, which is why
-/// there is no `match State` in `panel.rs` for this to feed. It is built only for
-/// the tests rather than left as an unused door in the binary.
+/// The spec counts four — loading, result, error, refusal — and the panel's exit
+/// paths have to work in all of them. The classification is a fact about
+/// [`Showing`] that the tests pin rather than something the widget code branches
+/// on: the title bar is above every state unconditionally, which is why there is
+/// no `match State` in `panel.rs` for this to feed. It is built only for the
+/// tests.
 #[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum State {
@@ -157,9 +153,9 @@ impl Showing {
     /// The provenance of the first answered Passage: what the chip says.
     ///
     /// The first rather than a list: one trigger uses one provider profile, so a
-    /// stack answered by two providers is not a state a trigger can produce — and
-    /// a chip that grew with the number of Passages would stop being readable at
-    /// a glance, which is its whole job (spec §12).
+    /// stack answered by two providers is not a state a trigger can produce, and a
+    /// chip that grew with the number of Passages would stop being readable at a
+    /// glance, which is its whole job.
     pub fn provenance(&self) -> Option<&Provenance> {
         self.slots().find_map(|slot| match &slot.outcome {
             Some(Outcome::Explained { provenance, .. }) => Some(provenance),
@@ -188,8 +184,8 @@ impl Showing {
 ///
 /// One function because two surfaces draw it — the sentence states through
 /// [`Showing::message`], and a failed Passage inside a stack through the panel's
-/// own widget — and a reason without "nothing was stored" is the sentence the spec
-/// requires every error state to end with (spec §12).
+/// own widget — and a reason without "nothing was stored" is the sentence every
+/// error state ends with.
 pub fn failure_sentence(reason: &str) -> String {
     format!("{reason}\n{}", strings::NOTHING_STORED)
 }
@@ -198,13 +194,12 @@ pub fn failure_sentence(reason: &str) -> String {
 ///
 /// A value, not the recall it resolves to: the recall for a ⟳ depends on the
 /// configuration read at the **start** of that trigger (a panel is reused, so the
-/// file may have changed since the last press), and resolving it any earlier is
-/// how the cloud move ended up chosen from the previous trigger's provider.
+/// file may have changed since the last press).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Press {
     /// A key press: re-read the clipboard, reuse what the store holds.
     Refresh,
-    /// ⟳: re-read the clipboard and go past the cache (spec §8).
+    /// ⟳: re-read the clipboard and go past the cache.
     ///
     /// It reads the clipboard again rather than re-running what is on screen:
     /// "generate this again" means the Passage the person last copied, and
@@ -212,10 +207,10 @@ pub enum Press {
     /// moved on from.
     ///
     /// On a locally hosted model it also changes provider, when there is a cloud
-    /// one it can change to — the note under the content tells the person to press
+    /// one it can change to: the note under the content tells the person to press
     /// this button for exactly that, so a button that re-ran the same local model
-    /// would make the sentence a lie (spec §12). Which provider that is is decided
-    /// from the configuration read at the start of the trigger.
+    /// would make the sentence a lie. Which provider that is is decided from the
+    /// configuration read at the start of the trigger.
     Regenerate,
 }
 
@@ -239,9 +234,7 @@ pub struct Trigger {
     ///
     /// Carried here rather than read again when 复制 asks for its text: the body
     /// was drawn with *these* switches, and a copy rendered from a newer file would
-    /// disagree with the screen it is supposed to be a copy of. That is the whole
-    /// promise of 复制, and it is why this travels with the state rather than
-    /// living beside it.
+    /// disagree with the screen it is supposed to be a copy of.
     prefs: Prefs,
 }
 
@@ -266,9 +259,7 @@ impl Trigger {
     ///
     /// A key press reuses what the store holds; ⟳ goes past the cache, and on a
     /// local model it names the cloud provider to move to when one is usable
-    /// ([`Prefs::regenerate_recall`]). Resolving the recall here, rather than in
-    /// the GTK file before the focus wait, is what keeps a second copy of it from
-    /// drifting.
+    /// ([`Prefs::regenerate_recall`]).
     pub fn press(press: Press, prefs: Prefs) -> Self {
         let recall = match press {
             Press::Refresh => Recall::Reuse,
@@ -317,9 +308,7 @@ impl Trigger {
     ///
     /// The judgement is core's ([`Clipboard::reading`], [`split::panel_chunks`]);
     /// this names the outcome so the surface can word each one differently, and so
-    /// the rule is reachable from a unit test without a display. `Plan` used to
-    /// name the same five outcomes in a parallel vocabulary and the GTK file
-    /// re-matched it one-for-one; this is that judgement folded into the trigger.
+    /// the rule is reachable from a unit test without a display.
     ///
     /// Returns the Passages the run must explain, or `None` when the trigger
     /// settled into one of the sentence states. What is left for the panel is the
@@ -328,7 +317,7 @@ impl Trigger {
         let read = match result {
             // An empty clipboard is not an error state, and the sentence it gets
             // is the panel's own: the read module's reason for finding no text is
-            // not shown (it never has been).
+            // not shown.
             Err(clipboard::Error::NoPassage(_)) => {
                 self.showing = Showing::Nothing;
                 return None;
@@ -380,8 +369,7 @@ impl Trigger {
     ///
     /// Every Passage gets the same reason rather than one of them getting it:
     /// each keeps its original on screen, and a person looking at the fourth of
-    /// five Passages has to be able to see why there is no Explanation for it
-    /// (spec §12).
+    /// five Passages has to be able to see why there is no Explanation for it.
     fn fail(&mut self, reason: &str) {
         if let Showing::Stack(slots) = &mut self.showing {
             for slot in slots {
@@ -397,7 +385,7 @@ impl Trigger {
     ///
     /// Everything that came out, in the order it is shown: the panel is one
     /// surface, and a copy that silently took half of it would be a copy the person
-    /// has to check rather than one they can trust (tickets/15).
+    /// has to check rather than one they can trust.
     ///
     /// It renders from [`Trigger::prefs`] and takes no argument, which is the
     /// point: `app.show_*` decides what the panel draws, 复制 copies **what is on
@@ -426,7 +414,6 @@ impl Trigger {
 /// how a run talks, and nothing below it has to know how the panel stacks
 /// Passages. It is the one place the two are put together, so a new event cannot
 /// be added to the run without the panel being made to say what it does with it.
-///
 pub fn apply(trigger: &mut Trigger, event: crate::worker::Event) {
     use crate::worker::{Event, Outcome as Ran};
 
@@ -448,8 +435,7 @@ pub fn apply(trigger: &mut Trigger, event: crate::worker::Event) {
         }
         // A run-level notice is shown once in the status line, not accumulated
         // into the stack: it is a fact about the machine rather than about any
-        // one Passage, and repeating it per chunk is the noise this ticket
-        // removes.
+        // one Passage, and repeating it per chunk is noise.
         Event::Notice(_) => {}
         Event::Failed(reason) => trigger.fail(&reason),
     }
@@ -569,8 +555,7 @@ mod tests {
         assert_eq!(slots[1].expect("the second landed").passage, "two");
     }
 
-    /// A run that could not start leaves every Passage with the reason, because
-    /// every Passage is still on screen and every one of them is unexplained.
+    /// A failed run puts the reason under every Passage.
     #[test]
     fn a_failed_run_says_why_under_every_passage() {
         let mut trigger = Trigger::stack(
@@ -593,7 +578,7 @@ mod tests {
 
     /// A run that could not start is every Passage's failure, because every
     /// Passage on screen is still showing its original and none of them will get
-    /// an Explanation (spec §12).
+    /// an Explanation.
     #[test]
     fn a_failed_whole_panel_run_fails_every_passage() {
         let mut trigger = Trigger::stack(
@@ -766,9 +751,9 @@ mod tests {
         );
     }
 
-    /// 复制 copies what the panel shows, switches included. This is the bug the
-    /// first version had: the body obeyed `app.show_*` and the clipboard did not,
-    /// so a hidden section came back in the pasted text.
+    /// 复制 copies what the panel shows, switches included: a copy that obeyed
+    /// different switches than the body would bring back a section the person
+    /// never saw.
     #[test]
     fn the_copied_text_obeys_the_section_switches_too() {
         let (artifact, provenance) = artifact("one", "deepseek", false);
@@ -862,10 +847,10 @@ mod tests {
 /// occurrence that shows that turn's answer without asking again. The whole key
 /// matters and only part of it is the Passage, but the rest — Level, prompt
 /// version, provider, model, thinking — is fixed for one run, so two equal
-/// Passages in one trigger are one question. The panel plans with the configured
-/// key even for a `Bypass` turn whose provider is the cloud alternative: that
-/// override is constant for the trigger, so the equivalence classes are the
-/// same; a per-chunk provider override would need the actual key here.
+/// Passages in one trigger are one question. A `Bypass` turn names a provider for
+/// the whole trigger, so the equivalence classes are unchanged even though the
+/// plan uses the configured key; a per-chunk provider override would need the
+/// actual key here.
 pub(crate) fn first_occurrences<K: Clone + Eq + std::hash::Hash>(
     keys: &[K],
 ) -> Vec<Option<usize>> {
@@ -936,10 +921,6 @@ mod planning_tests {
 #[cfg(test)]
 mod trigger_tests {
     //! What a trigger's transitions mean, without a display.
-    //!
-    //! These were `plan.rs`'s tests when `Plan` was a second vocabulary; they now
-    //! exercise the constructor the panel actually calls, so the mapping and the
-    //! state it produces cannot drift apart.
 
     use super::*;
     use crate::clipboard;
@@ -1067,8 +1048,8 @@ mod trigger_tests {
     }
 
     /// An empty clipboard and a clipboard whose text cannot be read are told
-    /// apart exactly as they were before the move: no text is `Nothing`, a read
-    /// that failed is an error state with the read module's reason.
+    /// apart: no text is `Nothing`, a read that failed is an error state with the
+    /// read module's reason.
     #[test]
     fn a_clipboard_that_holds_no_text_is_nothing_to_explain() {
         let (trigger, passages) = read(Err(clipboard::Error::NoPassage(
@@ -1133,9 +1114,8 @@ mod trigger_tests {
         );
     }
 
-    /// ⟳ on a local model with a usable cloud provider names the cloud move:
-    /// this is the note under the content's promise, decided where it can be
-    /// tested instead of inside the GTK file's focus wait.
+    /// ⟳ on a local model with a usable cloud provider names the cloud move: this
+    /// is the note under the content's promise, decided where it can be tested.
     #[test]
     fn regenerate_on_a_local_model_moves_to_the_cloud() {
         let prefs = Prefs::of(
@@ -1196,8 +1176,7 @@ mod trigger_tests {
     }
 
     /// The sequence the panel actually runs: a press builds the Loading trigger,
-    /// then the read settles it. The migrated tests start from `Trigger::loading`,
-    /// which after this change is only the pre-trigger placeholder.
+    /// then the read settles it.
     #[test]
     fn a_press_then_a_read_is_one_trigger() {
         let prefs = Prefs::of(

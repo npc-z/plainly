@@ -14,9 +14,9 @@ rust-version = "1.99"
 license = "MIT"
 
 # The CLI package (`.#plainly`) builds from a generated copy of this workspace's
-# CLI subset: after changing a dependency here, run
-# scripts/generate-cli-workspace.sh (inside `nix develop`) and commit
-# nix/cli-workspace/. `nix build` does not notice most kinds of staleness.
+# CLI subset. After changing a dependency, run
+# `scripts/generate-cli-workspace.sh` inside `nix develop` and commit
+# `nix/cli-workspace/`. `nix build` does not notice most kinds of staleness.
 [workspace.dependencies]
 plainly-core = { path = "crates/plainly-core" }
 

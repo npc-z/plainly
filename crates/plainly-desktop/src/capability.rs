@@ -1,17 +1,15 @@
 //! What the compositor says about itself, for the one settings decision that
 //! depends on it.
 //!
-//! The main window asks the same question the panel asks (spec §12): does this
-//! session publish data-control, the protocol that lets a process read the
-//! clipboard without taking focus? For the panel it decides the panel's shape;
-//! here it decides whether "复制自动弹" can be offered at all. The registry is
-//! read rather than guessed at, and the answer goes to core, which owns the
-//! decision — this module only knows how to ask.
+//! The question is the panel's: does this session publish data-control, the
+//! protocol that lets a process read the clipboard without taking focus? Here it
+//! decides whether the copy listener can be offered. The registry is read rather
+//! than guessed at, and the answer goes to core, which owns the decision. This
+//! module only knows how to ask (spec §12).
 //!
-//! A session with no Wayland at all is an *answer*, not a failure: it is the
-//! same "no data-control" the window draws with a sentence and a greyed switch.
-//! Nothing is printed for it — a person on GNOME is told by the settings screen,
-//! in Chinese, which is the surface that is looking at them.
+//! A session with no Wayland at all is an answer, not a failure: it is the same
+//! "no data-control" the settings screen draws with a sentence and a greyed
+//! switch.
 
 use plainly_core::Desktop;
 use wayland_client::globals::{GlobalListContents, registry_queue_init};
@@ -22,7 +20,7 @@ use wayland_client::{Connection, Dispatch, QueueHandle};
 ///
 /// A compositor that cannot be reached is an empty list rather than an error:
 /// the caller's question is "can this session do it", and "no session" is a
-/// perfectly good "no".
+/// good "no".
 pub fn desktop() -> Desktop {
     Desktop::new(protocols().unwrap_or_default())
 }
@@ -30,11 +28,10 @@ pub fn desktop() -> Desktop {
 /// How many outputs the compositor publishes.
 ///
 /// The count and not the names, deliberately. `wl_output`'s own events carry a
-/// make and a model, not the connector name a person would recognise, and the
-/// name comes from `xdg-output` — a protocol crate this workspace has no route
-/// to fetch. A picker that offered `eDP-1` and `DP-2` would be reading a
-/// protocol version this build cannot speak; one that offers "显示器 1" and
-/// "显示器 2" is the honest version of what it can see.
+/// make and a model, not the connector name a person would recognise, and that
+/// name comes from `xdg-output`, a protocol crate this workspace has no route to
+/// fetch. A picker offering "显示器 1" and "显示器 2" is the honest version of
+/// what the build can see.
 pub fn outputs() -> Vec<(String, String)> {
     let count = protocols()
         .map(|protocols| {
@@ -70,8 +67,7 @@ fn protocols() -> Option<Vec<String>> {
     )
 }
 
-/// The registry's only job is to be listed: nothing here binds a global, so
-/// there is no state to keep.
+/// The registry is only listed, never bound, so it has no state to keep.
 struct Registry;
 
 impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for Registry {

@@ -1,10 +1,8 @@
 //! The panel's one style sheet, in code.
 //!
-//! A layer surface gets no desktop theme to speak of, and the two things the spec
-//! fixes about the panel's look are its width (about 470px) and the fact that the
-//! local-model note under the content is a note rather than more content
-//! (spec §12). Everything else is GTK's default, which is the right default for a
-//! surface whose job is to be read and dismissed.
+//! A layer surface gets no desktop theme to speak of, so the panel brings its own
+//! stylesheet. Anything not styled here is GTK's default, which is the right default
+//! for a surface whose job is to be read and dismissed.
 use gtk::prelude::*;
 
 /// The panel's styles, as CSS.
@@ -46,8 +44,7 @@ pub const CSS: &str = "
    its own voice rather than printing the document's markup: the expression in a
    chip (it is quoted from the Passage), its meaning as ordinary body text, and
    its Example beside a rule in a serif italic — a sample of prose, not more
-   definition. The panel showed the literal `-`, backticks and `_` until the
-   renderer started handing it a structure instead of a document. */
+   definition. */
 .plainly-expression-chip {
     background-color: rgba(0, 0, 0, 0.06);
     border-radius: 4px;
@@ -69,9 +66,8 @@ pub const CSS: &str = "
 
 /// Install the styles on the display the panel is drawn on.
 ///
-/// A screen with no display is not an error: the panel would have nothing to draw
-/// on at all, and it is the window that fails loudly in that case, not the
-/// stylesheet.
+/// A screen with no display is not an error: the window fails loudly in that case,
+/// not the stylesheet.
 pub fn install() {
     let Some(display) = gtk::gdk::Display::default() else {
         return;

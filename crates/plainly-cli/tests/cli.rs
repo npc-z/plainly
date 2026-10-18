@@ -243,8 +243,7 @@ fn a_bare_invocation_with_no_input_is_a_usage_error_and_leaves_stdout_clean() {
     );
 }
 
-/// A badly spelled command line is a usage error, and a usage error leaves the
-/// product stream clean.
+/// A badly spelled command line is a usage error.
 #[test]
 fn an_unknown_flag_is_a_usage_error() {
     let dir = TempDir::new("unknown-flag");

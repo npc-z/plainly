@@ -1,16 +1,15 @@
 //! The provider a run will actually talk to: the shipped preset merged with the
 //! user's `[providers.<name>]` table.
 //!
-//! Two sources, one answer. A preset supplies what is known without being told —
-//! the endpoint of a known service, its call-surface shape, and a model where
-//! one is meaningful. The configuration file supplies what only the user knows,
-//! and wins wherever it speaks. A name that is neither a preset nor configured
-//! is an error rather than an empty setup, so a typo in `app.provider` is told
-//! apart from "there is nothing to talk to".
+//! A preset supplies what is known without being told: the endpoint of a known
+//! service, its call-surface shape, and a model where one is meaningful. The
+//! configuration file supplies what only the user knows, and wins wherever it
+//! speaks. A name that is neither a preset nor configured is an error rather
+//! than an empty setup, so a typo in `app.provider` is told apart from "there is
+//! nothing to talk to".
 //!
-//! The result carries the provider *profile* the Lookup Key is made of (spec §9)
-//! beside everything the wire call needs, so the whole answer travels as one
-//! value instead of being reassembled at each call site.
+//! The result carries everything one request needs as one value, so a call site
+//! never reassembles the answer.
 
 use crate::config::{Config, ProviderProfile, Thinking};
 use crate::presets::{self, KeyRequirement, Preset, SchemaSupport, Surface, ThinkingSwitch};
@@ -67,10 +66,10 @@ impl ProviderSetup {
     /// chosen yet.
     ///
     /// The half of [`ProviderSetup::resolve`] that does not need a model. Local
-    /// discovery asks *where* a provider is before it can ask what that runtime
-    /// serves, and a local preset deliberately names no model until the user
-    /// picks one (tickets/06), so resolution that insisted on a model could not
-    /// describe the provider whose model is the thing being chosen.
+    /// discovery asks where a provider is before it can ask what that runtime
+    /// serves, and a local preset names no model until the user picks one.
+    /// Resolution that insisted on a model could not describe the provider whose
+    /// model is the thing being chosen.
     pub fn endpoint_of(name: &str, config: &Config) -> Result<String, SetupError> {
         Ok(sources(name, config)?.endpoint)
     }
@@ -102,7 +101,7 @@ impl ProviderSetup {
         // The label names the vendor only while the request actually goes to the
         // vendor's service. After an endpoint override, an error that says
         // "DeepSeek answered HTTP 400" would blame a company the user never
-        // talked to; the configured name is the honest thing to print.
+        // talked to, so the configured name is the honest thing to print.
         let label = endpoint_matched.map(|preset| preset.label).unwrap_or(name);
 
         Ok(Self {
@@ -113,7 +112,7 @@ impl ProviderSetup {
             thinking: profile.map(|profile| profile.thinking).unwrap_or_default(),
             // The surface is *how Plainly talks to this provider*, not a claim
             // about what the endpoint accepts, so an endpoint override does not
-            // withdraw it: someone running Ollama on another host still wants
+            // withdraw it. Someone running Ollama on another host still wants
             // `/api/chat`, and an endpoint that turns out not to serve it is
             // answered by the compatibility fallback in `chat`, not by guessing
             // the route from a host name.
@@ -140,15 +139,13 @@ impl ProviderSetup {
     /// The same setup, with the capability a probe (or its cache) concluded.
     ///
     /// Only the two fields a probe can answer for are replaced. Everything else
-    /// is a fact about the run rather than about the endpoint — which model, how
-    /// the user wants to think, whether a key is needed — and a probe has no say
-    /// in those. Keeping this as a method on the setup is what stops a caller
-    /// from rebuilding the whole resolution and silently dropping a field.
+    /// is a fact about the run rather than about the endpoint, and a probe has no
+    /// say in those. A method rather than a rebuild at the call site keeps a
+    /// caller from silently dropping a field.
     ///
-    /// The two values and not a `Capability`: a setup is what a capability is
-    /// *about*, and taking the conclusion type as an argument would make the two
-    /// modules each other's business for no gain in safety — the pair is exactly
-    /// what this method documents itself as replacing.
+    /// The two values rather than a `Capability`, because a setup is what a
+    /// capability is *about* and taking the conclusion type as an argument would
+    /// make the two modules each other's business.
     pub fn with_capability(&self, schema: SchemaSupport, thinking: ThinkingSwitch) -> Self {
         Self {
             schema,
@@ -159,12 +156,9 @@ impl ProviderSetup {
 
     /// Whether this setup talks to a runtime on this machine.
     ///
-    /// A fact about the endpoint rather than about the provider's name, for the
-    /// same reason the surface is the other way round: `ollama` pointed at a
-    /// remote host is not local, and a custom name pointed at `127.0.0.1` is.
-    /// Provenance is not only *which* model answered but whether anyone can
-    /// vouch for it: the CLI says so beside the model, and the panel's own
-    /// warning sentence hangs off the same fact (spec §12, tickets/06, 15).
+    /// A fact about the endpoint rather than about the provider's name, so
+    /// `ollama` pointed at a remote host is not local and a custom name pointed
+    /// at `127.0.0.1` is.
     pub fn is_local(&self) -> bool {
         is_loopback(&self.endpoint)
     }
@@ -208,11 +202,11 @@ fn configured(value: Option<&str>) -> Option<&str> {
 /// What one name resolves from, looked up once.
 ///
 /// [`ProviderSetup::endpoint_of`] and [`ProviderSetup::resolve`] ask the same
-/// question at different depths — where a provider is, and everything a request
-/// to it needs — so they read the same two sources here. One lookup is what stops
-/// the two from disagreeing about which endpoint a name means, and it is where
-/// the two errors about a name live: a name that is neither shipped nor
-/// configured, and one that has nowhere to send a request.
+/// question at different depths. One needs where a provider is, and the other
+/// everything a request to it needs, so they read the same two sources here. One
+/// lookup is what stops the two from disagreeing about which endpoint a name
+/// means, and it is where the two errors about a name live: a name that is
+/// neither shipped nor configured, and one that has nowhere to send a request.
 struct Sources<'a> {
     /// The user's table for this name, if there is one.
     profile: Option<&'a ProviderProfile>,
@@ -250,10 +244,10 @@ fn sources<'a>(name: &str, config: &'a Config) -> Result<Sources<'a>, SetupError
     // a `json_object` request to LM Studio is a 400, and the canonical thinking
     // field is a 400 on anything strict. The spec's probe cache is invalidated
     // by an endpoint change for the same reason (spec §7). What is left is the
-    // shape to *start* from when the endpoint cannot be probed at all
-    // (`crate::probe` takes over the moment it can be): ask for a schema, send
-    // nothing that might be rejected, demand no key — which is also what a
-    // provider we ship no preset for gets.
+    // shape to *start* from when the endpoint cannot be probed at all, since
+    // `crate::probe` takes over the moment it can: ask for a schema, send nothing
+    // that might be rejected, demand no key, which is also what a provider we
+    // ship no preset for gets.
     let endpoint_matched = shipped.filter(|preset| {
         configured_endpoint.is_none_or(|endpoint| same_service(endpoint, preset.endpoint))
     });
@@ -268,9 +262,9 @@ fn sources<'a>(name: &str, config: &'a Config) -> Result<Sources<'a>, SetupError
 
 /// The key requirement a name would have, without resolving a whole setup.
 ///
-/// Readiness asks this when [`ProviderSetup::resolve`] fails — a local preset
-/// whose model is not chosen yet — and it applies the same endpoint filter
-/// `resolve` applies: a preset describes the service it names, so an endpoint
+/// Readiness asks this when [`ProviderSetup::resolve`] fails, for a local preset
+/// whose model is not chosen yet, and it applies the same endpoint filter
+/// `resolve` applies. A preset describes the service it names, so an endpoint
 /// pointed elsewhere never inherits its demand for a key. A name with no preset
 /// demands no key, the same answer `resolve` gives a provider we ship nothing
 /// for.
@@ -288,11 +282,8 @@ pub(crate) fn requirement_of(name: &str, config: &Config) -> KeyRequirement {
 /// `https://api.deepseek.com` and `https://api.deepseek.com/v1` are the same
 /// place, so a user who writes out the base URL differently does not lose what
 /// the preset knows. A different host or port is a different place, and is
-/// treated as unknown. Local discovery uses the same comparison for the questions
-/// where two spellings *are* one endpoint — which runtime a name means, and
-/// whether a discovered endpoint is somewhere the name did not already point —
-/// while its candidate list deliberately keeps two spellings of one service
-/// apart (tickets/06).
+/// treated as unknown. Local discovery uses the same comparison, though its
+/// candidate list keeps two spellings of one service apart.
 pub fn same_service(one: &str, other: &str) -> bool {
     authority(one).eq_ignore_ascii_case(authority(other))
 }

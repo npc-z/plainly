@@ -11,7 +11,7 @@
 //! The rule is deliberately narrow. Heuristics over the text — entropy, length,
 //! the absence of spaces — would produce both false positives and false
 //! negatives, and the worst outcome is the false sense of protection; a password
-//! manager that does not follow the convention is simply not covered (issues/18).
+//! manager that does not follow the convention is simply not covered.
 
 /// The MIME type a password manager publishes to say what the clipboard holds.
 ///
@@ -27,10 +27,10 @@ pub const PASSWORD_HINT_SECRET: &[u8] = b"secret";
 
 /// One MIME type the clipboard published, and the bytes its owner gave for it.
 ///
-/// `value` is `None` for a type that was published but whose value was not read
-/// — asking for a type is a separate round trip, so a platform reads only the
-/// ones it has a use for. [`PASSWORD_HINT`] is the one this module reads, and a
-/// platform that cannot read it hands over `None` rather than a guess.
+/// `value` is `None` for a type whose value was not read. Asking for a type is a
+/// separate round trip, so a platform reads only the ones it has a use for.
+/// [`PASSWORD_HINT`] is the one this module reads, and a platform that cannot
+/// read it hands over `None` rather than a guess.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MimeType {
     pub mime: String,
@@ -60,12 +60,11 @@ pub enum Reading {
     /// Nothing marked this content secret: it is a Passage to explain.
     Passage(String),
     /// The owner marked this content secret. Nothing is sent and nothing is
-    /// stored, and there is no "explain anyway" — the cost is asymmetric.
+    /// stored, and there is no "explain anyway". The cost is asymmetric.
     Sensitive,
-    /// The owner published the marker and its value was not read, so only half
-    /// the criterion is in hand. Half a criterion is not a reason to send: the
-    /// run stops, and the platform that could not read the value says so rather
-    /// than guessing at it.
+    /// The owner published the marker and its value was not read. Half the
+    /// criterion is not a reason to send: the run stops and reports that the
+    /// value could not be read.
     Unread,
 }
 
@@ -79,23 +78,17 @@ impl Clipboard {
         }
     }
 
-    /// What the owner's password hint says, in the four states the criterion can
-    /// be in. Only [`Marker::Secret`] holds both halves of it.
     fn marker(&self) -> Marker {
         match self
             .types
             .iter()
             .find(|offered| offered.mime == PASSWORD_HINT)
         {
-            // The type was not published at all: nothing was marked.
             None => Marker::Absent,
             Some(hint) => match hint.value.as_deref() {
-                // The one value that marks the content secret, matched exactly:
-                // `Secret` is another value, and another type's `secret` is
-                // another type's.
+                // Matched byte for byte: a different case is a different value.
                 Some(PASSWORD_HINT_SECRET) => Marker::Secret,
                 Some(_) => Marker::NotSecret,
-                // Published, never read: the platform handed over no value.
                 None => Marker::Unread,
             },
         }

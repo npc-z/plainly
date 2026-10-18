@@ -54,7 +54,7 @@ pub const PROBE_SYSTEM: &str =
 ///
 /// The two optional fields are what local runtimes volunteer and hosted services
 /// do not: whether the model is loaded right now, and how much context it has.
-/// tickets/06 builds the discovery UI on this; a probe only records it.
+/// Local discovery builds its UI on them; a probe only records them.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EndpointModel {
     /// The model id, exactly as the endpoint spells it.
@@ -114,8 +114,8 @@ pub struct Capability {
     ///
     /// An `Option` rather than an empty vector because the two answers are
     /// different facts: "this endpoint serves nothing" and "nobody could find
-    /// out" call for different words, and tickets/06 tells them apart in front
-    /// of the user.
+    /// out" call for different words, and a surface tells them apart in front of
+    /// the user.
     pub models: Option<Vec<EndpointModel>>,
     /// When the probe ran, for a surface that wants to show it.
     pub probed_at: Timestamp,

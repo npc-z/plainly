@@ -1,15 +1,12 @@
 //! `plainly providers`: what Plainly is talking to, what that endpoint takes,
 //! what is running locally, and the API keys.
 //!
-//! The status report goes to stdout because it *is* the product of the command —
-//! the same reason `config show` prints there — while progress and complaints go
-//! to stderr. The same holds for the local listing: it is what the command was
-//! asked for, so it is the product.
+//! The status report and the local listing are the product of their commands and
+//! go to stdout. The probing announcement and complaints go to stderr.
 //!
 //! `probe`, `discover` and `use` touch the network; nothing else does. Reporting
-//! reads the cache a probe wrote and says "not probed yet" when there is none: a
-//! display that reaches out to an endpoint would turn `plainly providers` into a
-//! request nobody asked for.
+//! reads the cache a probe wrote and says "not probed yet" when there is none, so
+//! `plainly providers` never becomes a request nobody asked for.
 
 use std::cell::Cell;
 use std::io::Read;
@@ -46,8 +43,8 @@ pub fn run(command: Option<ProviderCommand>) -> Result<u8, CommandError> {
 /// A loopback runtime may authenticate — spec §7 asks the llama.cpp sidecar to
 /// carry `--api-key`, and `#29462`'s unauthenticated OOM path is the reason — so
 /// a scan without a key would report the project's own recommended setup as
-/// missing. The key is resolved exactly the way a run resolves it (environment,
-/// then keyring, then this session), and a name with no key sends none.
+/// missing. The key is resolved the way a run resolves it, and a name with no
+/// key sends none.
 struct CandidateReader {
     reader: ModelReader,
     secrets: Secrets,
@@ -71,12 +68,10 @@ impl ModelLister for CandidateReader {
 /// The key to send for one candidate's name, and the single warning a credential
 /// tier that cannot answer earns.
 ///
-/// A tier that fails is an error rather than a skip ([`Secrets`]), and the whole
-/// point of saying so is that a scan which finds nothing must not be how a broken
-/// keyring is discovered: `discover` reporting "no local runtime answered" while
-/// the keyring was the reason is exactly the kind of lie this command exists not
-/// to tell. The scan does go on without the key — most loopback runtimes need
-/// none, and refusing to look would be worse than looking unauthenticated.
+/// A tier that fails is an error rather than a skip ([`Secrets`]), so a scan that
+/// finds nothing must say why: `discover` reporting "no local runtime answered"
+/// while the keyring was the reason is the lie this command exists not to tell.
+/// The scan goes on without the key, because most loopback runtimes need none.
 fn candidate_key(secrets: &Secrets, provider: &str, reported: &Cell<bool>) -> Option<String> {
     match secrets.resolve(provider) {
         Ok(key) => key.map(|key| key.secret),
@@ -126,8 +121,6 @@ fn probe_one(name: Option<String>) -> Result<u8, CommandError> {
 
     eprintln!("plainly: probing {} at {}", setup.label, setup.endpoint);
     let client = ChatCompletions::new(setup.clone(), key.unwrap_or_default());
-    // The clock is a value the surface produces; `Timestamp::now` is the one
-    // conversion core offers for it.
     let now = Timestamp::now().map_err(|error| CommandError::Failed(error.to_string()))?;
     let found = probe::reprobe(&client, &setup, &cache(&paths), now);
     let active = setup.with_capability(found.capability.schema, found.capability.thinking);
@@ -168,18 +161,17 @@ fn configured(config: &Config) -> Result<ProviderSetup, CommandError> {
 /// `plainly providers discover`: what is listening on the common ports, and what
 /// each runtime says it serves.
 ///
-/// Nothing found is a *configuration* answer rather than a crash: the message
-/// says where Plainly looked and the two ways to fix it — start a runtime there,
-/// or name the endpoint — because guessing a port is exactly what this command
-/// exists not to do (tickets/06).
+/// Nothing found is a *configuration* answer: the message says where Plainly
+/// looked and the two ways to fix it, because guessing a port is what this
+/// command exists not to do.
 fn discover_local() -> Result<u8, CommandError> {
     let paths = Paths::discover().map_err(|error| CommandError::Failed(error.to_string()))?;
     let config = ConfigFile::open(paths.config_file())?.config()?;
 
     let candidates = discover::candidates(&config);
-    // The listing is the product, so it goes to stdout, but a scan of several
-    // ports can take a moment on a port that accepts a connection and says
-    // nothing: announcing it is the difference between waiting and a hang.
+    // A scan can take a moment on a port that accepts a connection and says
+    // nothing, so the endpoints are announced before the timeouts. Otherwise the
+    // wait looks like a hang.
     announce_scan(&candidates);
     let scan = discover::scan(&reader(), &candidates);
 
@@ -215,18 +207,15 @@ fn reader() -> CandidateReader {
 /// `plainly providers use <provider> <model>`: the model a local runtime serves,
 /// written into that provider's section and made the provider a run uses.
 ///
-/// The endpoint decides whether this is a local selection at all — "use" claims
-/// the runtime in front of you serves the model, and a hosted provider has no
-/// runtime in front of you — and the model is held to what the runtime lists,
-/// because a model id nobody serves is a configuration that fails at the first
-/// Passage instead of here.
+/// The endpoint decides whether this is a local selection at all, and the model
+/// is held to what the runtime lists, because a model id nobody serves is a
+/// configuration that fails at the first Passage instead of here.
 fn use_model(provider: &str, model: &str) -> Result<u8, CommandError> {
     let paths = Paths::discover().map_err(|error| CommandError::Failed(error.to_string()))?;
     let mut file = ConfigFile::open(paths.config_file())?;
     let config = file.config()?;
 
     // Where the name points today: the user's own endpoint, or the preset's.
-    // Resolved before a model exists, which is the whole point of asking.
     let endpoint = ProviderSetup::endpoint_of(provider, &config)
         .map_err(|error| CommandError::NotConfigured(error.to_string()))?;
     if !is_loopback(&endpoint) {
@@ -331,9 +320,9 @@ fn use_model(provider: &str, model: &str) -> Result<u8, CommandError> {
 /// The listing a person reads before choosing: which runtime, where, and per
 /// model what the runtime says about it.
 ///
-/// The context flag is about the setting this provider is configured for — the
+/// The context flag is about the setting this provider is configured for: the
 /// detailed mode's budget is several times the default's, so the same model can
-/// fit one and not the other — and the configuration is what says which.
+/// fit one and not the other.
 fn print_runtimes(runtimes: &[LocalRuntime], config: &Config) {
     println!("local runtimes:");
     for runtime in runtimes {
@@ -377,8 +366,8 @@ fn loaded_label(loaded: Option<bool>) -> &'static str {
     }
 }
 
-/// A model's context, and — the reason discovery reads the list at all — whether
-/// it can hold one Passage without ever loading the model (tickets/06).
+/// A model's context, and whether it can hold one Passage, which is the reason
+/// discovery reads the list at all.
 fn context_label(model: &EndpointModel, thinking: Thinking) -> String {
     let Some(length) = model.context_length else {
         return "context not reported".to_string();
@@ -436,7 +425,7 @@ const LISTED_LIMIT: usize = 10;
 ///
 /// The distinction decides what a selection may do: a name the user pointed
 /// somewhere is theirs, and a name that only carries a preset's guess is
-/// discovery's to fill in (tickets/06).
+/// discovery's to fill in.
 fn endpoint_configured(config: &Config, provider: &str) -> bool {
     config
         .providers
@@ -458,9 +447,8 @@ fn endpoints(candidates: &[discover::Candidate]) -> String {
 /// answered and would not serve us, and how to point Plainly at a runtime.
 ///
 /// The middle part is why this is not one line. "No local runtime answered" is
-/// true of a port with nothing on it and false of one that answered 401 — and the
-/// fix for the second (a key) is not the fix for the first (start one), so a
-/// report that offers only the first cannot be acted on.
+/// true of a port with nothing on it and false of one that answered 401, and the
+/// fix for the second is not the fix for the first.
 fn nothing_found(
     opening: &str,
     candidates: &[discover::Candidate],
@@ -482,8 +470,7 @@ fn nothing_found(
 /// there" the rest of the report already covers. Anything else means something is
 /// listening: a key it wants, a URL that is not a model server, a body that is
 /// not JSON. The reason is quoted as the endpoint gave it, and the key is named
-/// because that is what a loopback runtime asks for when it asks for anything
-/// (spec §7's sidecar carries `--api-key`).
+/// because that is what a loopback runtime asks for when it asks for anything.
 fn refusals(unanswered: &[discover::Unanswered]) -> Vec<String> {
     unanswered
         .iter()
@@ -669,8 +656,8 @@ mod tests {
 
     /// A tier that cannot answer is a failure to report, not a silent "no key":
     /// swallowing it is how a broken keyring turns into "no local runtime
-    /// answered" (tickets/06). The scan still goes on, because a loopback runtime
-    /// usually needs no key at all.
+    /// answered". The scan still goes on, because a loopback runtime usually
+    /// needs no key at all.
     #[test]
     fn a_keyring_that_cannot_answer_is_reported_and_the_scan_goes_on() {
         let secrets = Secrets::with_stores(EnvSecrets::empty(), Some(Box::new(BrokenKeyring)));

@@ -1,10 +1,9 @@
 //! The retry policy, driven by a scripted provider and a pause that records
 //! instead of sleeping.
 //!
-//! What each class is *supposed* to do is spec §7's table; these tests pin the
-//! parts that are easy to get subtly wrong: how many calls a class is worth, the
-//! intervals between them, and the one case where a repeated error means stop
-//! rather than back off again.
+//! These tests pin the parts of the policy that are easy to get subtly wrong:
+//! how many calls a class is worth, the intervals between them, and the one case
+//! where a repeated error means stop rather than back off again.
 
 mod support;
 
@@ -76,8 +75,6 @@ fn a_malformed_answer_is_asked_for_again_at_once() {
 
 #[test]
 fn two_identical_unusable_answers_stop_before_a_third_call() {
-    // The measured failure mode: a renamed field reproduced 3 times out of 3, so
-    // the third call is not a retry, it is a repeat.
     let (calls, outcome, pauses) = run([
         Ok("I'd rather not, sorry.".to_string()),
         Ok("I'd rather not, sorry.".to_string()),
@@ -95,8 +92,6 @@ fn two_identical_unusable_answers_stop_before_a_third_call() {
 
 #[test]
 fn a_malformed_answer_is_given_two_extra_attempts_and_no_more() {
-    // Three *different* contract violations, so nothing here is drift: the
-    // class is simply allowed two extra attempts (spec §7).
     let (calls, outcome, pauses) = run([
         Ok(r#"{"glosses": [], "grammar": null, "translation": "x"}"#.to_string()),
         Ok(r#"{"comprehensible": 1, "glosses": [], "grammar": null, "translation": "x"}"#
@@ -118,9 +113,6 @@ fn a_malformed_answer_is_given_two_extra_attempts_and_no_more() {
 
 #[test]
 fn the_same_failure_worded_differently_is_still_the_same_failure() {
-    // A provider's message can carry a request id, a body excerpt, a timestamp.
-    // The drift rule compares what the failure *is*, not how it was worded, or a
-    // systematic failure would be retried to the end of the budget.
     let (calls, outcome, _) = run([
         Err(ProviderError::empty(
             "the model answered with no content (request 41f2)",
@@ -139,8 +131,6 @@ fn the_same_failure_worded_differently_is_still_the_same_failure() {
 
 #[test]
 fn a_rate_limit_backs_off_on_the_documented_schedule() {
-    // Identical errors on purpose: a rate limit that repeats is what backing off
-    // is for, so repeat detection must not cut the schedule short.
     let (calls, outcome, pauses) = run([
         Err(ProviderError::unavailable(
             "stub answered HTTP 429: slow down",
@@ -178,8 +168,6 @@ fn a_server_error_backs_off_too() {
 
 #[test]
 fn an_immediate_retry_does_not_consume_a_backoff_slot() {
-    // The schedule follows the network's failures, not the attempt count: a
-    // malformed answer should not push the first 429 out to four seconds.
     let (calls, outcome, pauses) = run([
         Ok("not json".to_string()),
         Err(ProviderError::unavailable("stub answered HTTP 503")),
@@ -212,7 +200,6 @@ fn an_empty_answer_is_asked_for_again_until_it_repeats() {
 
 #[test]
 fn an_unsupported_parameter_is_not_retried() {
-    // Asking again would be asking the same question the endpoint just refused.
     let (calls, outcome, pauses) = run([
         Err(ProviderError::unsupported_parameter(
             "stub answered HTTP 400: This response_format type is unavailable now",

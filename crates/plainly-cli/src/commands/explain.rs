@@ -1,12 +1,6 @@
 //! `plainly explain`: one Passage in, one Explanation out — or a long input in,
 //! a batch of them out.
 //!
-//! stdout carries the product and nothing else — the five sections or the
-//! Artifact as JSON — because this command exists to be piped. Everything a
-//! person needs to read (which provider answered, what its endpoint takes, why
-//! it did not, how far through a batch it is) goes to stderr, and the exit code
-//! says which kind of outcome it was.
-//!
 //! The run itself is [`plainly_core::Runner`]: it opens the configuration, the
 //! provider, the credential, the history store, the capability cache and the
 //! prompt, and decides one Passage's turn (recall, or generate and remember).
@@ -36,9 +30,6 @@ const NO_PASSAGE: &str = "there is no Passage: pipe one in (`echo … | plainly`
                           or name a file (`plainly explain file.md`)";
 
 pub fn run(args: ExplainArgs) -> Result<u8, CommandError> {
-    // The invocation is settled before anything is read: a bare `plainly` at a
-    // terminal has no Passage, and answering that beats waiting for input that
-    // is not coming.
     let source = source(
         args.file.as_deref(),
         args.clipboard,
@@ -57,13 +48,10 @@ pub fn run(args: ExplainArgs) -> Result<u8, CommandError> {
         Source::Stdin => None,
     };
 
-    // The instant is the surface's to produce — core never reads the clock —
-    // and it is produced before the run opens so the store can be stamped with
+    // The instant is produced before the run opens so the store is stamped with
     // the moment the person asked, not the moment a pipe ended.
     let now = Timestamp::now().map_err(|error| CommandError::Failed(error.to_string()))?;
 
-    // `--factory-prompt` is a choice about this run only; the configuration is
-    // left alone.
     let choice = if args.factory_prompt {
         PromptChoice::Factory
     } else {
@@ -72,14 +60,11 @@ pub fn run(args: ExplainArgs) -> Result<u8, CommandError> {
 
     // Opening is what resolves the configured provider's credential, so a
     // missing key is still reported without draining stdin. A retry's wait is
-    // reported through the same seam the run uses for its transport: the
-    // policy is core's, the wording is this surface's.
+    // reported through the same seam the run uses for its transport.
     let mut runner = Runner::open(choice, now)
         .map_err(runner_error)?
         .with_pause(Box::new(pause));
 
-    // Run-level notices are facts about this machine, not about a chunk: they
-    // are said once, before the batch begins.
     let mut noticed = 0;
     report_notices(&runner, &mut noticed);
 
@@ -98,15 +83,12 @@ pub fn run(args: ExplainArgs) -> Result<u8, CommandError> {
     let total = chunks.len();
     let format = args.format.unwrap_or_default();
 
-    // Every distinct question is looked up before anything is sent, which is what
-    // makes the request count below honest rather than a count of chunks: a chunk
-    // already in the history is answered from the row that holds it and costs
-    // nothing (spec §9). `--regenerate` is the one way past that.
-    //
-    // A Passage the batch repeats is the same question — the Lookup Key is over
-    // the text, so it says so — and is planned once: asking it a second time
-    // would pay twice for one answer, and the second write would overwrite the
-    // first's Record.
+    // Every distinct question is looked up before anything is sent, so the
+    // request count below is a count of questions rather than of chunks. A chunk
+    // already in the history is answered from its row and costs nothing
+    // (spec §9); `--regenerate` is the one way past that. A Passage repeated
+    // inside the batch is the same question and is asked once, because a second
+    // write would overwrite the first's Record.
     let mut turns = Vec::with_capacity(total);
     let mut first_seen: HashMap<LookupKey, usize> = HashMap::new();
     for chunk in &chunks {
@@ -125,8 +107,7 @@ pub fn run(args: ExplainArgs) -> Result<u8, CommandError> {
         // `cached` is the same recall a `Reuse` turn would take, so the plan
         // and the turn cannot disagree about whether this chunk is a hit. A
         // store that cannot be read is not a miss: it aborts the run through the
-        // existing store-error mapping, as it did before the plan existed, and
-        // nothing is sent.
+        // store-error mapping and nothing is sent.
         let stored = if args.regenerate {
             None
         } else {
@@ -157,11 +138,8 @@ pub fn run(args: ExplainArgs) -> Result<u8, CommandError> {
             setup.label,
             setup.model,
             setup.thinking.as_str(),
-            // Provenance is which provider answered, and whether it is on this
-            // machine is part of that: an answer from a local model is one nobody
-            // can vouch for. The wording of the warning itself belongs to the panel
-            // (spec §12, tickets/15); the CLI's job is to say where the answer came
-            // from, and stdout stays the product (tickets/06).
+            // Whether the model runs on this machine is provenance: an answer
+            // from a local model is one nobody can vouch for (spec §12).
             if setup.is_local() {
                 " — local model on this machine"
             } else {
@@ -227,8 +205,6 @@ pub fn run(args: ExplainArgs) -> Result<u8, CommandError> {
             Recall::Reuse
         };
         let outcome = runner.explain(&chunks[index], recall);
-        // A turn may add a run-level notice (a `Bypass` provider's credential
-        // store could not answer); say it once, and only if it is new.
         report_notices(&runner, &mut noticed);
 
         match outcome {
@@ -316,8 +292,8 @@ fn collected(results: &[Option<Artifact>]) -> Vec<Artifact> {
     results.iter().flatten().cloned().collect()
 }
 
-/// The product, on stdout and nothing else: the batch's documents or array, or
-/// the one Artifact a single-chunk run produced.
+/// The batch's documents or array, or the one Artifact a single-chunk run
+/// produced.
 fn print_all(
     artifacts: &[Artifact],
     format: OutputFormat,
@@ -347,24 +323,21 @@ struct PlannedTurn {
     repeat_of: Option<usize>,
 }
 
-/// How a run that could not be opened is reported, in the codes scripts branch
-/// on.
+/// How a run that could not be opened is reported.
 ///
-/// The mapping is the one the ticket states: configuration is the existing
-/// mapping (a parse failure is "not configured", a bad value is a usage error),
-/// a store that will not open is local state and a failure, a provider that does
-/// not resolve is "not configured", and the credential's three states keep the
-/// distinction that sends the user to the right place: no key means "set one"
-/// (exit 3), a store that cannot answer means something is broken (exit 1).
+/// A store that will not open is local state and a failure, a provider that does
+/// not resolve is "not configured", and a credential failure keeps the
+/// distinction that sends the user to the right place: a missing key means "set
+/// one" (exit 3), and a store that cannot answer means something is broken
+/// (exit 1).
 fn runner_error(error: RunnerError) -> CommandError {
     match error {
         RunnerError::Config(error) => CommandError::from(error),
         RunnerError::Store(error) => CommandError::from(error),
         RunnerError::Setup(error) => CommandError::NotConfigured(error.to_string()),
         RunnerError::Paths(error) => CommandError::Failed(error.to_string()),
-        // The one sentence the CLI has always printed for a missing key, and
-        // the failure for a store that cannot answer. Core states the fact; the
-        // instruction to set a key is this surface's (ADR 0003).
+        // Core states the fact; the instruction to set a key is this surface's
+        // (ADR 0003).
         RunnerError::Credential(error) => credential_error(error),
     }
 }
@@ -393,11 +366,10 @@ fn request_word(count: usize) -> &'static str {
 }
 
 /// What a reuse says, not just that it reused something: which provider, model
-/// and Level the stored Explanation came from is the same provenance a generated
-/// run prints, and the user has no other way to tell whose answer this was. The
-/// contract tier of the run that produced it is deliberately not claimed — a
-/// Record does not carry one (spec §9), and guessing the tier of this run would
-/// describe a request that was never made.
+/// and Level the stored Explanation came from, which the user cannot otherwise
+/// tell. The contract tier of the run that produced it is not claimed, because a
+/// Record does not carry one (spec §9) and guessing would describe a request that
+/// was never made.
 fn reusing(artifact: &Artifact) -> String {
     format!(
         "reusing the stored Explanation — {}/{} (thinking {}), {}, {}@{}; generated {}; \
@@ -414,11 +386,10 @@ fn reusing(artifact: &Artifact) -> String {
 
 /// What a person is told about the endpoint, whatever the run's outcome.
 ///
-/// Every fact here is one the run established rather than a guess: the tier the
-/// request was actually held to, a correction the endpoint forced, and — when
-/// there is one — the reason nothing could be probed at all. The tier is the one
-/// thing said every time, because it is the promise the answer comes with and
-/// the user cannot otherwise tell the two tiers apart (spec §7).
+/// Every fact here is one the run established: the tier the request was actually
+/// held to, a correction the endpoint forced, and — when there is one — the
+/// reason nothing could be probed at all. The tier is said every time, because it
+/// is the promise the answer comes with (spec §7).
 ///
 /// `resolution` is the one behind the request being reported on, which on a
 /// failed run is the *rejected* attempt rather than whatever a later probe
@@ -441,10 +412,8 @@ fn report(
         eprintln!("plainly: could not probe {} ({reason})", setup.label);
     }
 
-    // Always, and before anything else a person has to weigh: which tier this
-    // Passage was held to. "The endpoint enforces the contract" and "we check
-    // the answer ourselves and ask again" are not the same promise, and a run
-    // that says nothing leaves the user unable to tell them apart (spec §7).
+    // "The endpoint enforces the contract" and "we check the answer ourselves
+    // and ask again" are not the same promise (spec §7).
     eprintln!("plainly: contract: {}", tier(resolution.capability.schema));
 
     if let Some(reprobe) = reprobe {
@@ -518,7 +487,7 @@ fn one_line(reason: &str) -> String {
     reason.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// The product, on stdout and nothing else.
+/// The product, on stdout.
 fn print(artifact: &Artifact, format: OutputFormat) -> Result<(), CommandError> {
     match format {
         OutputFormat::Markdown => print!(
@@ -535,7 +504,7 @@ fn print(artifact: &Artifact, format: OutputFormat) -> Result<(), CommandError> 
     Ok(())
 }
 
-/// The product of a batch, on stdout and nothing else.
+/// The product of a batch.
 ///
 /// Markdown is one document per chunk with a blank line between them, so a
 /// reader can see where one Passage ends and the next begins (spec §10). JSON is
@@ -607,7 +576,6 @@ fn read_file(path: &Path) -> Result<String, CommandError> {
     passage_or_usage(passage, NO_PASSAGE)
 }
 
-/// A Passage from stdin.
 fn read_stdin() -> Result<String, CommandError> {
     let mut passage = String::new();
     std::io::stdin()
@@ -663,7 +631,6 @@ fn passage_or_usage(passage: String, empty: &str) -> Result<String, CommandError
     Ok(passage)
 }
 
-/// Where a run's Passage comes from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Source {
     File(PathBuf),
@@ -698,7 +665,7 @@ mod tests {
     use super::*;
 
     /// A bare invocation at a terminal must not wait for input that is not
-    /// coming. This is the decision, taken before any read.
+    /// coming.
     #[test]
     fn a_terminal_with_no_file_is_a_usage_error_rather_than_a_wait() {
         let error = source(None, false, true).unwrap_err();

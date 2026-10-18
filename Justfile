@@ -1,26 +1,19 @@
-# Tasks for working on Plainly. `just` on its own lists them; `just <recipe>`
-# runs one.
-#
-# The flake at this directory is the environment (AGENTS.md): every recipe that
-# needs the Rust toolchain or the GUI libraries goes through `nix develop -c`
-# unless it is already inside the dev shell, where `IN_NIX_SHELL` is set. The
-# recipes that are Nix commands themselves (`nix build`, `nix run`) or that
-# deliberately need no Nix run bare — their comments say which.
+# The flake at this directory is the environment (AGENTS.md). Recipes that need
+# the Rust toolchain or the GUI libraries go through `nix develop -c` unless
+# `IN_NIX_SHELL` says the current shell is the dev shell. The Nix commands
+# themselves (`nix build`, `nix run`) and the recipes that need no dev shell run
+# bare, and their comments say which.
 
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
-# `nix develop -c` from an ordinary shell; empty inside the dev shell.
 dev_shell := if env_var_or_default("IN_NIX_SHELL", "") == "" { "nix develop -c" } else { "" }
 
-# List the recipes.
 default:
     @just --list
 
 # Enter the flake's development shell: toolchain, GTK/WebKit, python3.
 dev:
     nix develop
-
-# -- build -- -----------------------------------------------------------------
 
 # Build every crate in the workspace (debug); needs the dev shell's libraries.
 build:
@@ -31,23 +24,15 @@ build-cli:
     {{dev_shell}} cargo build -p plainly-cli
 
 # Build the installed binaries with Nix: result/bin/{plainly,plainly-panel,plainly-desktop}.
-# `--accept-flake-config` trusts this flake's own cache settings (README, "Binary
-# cache"): a clean, pushed revision substitutes instead of rebuilding, while an
-# edit changes the derivation and still builds. This is a convenience recipe, so
-# it opts in; `check-packages` below deliberately does not — that check has to
-# prove the source builds, not that the cache can supply the result.
+# Accepts the flake's cache settings so a pushed revision substitutes instead of
+# rebuilding. `check-packages` deliberately does not, because that check has to
+# prove the source builds.
 nix-build:
     nix build --accept-flake-config .
 
-# -- run -- -------------------------------------------------------------------
-#
-# The GUI recipes come in two shapes. `desktop` and `panel` go through `nix run`,
-# so they start the wrapped, release binaries an install gets (the library paths
-# are in the wrapper) — the same ones a compositor's key binding and the desktop
-# entry spawn. `desktop-dev` and `panel-dev` run `cargo run` inside the dev
-# shell: the faster edit -> run loop, which is why the shell carries the window's
-# extra libraries (gdk-pixbuf, cairo, dbus). All of them need a real Wayland
-# session.
+# `desktop` and `panel` go through `nix run`, so they start the wrapped release
+# binaries an install gets. `desktop-dev` and `panel-dev` run `cargo run` in the
+# dev shell for a faster loop. All of them need a real Wayland session.
 
 # Run the command line from source, e.g. `just cli history` (fastest edit loop).
 cli *args:
@@ -69,13 +54,9 @@ desktop-dev *args:
 panel-dev:
     {{dev_shell}} cargo run -p plainly-panel -- --clipboard
 
-# -- configure -- -------------------------------------------------------------
-
 # Read or write config.toml (panel and window), e.g. `config set app.panel_width 520`.
 config *args:
     {{dev_shell}} cargo run -p plainly-cli -- config {{args}}
-
-# -- test -- ------------------------------------------------------------------
 
 # Run the tests CI runs: the two crates that build with no graphics stack.
 test:
@@ -94,8 +75,6 @@ test-core:
 test-cli:
     {{dev_shell}} cargo test -p plainly-cli
 
-# -- lint and format -- -------------------------------------------------------
-
 # Clippy over the two crates CI lints; warnings are reported, not fatal.
 clippy:
     {{dev_shell}} cargo clippy -p plainly-core -p plainly-cli --all-targets
@@ -108,8 +87,6 @@ fmt:
 fmt-check:
     {{dev_shell}} cargo fmt --all -- --check
 
-# -- the headless promise -- --------------------------------------------------
-
 # Prove the CLI's dependency graph and built binary reach no graphics library.
 check-headless:
     {{dev_shell}} bash scripts/check-headless-cli.sh
@@ -117,8 +94,6 @@ check-headless:
 # The same check against a release build.
 check-headless-release:
     {{dev_shell}} bash scripts/check-headless-cli.sh --release
-
-# -- the generated CLI workspace -- -------------------------------------------
 
 # Guard nix/cli-workspace/ against drift. Offline, under a second, no Nix needed.
 check-cli-workspace:
@@ -131,8 +106,6 @@ generate-cli-workspace:
 # Compare the generated workspace with the root manifests, writing nothing.
 check-generated-cli-workspace:
     {{dev_shell}} bash scripts/generate-cli-workspace.sh --check
-
-# -- Nix packaging -- ---------------------------------------------------------
 
 # Build with Nix and check the packaged binaries run outside the dev shell.
 check-packages:
@@ -154,22 +127,14 @@ check-incremental-self-test:
 update-flake:
     nix flake update
 
-# -- binary cache -------------------------------------------------------------
-
-# Push both packages' runtime closures to the public Cachix cache (README,
-# "Binary cache"). Needs `cachix authtoken <token>` once, or CACHIX_AUTH_TOKEN.
-# Run after a build that changed anything, or the revision on the cache and the
-# revision in the repository drift apart.
+# Push both packages' runtime closures to the public Cachix cache. Needs
+# `cachix authtoken <token>` once, or CACHIX_AUTH_TOKEN.
 cache-push:
     nix build --no-link --print-out-paths .#default .#plainly | {{dev_shell}} cachix push plainly-npc-z
-
-# -- manual checks -- ---------------------------------------------------------
 
 # Run the fake provider the manual checks use, foreground, e.g. `--port 8080`.
 stub-provider *args:
     {{dev_shell}} python3 scripts/stub-provider.py {{args}}
-
-# -- everything automated -- --------------------------------------------------
 
 # What to run before pushing: the CI set plus the generated-workspace guard.
 check: check-cli-workspace clippy test check-headless

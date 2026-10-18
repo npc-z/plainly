@@ -2,16 +2,13 @@
 //!
 //! Three facts and no more: which provider answered, which model, and whether
 //! that model is on this machine. The third is the one that changes what the text
-//! is worth — a local 4B model is measurably "good enough but not to be trusted
-//! unconditionally" (spec's Further Notes) — so it is not decoration beside the
-//! name, it is half of the chip (spec §12, §7).
+//! is worth, so it is half of the chip rather than decoration beside the name.
 //!
 //! The value is built where the run is, not where the chip is drawn: the worker
-//! thread is the one holding the `ProviderSetup` the request actually went to, and
-//! deriving "local" again in the panel from the provider's *name* would answer a
-//! different question — an `ollama` pointed at another host, or a custom name
-//! pointed at `127.0.0.1`, is exactly the pair of cases where the name lies
-//! (spec §6, §12).
+//! thread holds the `ProviderSetup` the request actually went to, and deriving
+//! "local" again in the panel from the provider's *name* would answer a different
+//! question — an `ollama` pointed at another host, or a custom name pointed at
+//! `127.0.0.1`, is exactly the pair of cases where the name lies.
 
 use plainly_core::Artifact;
 
@@ -56,9 +53,8 @@ mod tests {
         support::artifact("The manager had gone to ground.", "ollama", "llama3.2")
     }
 
-    /// The name in the chip is the Artifact's, not the current provider's: a
-    /// cached answer was written by whatever answered then, and saying otherwise
-    /// would misattribute it.
+    /// A cached answer keeps the provider that wrote it, not the one configured
+    /// now: saying otherwise would misattribute it.
     #[test]
     fn the_chip_names_the_provider_the_artifact_was_written_by() {
         let provenance = Provenance::of(&artifact(), true);

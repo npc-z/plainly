@@ -9,7 +9,7 @@
 //! The modules are split by the question each one answers, which is also what
 //! makes the panel testable at all: `state.rs` is what it is showing, `position.rs`
 //! is where it goes, `prefs.rs` is what the configuration says, and `panel.rs` is
-//! the widgets that draw the answer. Tickets/15 is where that shape settled.
+//! the widgets that draw the answer.
 
 mod app;
 mod capability;
@@ -32,8 +32,8 @@ mod worker;
 use gtk::glib;
 
 /// The one way the panel is started: the compositor's keybinding asks for the
-/// clipboard (spec §12). There is no other input, so anything else is a mistake
-/// in the asking rather than a mode to guess at.
+/// clipboard. There is no other input, so anything else is a mistake in the
+/// asking rather than a mode to guess at.
 const CLIPBOARD: &str = "--clipboard";
 
 fn main() -> glib::ExitCode {

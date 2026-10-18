@@ -1,24 +1,22 @@
 //! What the desktop session can do, decided from data the platform observed.
 //!
-//! This is not the provider probe of [`crate::probe`]. That one asks what an
-//! endpoint takes; this one asks what the *compositor* takes, and its answer
-//! decides the panel's shape (spec §12, issues/07). Keeping the two apart is
-//! deliberate: they answer different questions and neither should be read as
+//! This is not the endpoint probe of [`crate::probe`]: that one asks what an
+//! endpoint takes and this one asks what the compositor takes. Neither answer is
 //! evidence about the other.
 //!
-//! The probe has to drive behaviour rather than be written to a log. On GNOME,
-//! Mutter implements neither data-control nor layer-shell, so the panel can only
-//! be a normal window that takes focus — and once it has focus, GTK's own
-//! clipboard works. The two degradations are one degradation, and
-//! [`Desktop::presentation`] is where that is decided.
+//! The answer decides the panel's shape (spec §12). On GNOME, Mutter implements
+//! neither data-control nor layer-shell, so the panel can only be a normal window
+//! that takes focus, and once it has focus GTK's own clipboard works. The two
+//! degradations are one degradation, and [`Desktop::presentation`] is where that
+//! is decided.
 
 use std::collections::BTreeSet;
 
 /// The protocols that let a client read the clipboard without taking focus.
 ///
-/// `ext_data_control_manager_v1` is the standardised spelling (wayland-protocols
-/// 1.39) and `zwlr_data_control_manager_v1` the wlroots one before it; a session
-/// may publish either. Which one a compositor has decides whether the panel can
+/// `ext_data_control_manager_v1` is the standardised spelling and
+/// `zwlr_data_control_manager_v1` the wlroots one before it. A session publishes
+/// one or the other, and which one it publishes decides whether the panel can
 /// stay focusless (spec §12).
 pub const DATA_CONTROL: [&str; 2] = [
     "ext_data_control_manager_v1",
@@ -53,9 +51,9 @@ impl Desktop {
 
     /// Whether the clipboard can be read without taking focus.
     ///
-    /// This is the fact behind two decisions: the panel's shape, and whether the
-    /// "explain on copy" switch can be offered at all (spec §12, §13). A switch
-    /// that cannot work is disabled and explained, never hidden.
+    /// It decides the panel's shape and whether the "explain on copy" switch can
+    /// be offered at all (spec §12, §13). A switch that cannot work is disabled
+    /// and explained, never hidden.
     pub fn data_control(&self) -> bool {
         DATA_CONTROL
             .iter()

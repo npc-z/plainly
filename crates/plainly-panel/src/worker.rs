@@ -1,12 +1,11 @@
 //! Running the Passages, off the main loop.
 //!
-//! One thread may touch GTK widgets, so the run happens on another. What is left
-//! here is the thread, the channel, the events, and the mapping from a
+//! Only the main thread may touch GTK widgets, so the run happens on another. What
+//! is left here is the thread, the channel, the events, and the mapping from a
 //! [`Turn`](plainly_core::Turn) to a chunk: everything a run needs — the paths,
 //! the configuration, the provider, the credential, the prompt, the history store
 //! (which is also the cache), the capability cache and the instant — is opened by
-//! [`plainly_core::Runner`] and owned by it (ADR 0003). The panel cannot drift
-//! from the CLI's run again because it no longer assembles a run of its own.
+//! [`plainly_core::Runner`] and owned by it (ADR 0003).
 
 use async_channel::Sender;
 use plainly_core::{
@@ -22,8 +21,8 @@ use crate::strings;
 /// This is core's value rather than a second copy of it: the runner decides what
 /// a `Reuse` or a `Bypass` means, and the panel only chooses which one a press
 /// asks for (`prefs::regenerate_recall`). A key press reuses the cache and the
-/// configured provider; ⟳ bypasses the cache — optionally on the cloud provider
-/// the note under a local model promises (spec §12).
+/// configured provider; ⟳ bypasses the cache, optionally on the cloud provider
+/// the note under a local model promises.
 pub use plainly_core::Recall;
 
 /// What came of one Passage.
@@ -95,8 +94,8 @@ fn run(passages: &[String], recall: Recall, send: &dyn Fn(Event)) -> Result<(), 
     // A Passage that repeats in one trigger is the same question — the Lookup
     // Key is over the Passage and this run's own settings — so it is asked once,
     // and every later occurrence shows the answer the first one got. That is the
-    // surface's dedup, by the same key rule the CLI plans a batch with (spec
-    // §3); the runner still owns exactly one Passage per call.
+    // surface's dedup, by the same key rule the CLI plans a batch with; the
+    // runner still owns exactly one Passage per call.
     let keys: Vec<LookupKey> = passages
         .iter()
         .map(|passage| runner.lookup(passage))
@@ -128,9 +127,9 @@ fn run(passages: &[String], recall: Recall, send: &dyn Fn(Event)) -> Result<(), 
                         // already paid for.
                         warnings: turn.notices.iter().map(strings::turn_notice).collect(),
                     },
-                    // The probe / retry / downgrade path gave up: the same
-                    // sentence the panel has always shown, plus the "nothing was
-                    // stored" line the rendering adds.
+                    // The probe / retry / downgrade path gave up: the chunk fails
+                    // with the reason, and the rendering adds "nothing was
+                    // stored".
                     Err(TurnFailure::Run(failure)) => Outcome::Failed(describe(&failure.failure)),
                     // A `Bypass` provider the panel named could not be used. The
                     // turn is the failure, not the click, so the chunk says which

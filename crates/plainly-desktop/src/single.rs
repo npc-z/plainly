@@ -1,39 +1,32 @@
 //! One main window per session, and what a second launch does about it.
 //!
-//! The panel opens this window (⤢), and a key binding can be pressed twice
-//! before a person looks up. Two windows would then be two views of one store,
-//! two searches, and one of them behind the other — so the second
-//! `plainly-desktop` asks the first to come forward and exits (spec §13).
+//! Two windows would be two views of one store, two searches, and one behind the
+//! other, so the second `plainly-desktop` asks the first to come forward and exits
+//! (spec §13).
 //!
-//! The spec names `tauri-plugin-single-instance` for this, which does it over
-//! D-Bus. That plugin is not reachable from this machine — there is no route to
-//! crates.io here — and the handover it performs is small enough to speak
-//! directly: a **lock file** in the session's runtime directory decides who is
-//! the window, and the one who is listens on a socket beside it for `activate`.
+//! The spec names `tauri-plugin-single-instance`, which does this over D-Bus. That
+//! plugin is not reachable from this machine (there is no route to crates.io), and
+//! the handover is small enough to speak directly: a **lock file** in the session's
+//! runtime directory decides who is the window, and that window listens on a
+//! socket beside it for `activate`.
 //!
-//! The lock is an `flock`, and that choice is the whole design:
+//! The lock is an `flock`, and that choice is the design:
 //!
 //! - **It needs no cleanup.** The kernel releases an `flock` when the process
-//!   dies, however it dies — a `SIGKILL`, a panic, a logout. There is no stale
-//!   state to detect and none to remove, which is the failure a lock file
-//!   otherwise always has.
+//!   dies, however it dies, so there is no stale state to detect or remove.
 //! - **It cannot be raced.** Deciding who is the window is one atomic
-//!   `flock(LOCK_EX | LOCK_NB)`, not "look at the socket file, then bind it".
-//!   The check-then-act version has a window between the two steps in which a
-//!   second launch can decide the same thing, and two windows is exactly what
-//!   this module exists to prevent.
-//! - **The lock is never unlinked, and the socket file is.** The two files are
-//!   treated differently because they are different things: an `flock` lives in
-//!   the kernel and only needs a path to be found at, while a socket file a dead
-//!   window left behind *cannot* be rebound — the kernel answers `EADDRINUSE` for
-//!   a socket inode, listener or not — so whoever takes the lock clears it and
-//!   binds a fresh one. That removal is safe for exactly one reason: the lock has
-//!   already said there is only one window, so nobody else can be at that line.
+//!   `flock(LOCK_EX | LOCK_NB)`, not "look at the socket file, then bind it". The
+//!   check-then-act version has a window in which a second launch can decide the
+//!   same thing.
+//! - **The lock is never unlinked, and the socket file is.** An `flock` needs only
+//!   a path to be found at, while a socket file a dead window left behind cannot
+//!   be rebound (the kernel answers `EADDRINUSE` for a socket inode), so whoever
+//!   takes the lock clears it and binds a fresh one. That removal is safe because
+//!   the lock has already said there is only one window.
 //!
-//! The lock and the socket are two files for two jobs: the lock says *who* is
-//! the window, the socket is *how* a second launch talks to them. Losing the
-//! socket (a window that died between taking the lock and binding) costs the
-//! handover of one launch, not the single-instance guarantee.
+//! The lock says *who* is the window and the socket is *how* a second launch talks
+//! to them. Losing the socket costs the handover of one launch, not the
+//! single-instance guarantee.
 
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
@@ -58,13 +51,10 @@ const ACTIVATE: &str = "activate";
 
 /// What a launch asks the window that already holds the lock to do.
 ///
-/// One sentence with two parts, because the second one is the only thing a
-/// window needs to know about a listener: whether this launch is one. A launch
-/// that is not tells the running listener to stop — the two requests "show me the
-/// window" and "keep watching for copies" are different, and a process cannot be
-/// both unless it was asked to be. `--nowatch` is how that is spelled **on the
-/// wire**; there is no such command-line flag, because "I did not type `--watch`"
-/// is not something a launch has to say twice.
+/// The bool is the only thing a window needs to know about a launch's listener: a
+/// launch that is not `--watch` tells the running listener to stop. `--nowatch` is
+/// how that is spelled **on the wire**. There is no such command-line flag,
+/// because "I did not type `--watch`" is not something a launch has to say twice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Activation {
     /// Whether the launch that sent this is `--watch`.
@@ -74,9 +64,8 @@ pub struct Activation {
 impl Activation {
     /// What this launch says about itself.
     ///
-    /// A plain `plainly-desktop` — the panel's ⤢, a desktop shortcut — is not a
-    /// watcher, and says so. That is the safe direction: only a launch that was
-    /// asked for the listener may keep one alive.
+    /// A plain `plainly-desktop` (`⤢`, a desktop shortcut) is not a watcher, and
+    /// says so: only a launch that was asked for the listener may keep one alive.
     pub fn of(watch: bool) -> Self {
         Self { watch }
     }
@@ -94,14 +83,11 @@ impl Activation {
 
     /// The same, back from the socket.
     ///
-    /// A request this process does not understand is still an activation. The
-    /// one thing every launch agrees on is bringing the window forward, and
-    /// refusing to act on a garbled line would leave a person pressing a
-    /// shortcut that does nothing at all. The only part that is guessed is
-    /// whether the sender is a watcher, and the safe guess for that is "no":
-    /// only a launch that actually asked to listen may keep a listener alive.
-    /// A line that is not an activation at all is `None`, because there is
-    /// nothing to bring forward for it either.
+    /// A request this process does not understand is still an activation: bringing
+    /// the window forward is what every launch agrees on, and refusing a garbled
+    /// line would leave a person pressing a shortcut that does nothing. The only
+    /// guessed part is whether the sender is a watcher, and the safe guess for
+    /// that is "no". A line that is not an activation at all is `None`.
     fn parse(line: &str) -> Option<Self> {
         let mut words = line.split_whitespace();
 
@@ -122,12 +108,11 @@ impl Activation {
 /// How long a launch keeps trying to reach a window that holds the lock, and how
 /// long it waits between tries.
 ///
-/// The window that holds the lock may still be starting: it takes the lock
-/// before it binds the socket, so for that moment it is the window with nobody
-/// listening — and the work between those two points is opening the history
-/// store and building a webview, which on a cold, loaded machine is seconds
-/// rather than milliseconds. A launch that gave up early would look to a person
-/// like the shortcut did nothing, so the budget is generous: five seconds.
+/// The holder takes the lock before it binds the socket, so for that moment it is
+/// a window with nobody listening, and the work between the two is opening the
+/// history store and building a webview, which on a cold, loaded machine is
+/// seconds. A launch that gave up early would look to a person like the shortcut
+/// did nothing, so the budget is generous: five seconds.
 const HANDOVER_TRIES: usize = 100;
 const HANDOVER_WAIT: Duration = Duration::from_millis(50);
 
@@ -142,10 +127,10 @@ pub enum Role {
 
 /// Take the window's lock, or hand this launch to the instance that has it.
 ///
-/// `activate` is called on every request to come forward — the first launch
-/// included, so that "it just opened" and "it was already open" are one path
-/// rather than two. It is called from the listener thread, so what travels on
-/// that channel has to be something the main loop can act on from there.
+/// `activate` is called on every request to come forward, the first launch
+/// included, so that "it just opened" and "it was already open" are one path. It
+/// is called from the listener thread, so what travels on that channel has to be
+/// something the main loop can act on from there.
 pub fn claim(activate: Sender<Activation>, watch: bool) -> Result<Role, String> {
     let paths = Paths::resolve()?;
 
@@ -192,9 +177,9 @@ struct Paths {
 impl Paths {
     /// Where this session's lock and socket live.
     ///
-    /// `$XDG_RUNTIME_DIR` when the session published one — `/run/user/<uid>`:
-    /// private to the user, on a local filesystem, and removed by the session on
-    /// logout. The system temporary directory is the fallback, and there the
+    /// `$XDG_RUNTIME_DIR` when the session published one (`/run/user/<uid>`:
+    /// private to the user, on a local filesystem, removed by the session on
+    /// logout). The system temporary directory is the fallback, and there the
     /// names carry the user id, because `/tmp` is shared.
     fn resolve() -> Result<Self, String> {
         Self::resolve_in(std::env::var_os("XDG_RUNTIME_DIR").as_deref())
@@ -202,11 +187,11 @@ impl Paths {
 
     /// The same, from a runtime directory given as data.
     ///
-    /// The directory is an argument rather than read here, for the reason
+    /// The directory is an argument rather than read here for the reason
     /// [`plainly_core::Paths`] takes its environment as data: an environment read
-    /// is process-wide, and a test that changed it to check the fallback would be
-    /// changing it under every other test in the binary. [`Paths::resolve`] is
-    /// the one place that reads the process environment.
+    /// is process-wide, and a test that changed it would change it under every
+    /// other test in the binary. [`Paths::resolve`] is the one place that reads
+    /// the process environment.
     fn resolve_in(runtime: Option<&std::ffi::OsStr>) -> Result<Self, String> {
         let directory = match runtime.filter(|value| !value.is_empty()) {
             Some(dir) => {
@@ -246,8 +231,8 @@ enum Hold {
 ///
 /// `flock(LOCK_EX | LOCK_NB)`: the first process gets it, every other process
 /// gets `EWOULDBLOCK`, and the kernel gives it back when the holder dies. That
-/// last part is why there is no staleness question here — which is the whole
-/// reason this is a lock and not a "is there a socket file" check.
+/// last part is why there is no staleness question here, which is the whole
+/// reason this is a lock and not an "is there a socket file" check.
 fn hold(path: &Path) -> Result<Hold, String> {
     let file = OpenOptions::new()
         .create(true)
@@ -274,16 +259,14 @@ fn hold(path: &Path) -> Result<Hold, String> {
 
 /// Bind the socket a second launch reaches the window on.
 ///
-/// A socket file an earlier window left is **cleared**, because there is no
-/// other way to use the path: the kernel refuses to bind a socket *inode* a
-/// second time, listener or not. That removal is safe for one reason and it is
-/// worth being precise about — the caller has already taken the lock, so no
-/// other process can be at this line, and the path is this window's to use.
+/// A socket file an earlier window left is **cleared**, because the kernel refuses
+/// to bind a socket *inode* a second time, listener or not. That removal is safe
+/// because the caller has already taken the lock, so no other process can be at
+/// this line and the path is this window's to use.
 ///
-/// It is also why the lock and not the socket is what decides who is the window.
-/// "Is there a socket here, and can I bind it?" is a check whose answer can
-/// change between the two halves, and two windows is what this module exists to
-/// prevent.
+/// It is also why the lock rather than the socket decides who is the window: "is
+/// there a socket here, and can I bind it?" is a check whose answer can change
+/// between the two halves.
 fn bind(path: &Path) -> Result<UnixListener, String> {
     match UnixListener::bind(path) {
         Ok(listener) => Ok(listener),
@@ -316,7 +299,7 @@ fn listen(listener: UnixListener, activate: Sender<Activation>) {
 /// Tried more than once because the holder takes the lock before it binds: a
 /// launch that arrived in between would otherwise give up on a window that is
 /// about to be listening, and from a key binding that looks like nothing
-/// happening at all.
+/// happening.
 fn hand_over(path: &Path, activation: Activation) -> Result<(), String> {
     let mut last = String::new();
 
@@ -344,8 +327,8 @@ fn hand_over(path: &Path, activation: Activation) -> Result<(), String> {
 /// The user id, read from the process's own credentials.
 ///
 /// `std::os::unix::fs::MetadataExt` would want a file to look at; the process's
-/// uid is what the name needs, and this is the one syscall that answers it
-/// without a dependency.
+/// uid is what the name needs, and this is the one syscall that answers it without
+/// a dependency.
 fn user_id() -> u32 {
     // SAFETY: `getuid` cannot fail and takes no arguments; it reports the calling
     // process's own credentials.
@@ -361,11 +344,9 @@ mod tests {
     /// A directory of this test's own, so that two tests running at once cannot
     /// take each other's window.
     ///
-    /// Short on purpose: a Unix socket path has to fit in `sun_path` (108 bytes
-    /// on Linux), and the test's temporary directory is already most of that on
-    /// some machines — the first version of this test failed with "path must be
-    /// shorter than SUN_LEN", which is a fact about the environment rather than
-    /// about the code under test.
+    /// Short on purpose: a Unix socket path has to fit in `sun_path` (108 bytes on
+    /// Linux), and the test's temporary directory is already most of that on some
+    /// machines.
     fn temp_dir(label: &str) -> PathBuf {
         let path = std::env::temp_dir().join(format!(
             "pd-{label}-{}",
@@ -403,8 +384,7 @@ mod tests {
     fn the_fallback_names_this_user() {
         // The runtime directory a session with a compositor has is already
         // private to the user; `/tmp`, the fallback, is not, so the names have to
-        // carry the id. An empty value counts as unset, as it does everywhere
-        // else in Plainly's paths.
+        // carry the id. An empty value counts as unset.
         let uid = unsafe { libc::getuid() }.to_string();
         for absent in [None, Some(OsStr::new(""))] {
             let paths = Paths::resolve_in(absent).expect("the fallback resolves");

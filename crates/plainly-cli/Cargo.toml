@@ -17,9 +17,9 @@ clap.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
-# Pre-creates the history with a trigger that refuses every write, for the
-# store-write-failure test; test-only, so the binary's normal dependency
-# closure (and the headless check) is unchanged.
+# Pre-creates a history whose trigger refuses every write, for the
+# store-write-failure test. Test-only, so the binary's dependency closure and
+# the headless check are unaffected.
 rusqlite.workspace = true
-# Parses the built binary to read its DT_NEEDED list; test-only.
+# Parses the built binary to read its DT_NEEDED list. Test-only.
 object.workspace = true

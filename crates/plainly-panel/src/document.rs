@@ -5,7 +5,7 @@
 //! the same list rendered as text for 复制. Both go through
 //! [`plainly_core::render::sections`] — the section list, the order, and the two
 //! "nothing here" sentences are the renderer's, and a second renderer in the panel
-//! would be a second set of rules to keep in step (tickets/15, ADR-0005).
+//! would be a second set of rules to keep in step.
 //!
 //! They live together because they must agree: 复制 copies what is on screen, and
 //! the surest way for two renderings to disagree is for them to be built in two
@@ -13,7 +13,7 @@
 //!
 //! The passage is included, though the panel also shows it: a copied Explanation
 //! that did not carry the text it explains would leave the reader without the
-//! authority the Explanation is checked against (spec §12).
+//! authority the Explanation is checked against.
 
 use plainly_core::Artifact;
 use plainly_core::render;
@@ -24,8 +24,7 @@ use crate::strings;
 /// The sections of one Explanation, with the person's own switches applied.
 ///
 /// `app.show_*` has to mean something here for the settings screen to be telling
-/// the truth about it (tickets/09 wrote the switches; tickets/15 made them work).
-/// The empty-key-help decision is core's and is reached through
+/// the truth about it. The empty-key-help decision is core's and is reached through
 /// [`plainly_core::render::sections`]; this only removes what the person switched
 /// off, so there is still exactly one renderer.
 ///
@@ -50,11 +49,8 @@ pub fn sections(artifact: &Artifact, prefs: &Prefs) -> Vec<render::Section> {
 /// The markdown of one answered Passage, with the person's section switches
 /// applied.
 ///
-/// Through [`sections`] rather than calling the renderer directly, so the copied
-/// text contains exactly what the panel is showing. That is the whole promise of
-/// 复制 — you copy what you are looking at — and it is also what keeps the two
-/// surfaces from disagreeing about `app.show_*`: a copy that carried a section the
-/// panel hides would be text the person never read.
+/// Through [`sections`] rather than calling the renderer directly, so the copy
+/// carries exactly what the panel is showing, switches included.
 pub fn markdown(artifact: &Artifact, prefs: &Prefs) -> String {
     render::render_with(crate::strings::section, sections(artifact, prefs))
         // The document form ends in one newline; text on a clipboard does not need
@@ -66,8 +62,7 @@ pub fn markdown(artifact: &Artifact, prefs: &Prefs) -> String {
 /// Several answered Passages as one text, in the order they were explained.
 ///
 /// Joined with a blank line and nothing else: the sections are already separated,
-/// and a rule between Passages would be a distinction the panel itself does not
-/// draw — the stack is one panel's worth of content, not a document with parts.
+/// and a rule between Passages would be a distinction the panel does not draw.
 pub fn markdown_many(artifacts: &[&Artifact], prefs: &Prefs) -> String {
     artifacts
         .iter()

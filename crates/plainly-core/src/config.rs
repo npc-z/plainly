@@ -1,24 +1,22 @@
 //! The configuration file: a hand-editable TOML document with three sections.
 //!
-//! Three things matter here, and all three are decisions rather than
+//! Four things matter here, and all four are decisions rather than
 //! implementation details:
 //!
 //! - **The file is the user's.** It is read as a TOML *document*, so comments,
 //!   key order and keys this version does not know about survive a `set`.
-//!   Unknown keys parse fine (no `deny_unknown_fields`) precisely so a file
-//!   written by a newer Plainly does not break an older one.
+//!   Unknown keys parse fine, which is what lets a file written by a newer
+//!   Plainly load in an older one.
 //! - **Writes are atomic.** A temporary file in the same directory plus a
 //!   rename, because the CLI and the desktop app both write this file.
 //! - **External edits are detected, not overwritten.** A [`ConfigFile`]
-//!   remembers the bytes it read; if the file on disk has changed by the time
-//!   `save` runs, the save is refused rather than silently clobbering the
-//!   other writer's work.
+//!   remembers the bytes it read, and `save` refuses to clobber a file that
+//!   changed since.
 //! - **Writes are strict, reads are tolerant.** [`ConfigFile::set`] refuses a
 //!   numeric value outside the range its key declares, while [`Config::parse`]
-//!   keeps taking any `u32`. A hand-edited file must always
-//!   open: a panel that cannot appear, or cannot close, is worse than one
-//!   holding the wrong number. The panel clamps and the settings screen shows
-//!   the file as written; the strictness lives on the way in.
+//!   keeps taking any `u32`. A hand-edited file must always open, because a
+//!   panel that cannot appear or cannot close is worse than one holding the
+//!   wrong number.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -34,11 +32,9 @@ use toml_edit::{DocumentMut, Item, Table, Value};
 /// default, and the comments that explain it.
 pub const DEFAULT_CONFIG: &str = include_str!("default_config.toml");
 
-// The legal numeric ranges, written as `(min, max)` inclusive. They used to
-// live in the settings screen (which refuses outside them) and in the panel
-// (which clamps and falls back). They live here now because the file is the one
-// place all three surfaces agree on, and a write is where "which values are
-// legal" has to have an owner.
+// The legal numeric ranges, written as `(min, max)` inclusive. They live here
+// because the file is the one place all surfaces agree on, and a write is where
+// "which values are legal" needs an owner.
 
 /// The seconds an auto-dismiss duration may take.
 pub const AUTO_HIDE_RANGE: (u32, u32) = (5, 300);
@@ -49,14 +45,12 @@ pub const PANEL_WIDTH_RANGE: (u32, u32) = (320, 900);
 /// The panel heights a write accepts, in pixels.
 pub const PANEL_HEIGHT_RANGE: (u32, u32) = (240, 1200);
 
-/// The learner's reading level on the A1–C1 scale. It sets the vocabulary and
-/// how much syntax the Explanation may keep.
+/// The learner's reading level on the A1–C1 scale.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Serialize, Deserialize)]
 pub enum Level {
     A1,
     A2,
-    /// B2 sits in the middle of the scale, and it is the level the prompt
-    /// calibration was measured against.
+    /// The default, because the prompt calibration was measured against B2.
     #[default]
     B2,
     C1,
@@ -168,9 +162,9 @@ impl FromStr for PanelCorner {
     }
 }
 
-/// The user's choice of reasoning mode. `unsupported` is not a setting — it is
-/// what a capability probe can report about a provider, and it lives in the
-/// probe cache rather than here.
+/// The user's choice of reasoning mode. `unsupported` is not a setting. It is
+/// what a capability probe can report about a provider, and it lives in the probe
+/// cache rather than here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Thinking {
@@ -219,7 +213,7 @@ pub struct App {
     pub panel_display: String,
     /// How wide the panel is, in pixels.
     pub panel_width: u32,
-    /// How tall the panel may become, in pixels — including its title bar and the
+    /// How tall the panel may become, in pixels, including its title bar and the
     /// note under the content.
     ///
     /// A ceiling rather than a size: a short Explanation still gets a short panel,
@@ -245,9 +239,8 @@ impl Default for App {
             show_translation: true,
             panel_corner: PanelCorner::default(),
             panel_display: "current".to_string(),
-            // The panel's own width (spec §12: about 470px), and a ceiling of the
-            // same size: on a 1080p screen that is the third of the height the
-            // panel used to take, and it says what it means rather than leaving
+            // The panel's own width (spec §12: about 470px) and a ceiling of the
+            // same size. A fixed number says what it means rather than leaving
             // the panel's size to a share of a screen it cannot see.
             panel_width: 470,
             panel_height: 470,
@@ -261,10 +254,8 @@ impl Default for App {
 /// One `[providers.<name>]` table: how Plainly talks to one provider. Anything
 /// left out falls back to the shipped preset for that name.
 ///
-/// It is a *profile* rather than a `Provider` because `Provider` is the runtime
-/// seam ([`crate::provider::Provider`]). Together with the table's name it is the
-/// provider profile the Lookup Key is made of (spec §9): which provider, which
-/// model and thinking on or off are what make two answers interchangeable.
+/// It is a *profile* rather than a `Provider`, which is the runtime seam
+/// ([`crate::provider::Provider`]).
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ProviderProfile {
@@ -276,26 +267,15 @@ pub struct ProviderProfile {
 }
 
 /// The `[prompts]` section: prompt *data* the user owns. The shipped default
-/// prompt is not here — it travels with the application so that upstream
-/// improvements reach the user — and neither is `prompt_version`, which is
-/// derived from the content that is in effect.
-///
-/// The appendix is only ever *appended* to the factory prompt: nothing here
-/// replaces or removes a rule of the factory text, and that is deliberate. The
-/// factory rules are what keep two people's histories comparable, so a user who
-/// wants to counteract one writes the opposite rule after it instead. The
-/// capability that weakness costs is recorded in the spec rather than hidden.
-/// (The descriptor table below is a different thing: it is prompt data the user
-/// may reword, and rewording it changes the version.)
+/// prompt is not here, because it travels with the application so that upstream
+/// improvements reach the user. Neither is `prompt_version`, which is derived
+/// from the content in effect.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Prompts {
     pub appendix: String,
     /// The meaning handed to the model beside a level label, per level. A level
-    /// left out, or set to an empty string, uses the shipped wording. This is
-    /// prompt data rather than a setting: it is part of what `prompt_version`
-    /// hashes, so changing a descriptor cannot silently reuse a stored
-    /// Explanation generated under the old wording.
+    /// left out, or set to an empty string, uses the shipped wording.
     pub level_descriptors: BTreeMap<String, String>,
 }
 
@@ -317,8 +297,8 @@ impl Config {
         })
     }
 
-    /// The effective configuration as TOML, with every default filled in. Used
-    /// by `plainly config show`; comments live in the file, not here.
+    /// The effective configuration as TOML, with every default filled in.
+    /// Comments live in the file, not here.
     pub fn to_toml(&self) -> Result<String, ConfigError> {
         let invalid = |source: toml_edit::ser::Error| ConfigError::Invalid {
             message: source.to_string(),
@@ -361,7 +341,7 @@ pub enum ConfigError {
     #[error("{key}: {message}")]
     Value { key: String, message: String },
     /// A number outside the range its key accepts. The four facts are carried
-    /// separately so a surface can render its own sentence around them; the CLI
+    /// separately so a surface can render its own sentence around them. The CLI
     /// prints this one, which names the range so the user need not look it up.
     #[error("{key}: expected a value in {min}..={max}, got {value}")]
     OutOfRange {
@@ -452,8 +432,8 @@ impl ConfigFile {
     /// Set one dotted key, coercing the value according to that key's type.
     ///
     /// The document is edited in a copy and only adopted once the result parses,
-    /// so a rejected value leaves the handle — and therefore the file — exactly
-    /// as it was.
+    /// so a rejected value leaves the handle, and therefore the file, exactly as
+    /// it was.
     pub fn set(&mut self, key: &str, raw: &str) -> Result<(), ConfigError> {
         let spec = KeySpec::parse(key)?;
         let value = spec.coerce(key, raw)?;
@@ -592,8 +572,6 @@ impl KeySpec {
         };
 
         Ok(Self {
-            // The dotted key is the document path: `providers.deepseek.endpoint`
-            // lives at `[providers.deepseek]` under `endpoint`.
             path: key.split('.').map(str::to_string).collect(),
             kind,
             range,
@@ -634,8 +612,8 @@ impl KeySpec {
                 })?;
                 if pixels == 0 {
                     // Zero comes first, before the range: it is wrong for a
-                    // reason the range cannot express — the panel would be a
-                    // surface with nothing in it.
+                    // reason the range cannot express, because the panel would be
+                    // a surface with nothing in it.
                     return Err(invalid(
                         "a size of 0 is not a size: the panel would be invisible".to_string(),
                     ));

@@ -126,8 +126,6 @@ fn the_keyring_is_used_when_the_environment_is_silent() {
 
 #[test]
 fn a_working_keyring_without_an_entry_falls_through_to_session_memory() {
-    // A read-only collection: reads answer "no entry", writes are refused, so
-    // the key lands in memory and resolution must go looking for it there.
     let secrets = Secrets::with_stores(EnvSecrets::empty(), Some(FakeKeyring::read_only()));
     secrets.store("deepseek", "typed-just-now");
 
@@ -181,9 +179,6 @@ fn a_missing_key_resolves_to_nothing() {
     );
 }
 
-/// A store that cannot answer says so. Swallowing the failure would make
-/// "nowhere has a key" and "the keyring will not open" look identical to the
-/// caller, and those call for different things from the user.
 #[test]
 fn a_broken_keyring_is_reported_rather_than_skipped() {
     let secrets = Secrets::with_stores(EnvSecrets::empty(), Some(FakeKeyring::broken()));
@@ -199,8 +194,6 @@ fn a_broken_keyring_is_reported_rather_than_skipped() {
     );
 }
 
-/// An environment key still outranks a broken keyring: the tiers are asked in
-/// order, and the first answer wins.
 #[test]
 fn an_exported_key_is_found_before_the_keyring_is_consulted() {
     let secrets = Secrets::with_stores(
@@ -229,8 +222,6 @@ fn storing_a_key_prefers_the_keyring_and_reports_it() {
     );
 }
 
-/// With no keyring, the honest outcome is a warning that names the way to supply
-/// the key for this machine instead.
 #[test]
 fn storing_a_key_without_a_keyring_warns_and_names_the_environment_variable() {
     let secrets = Secrets::with_stores(EnvSecrets::empty(), None);
@@ -243,8 +234,6 @@ fn storing_a_key_without_a_keyring_warns_and_names_the_environment_variable() {
     assert!(warning.contains("PLAINLY_OPENAI_API_KEY"), "{warning}");
 }
 
-/// The keyring is skipped entirely when the environment says so — for headless
-/// machines where a D-Bus call would only fail.
 #[test]
 fn the_keyring_can_be_switched_off_from_the_environment() {
     let off = EnvSecrets::from_pairs([("PLAINLY_DISABLE_KEYRING", "1")]);
@@ -293,7 +282,6 @@ fn clearing_surfaces_a_broken_keyring_rather_than_pretending_it_worked() {
     assert!(secrets.clear("openai").is_err());
 }
 
-/// The session tier is real memory, not a no-op: what goes in comes back out.
 #[test]
 fn session_memory_holds_and_releases_keys() {
     let session = MemorySecrets::new();
@@ -306,9 +294,6 @@ fn session_memory_holds_and_releases_keys() {
     assert_eq!(session.get("openai"), Ok(None));
 }
 
-/// A keyring that is present but broken must be named, not flattened into "no
-/// keyring": a locked collection and a missing session bus send the user to
-/// different places.
 #[test]
 fn a_broken_keyring_travels_with_its_reason() {
     let secrets = Secrets::with_stores(EnvSecrets::empty(), Some(FakeKeyring::broken()));
@@ -322,8 +307,6 @@ fn a_broken_keyring_travels_with_its_reason() {
     assert!(warning.contains("PLAINLY_OPENAI_API_KEY"), "{warning}");
 }
 
-/// The precedence note asks the environment only: it must not touch the
-/// keyring, which is the tier that costs a D-Bus round trip.
 #[test]
 fn the_environment_check_ignores_the_other_tiers() {
     let secrets = Secrets::with_stores(
@@ -335,9 +318,6 @@ fn the_environment_check_ignores_the_other_tiers() {
     assert!(!secrets.environment_provides("deepseek"));
 }
 
-/// An environment value that is not valid UTF-8 cannot be a secret. Rewriting
-/// its bytes as U+FFFD would hand the provider a different key than the one that
-/// was exported, and the failure would surface later as a bare 401.
 #[cfg(unix)]
 #[test]
 fn a_non_utf8_environment_key_is_refused_rather_than_mangled() {
@@ -362,7 +342,5 @@ fn a_non_utf8_environment_key_is_refused_rather_than_mangled() {
             variable: "PLAINLY_OPENAI_API_KEY".to_string()
         }
     );
-    // The precedence note still sees that the variable is set, and says so,
-    // without pretending to know whether its value is usable.
     assert!(secrets.environment_provides("openai"));
 }

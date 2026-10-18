@@ -155,8 +155,8 @@ fn the_history_lists_records_newest_first_with_everything_a_row_shows() {
         newest.snippet,
         "The report stops short of apportioning blame."
     );
-    // A row that did not carry the prompt version would read as a duplicate of
-    // the same Passage under another prompt (ticket 09, spec §13).
+    // A row carries the prompt version so the same Passage under another prompt
+    // reads as two rows rather than a duplicate (spec §13).
     assert_eq!(newest.prompt_label, "v8-examples");
     assert_eq!(newest.prompt_short.len(), 8);
     assert!(newest.prompt_version.starts_with(&newest.prompt_short));
@@ -254,9 +254,8 @@ fn a_search_covers_the_english_fields_and_a_tag_narrows_it() {
 
 /// The Passage and Explanation a detail's sections carry.
 ///
-/// The detail no longer holds the Explanation as five flat fields (ticket 03);
-/// this reads it back through the section list, so the markdown comparison still
-/// checks the product rather than restating an internal shape.
+/// This reads the Explanation back through the section list, so the markdown
+/// comparison checks the product rather than restating an internal shape.
 fn explanation_of(detail: &DetailView) -> (String, Explanation) {
     let mut passage = String::new();
     let mut comprehensible = String::new();
@@ -343,8 +342,8 @@ fn the_detail_carries_the_five_sections_and_the_markdown_export_of_one_record() 
     );
     assert_eq!(detail.level, "B2");
     assert_eq!(detail.thinking, "off");
-    // The detail is the one place the whole hash can be read (ticket 14) — and
-    // the abbreviated form is the backend's, not the frontend's slice.
+    // The detail is the one place the whole hash can be read, and the abbreviated
+    // form is the backend's rather than the frontend's slice.
     assert_eq!(detail.prompt_version.len(), 64);
     assert_eq!(detail.prompt_short.len(), 8);
     assert!(detail.prompt_version.starts_with(&detail.prompt_short));
@@ -354,8 +353,6 @@ fn the_detail_carries_the_five_sections_and_the_markdown_export_of_one_record() 
         plainly_core::render::markdown(&passage, &explanation),
         "the detail's markdown is the one renderer's, not a second rendering"
     );
-    // The five sections, in the renderer's own markdown, with the Original
-    // first: what "复制 markdown" puts on the clipboard.
     assert!(detail.markdown.contains("### Original"));
     assert!(detail.markdown.contains("### Comprehensible English"));
     assert!(detail.markdown.contains("### Key Help"));
@@ -505,7 +502,6 @@ fn an_export_writes_one_file_and_says_where_it_landed() {
     assert!(std::path::Path::new(&single.path).exists());
     assert!(std::path::Path::new(&raw.path).exists());
 
-    // The single-record export has the one Record in it and not the other.
     let single_text = std::fs::read_to_string(&single.path).expect("the export is readable");
     assert!(single_text.contains("stops short"));
     assert!(!single_text.contains("bottled"));
@@ -583,7 +579,6 @@ fn settings_show_every_level_with_its_meaning() {
         );
         assert!(!option.overridden, "nothing has been reworded yet");
     }
-    // The meaning shown is the text actually sent, not a paraphrase of it.
     assert_eq!(
         settings.levels.options[2].meaning,
         plainly_core::Prompt::factory().descriptor(Level::B2)
@@ -1239,8 +1234,7 @@ fn a_settings_write_that_meets_someone_elses_edit_is_refused_and_leaves_nothing_
         "the refusal says what happened, in the interface's words: {reason}"
     );
 
-    // And the window is back in step with the file: it shows what is on disk,
-    // not the value it failed to write.
+    // And the window is back in step with the file.
     let settings = desktop.settings().expect("the settings read");
     assert_eq!(settings.levels.level, "A1");
 

@@ -13,17 +13,17 @@ path = "src/main.rs"
 [dependencies]
 plainly-core.workspace = true
 
-# GTK3 and the layer-shell protocol (tickets/02, 12).
+# GTK3 and the layer-shell protocol.
 gtk.workspace = true
 gtk-layer-shell.workspace = true
 
 # Reading the clipboard without a window: GTK's own API needs a focused surface,
-# which a `keyboard_mode=NONE` layer surface never has (spec §12, issues/07).
-# The fallback path — a focused window on a compositor without data-control —
-# uses GTK's clipboard instead.
+# which a `keyboard_mode=NONE` layer surface never has (spec §12). The fallback
+# path, a focused window on a compositor without data-control, uses GTK's
+# clipboard instead.
 wl-clipboard-rs.workspace = true
 
-# The compositor's registry, for the capability decision (tickets/12).
+# The compositor's registry, for the capability decision.
 wayland-client.workspace = true
 
 # The worker thread reporting back to the main loop: `glib`'s own channel is

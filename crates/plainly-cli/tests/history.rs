@@ -103,7 +103,7 @@ fn regenerate_asks_again_and_overwrites_the_same_record() {
     let id = only_id(&stdout(&listing));
 
     // Past the next second, so the two runs cannot share a `created_at` by
-    // accident — the point of the next assertion is that they do not.
+    // accident.
     std::thread::sleep(std::time::Duration::from_millis(1_100));
 
     let again = dir.plainly_with(
@@ -255,10 +255,7 @@ fn show_prints_the_five_sections_and_the_provenance() {
             "missing {heading} in:\n{product}"
         );
     }
-    // Provenance is human information, so it stays on stderr even here: stdout
-    // is the product, exactly as it is for `explain`. The show line carries the
-    // *whole* prompt hash — the listing abbreviates it, this is where a person
-    // reads it.
+    // The show line carries the *whole* prompt hash; the listing abbreviates it.
     let message = stderr(&shown);
     assert!(message.contains("stub/stub-model"), "{message}");
     assert!(message.contains(&prompt_version), "{message}");
@@ -300,10 +297,6 @@ fn showing_a_record_that_is_not_there_is_a_usage_error() {
     assert_eq!(stdout(&shown), "");
     assert!(stderr(&shown).contains('7'), "{}", stderr(&shown));
 }
-
-// ---------------------------------------------------------------------------
-// Search, tags, deletion and clearing
-// ---------------------------------------------------------------------------
 
 /// A second Passage, so a search or a tag filter has something to leave out.
 const SECOND: &str = "She was told to keep her cards close to her chest.";
@@ -542,8 +535,6 @@ fn clearing_takes_a_second_act() {
 
 #[test]
 fn a_tag_with_a_space_in_it_is_still_one_tag() {
-    // The help says to quote such a Tag, so the lines have to be able to say it
-    // back: `["to read"]` is one Tag, where `[to read]` would read as two.
     let (dir, id) = one_explained("history-tags-spaces");
 
     // Padded on purpose: the confirmation has to say what the history holds, not
@@ -571,10 +562,6 @@ fn a_tag_with_a_space_in_it_is_still_one_tag() {
         "the spaces inside a Tag are not separators"
     );
 }
-
-// ---------------------------------------------------------------------------
-// The two exports
-// ---------------------------------------------------------------------------
 
 #[test]
 fn export_writes_the_product_to_stdout_and_nothing_else() {

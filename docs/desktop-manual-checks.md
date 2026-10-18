@@ -9,7 +9,7 @@
 `cargo run -p plainly-desktop` 是**另一个**环境，只在改代码时用（见 `docs/manual-checks.md` §0）。
 
 主窗口**不运行 Passage**：解释一个 Passage 的语义（未入库仍保留答案、凭据 notice、一次触发里的
-重复 Passage 只问一次）现在由 CLI 与面板共用的 `plainly_core::Runner` 决定，手测项在
+重复 Passage 只问一次）由 CLI 与面板共用的 `plainly_core::Runner` 决定，手测项在
 [manual-checks.md](manual-checks.md) §1（1.23–1.24）与 §3（3.10），另外由 core 测试钉住。这份清单
 只管窗口自己的读写：例如下面那条「拒绝写入的记录不会出现在历史里」。
 
@@ -65,10 +65,9 @@
 - [ ] 行为：面板宽度与高度上限两个数字框默认 470/470，写的是 `app.panel_width` / `app.panel_height`；
       填 319、901、239、1201 会被拒绝并说明范围（范围来自 `settings::PANEL_WIDTH_RANGE` /
       `PANEL_HEIGHT_RANGE`，面板那侧各有一份同样的字面量，见 `panel::prefs`）。
-- [ ] 行为：这几组设置**真的驱动面板**（票据 15 之后面板每次触发重读 `[app]`）：改完角 / 自动消失 /
+- [ ] 行为：这几组设置**真的驱动面板**（面板每次触发重读 `[app]`）：改完角 / 自动消失 /
       宽高后再按一次键，面板落点、消失时间与尺寸跟着变——面板那一侧的清单在
-      [manual-checks.md](manual-checks.md) §1。曾经的「这些已经写进 `[app]`、但面板还没读」那句说明
-      已经删掉，因为字段本身没了。
+      [manual-checks.md](manual-checks.md) §1。
 - [ ] 被拒绝的改动（自动消失填 0、母语清空）：顶栏留下一条**中文**的「出错了：…」，控件回到文件里真正持有的值。
 - [ ] 「复制自动弹」在 niri（有 data-control）下可点，并在开关下面写明开启后由 `plainly-desktop --watch`
       持有监听、默认路径下没有常驻进程；在 GNOME 下**灰掉**并给出「需要 wlroots 类合成器的 data-control

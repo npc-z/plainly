@@ -1,8 +1,8 @@
 //! Where Plainly keeps its files.
 //!
 //! These paths mirror what Tauri's `appConfigDir`, `appDataDir` and
-//! `appCacheDir` resolve to, so the desktop crate can adopt them later without
-//! moving anyone's files.
+//! `appCacheDir` resolve to, so the desktop crate can use them without moving
+//! anyone's files.
 //!
 //! Resolution takes its inputs — the home directory and the environment — as
 //! data rather than reading the process environment itself. That keeps the

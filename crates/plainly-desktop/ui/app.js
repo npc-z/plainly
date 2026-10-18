@@ -4,15 +4,12 @@
  * word comes from the backend (`window`, `settings`, `strings`), and this file
  * decides only *how* they are drawn. It owns no sentence of its own — not even
  * a button label — because the interface's copy lives in one Rust module
- * (`strings.rs`) so that the interface can be translated without reading
- * JavaScript (spec §12).
+ * (`strings.rs`), so the interface can be translated without reading JavaScript
+ * (spec §12).
  *
  * The one thing it decides for itself is the local calendar: which rows belong
  * under 今天, which only the webview knows, because only it knows this machine's
  * offset from UTC.
- *
- * No framework and no bundler: the screen is a list and a form, and a build step
- * would be a second toolchain to keep working for it.
  */
 
 (() => {
@@ -103,18 +100,17 @@
 
   /** Keep 今天 / 昨天 honest in a window that stays open across midnight.
    *
-   *  The grouping is decided here from `app.now`, which arrived when the window
-   *  opened. A window left open overnight would otherwise file this morning's
-   *  records under yesterday — so the clock is refreshed whenever the list is
-   *  about to change, and a new `now` is what makes the grouping re-decide. */
+   *  The grouping is decided from `app.now`, which arrived when the window
+   *  opened, so a window left open overnight would file this morning's records
+   *  under yesterday. The clock is refreshed whenever the list is about to
+   *  change. */
   function refreshClock() {
     app.now = Math.floor(Date.now() / 1000);
   }
 
   /** The store is shared: the panel and the CLI write to it while this window
-   *  sits here, so coming back to the front is when the list is worth re-reading.
-   *  It is the same fact the store's WAL journal exists for (spec §9), and it is
-   *  why this window has no reason to own the data. */
+   *  sits here, so coming back to the front is when the list is worth
+   *  re-reading. */
   function watchForChanges() {
     window.addEventListener("focus", () => {
       reload().catch(() => {
@@ -151,9 +147,7 @@
 
   function renderShell() {
     // The grouping is the only thing in this window that depends on what day it
-    // is, and a window left open overnight would otherwise keep last night's
-    // 今天 / 昨天 boundary until the next search. Reading the clock on every
-    // render costs one `Date.now()` and removes the question.
+    // is, so the clock is read on every render.
     refreshClock();
 
     // Re-rendering the list replaces the search box, so the caret a person is
@@ -249,12 +243,10 @@
     return out.join("");
   }
 
-  /** One row: the Passage, then everything spec §13 says a row has to show —
-   *  provider, model, Level, the prompt version, the Tags and the moment. The
-   *  version is the one that matters most: without it, the same Passage under
-   *  two prompts reads as a duplicate. Thinking is not a row fact — it is two
-   *  of the same model's answers with different budgets, not two records — and
-   *  it is shown in the detail's provenance line instead. */
+  /** One row: the Passage, then what spec §13 says a row has to show. The prompt
+   *  version matters most: without it, the same Passage under two prompts reads
+   *  as a duplicate. Thinking is not a row fact, so it is shown in the detail's
+   *  provenance line instead. */
   function rowView(record) {
     const tags = record.tags.map((tag) => `<span class="tag" data-rowtag="${esc(tag)}">${esc(tag)}</span>`).join("");
     return `
@@ -273,8 +265,7 @@
   /* One section's body, drawn by the kind of value it holds: prose as it stands,
    * the sentence a surface says where the model left a section empty, and the
    * Key Help's Glosses as three blocks. Which sections exist, in what order, and
-   * whether an Example is there at all are the backend's decisions (ADR-0005);
-   * this only chooses the material for each kind. */
+   * whether an Example is there at all are the backend's decisions (ADR-0005). */
   function bodyView(section) {
     const body = section.body;
     if (body.type === "prose") return `<p class="prose">${esc(body.text)}</p>`;
@@ -296,8 +287,7 @@
 
   /* The detail card: the metadata the window draws around the Explanation, then
    * core's sections in the order it rendered them. The template holds no section
-   * list, no empty-section rule and no example rule — the five hard-coded
-   * sections this replaced were the last renderer outside core (ADR-0005). */
+   * list, no empty-section rule and no example rule (ADR-0005). */
   function detailView(record) {
     const t = app.strings;
     const sections = record.sections.map((section) => `
@@ -784,11 +774,9 @@
 
   /** Re-read everything the window shows.
    *
-   *  Used after the two actions that are not a settings patch — storing or
-   *  clearing a key, and the window coming back to the front — because both can
-   *  change more than the settings screen: storing the first key ends the first
-   *  run, and the History screen's whole point is that the panel and the CLI are
-   *  writing to the same store. */
+   *  Used after the two actions that are not a settings patch (storing or
+   *  clearing a key) and when the window comes back to the front, because both
+   *  can change more than the settings screen. */
   async function reload() {
     // A focus can arrive between the listener being bound and the first state
     // being adopted — the browser is free to deliver it whenever the window is
@@ -798,11 +786,9 @@
     const state = await call("window");
 
     // The screen is *not* adopted on every reload: the backend's answer is where
-    // the window should *open*, and the person may since have navigated — to
-    // Settings, or to another of its sections. The one thing that does move is
-    // the first-run boundary, in whichever direction it moved: leaving it is
-    // what storing the first key does, and that is a change of what the window
-    // should show rather than a navigation the person made.
+    // the window should *open*, and the person may since have navigated. The one
+    // thing that does move is the first-run boundary, in whichever direction it
+    // moved.
     if (app.settings.provider.first_run !== state.settings.provider.first_run) {
       app.screen = state.screen;
       app.settingsSection = state.settings_section;
@@ -811,14 +797,11 @@
     app.now = state.now;
     app.settings = state.settings;
 
-    // The list is re-read through the same search the list is already showing:
-    // the *window's* history is the whole history, and a window that had a query
-    // typed into it would lose it — and show more rows than it should — if the
-    // focus refresh ignored what the person had asked for.
-    //
-    // A Tag is sent only while the history still carries it: the Tag the filter
-    // is on can be taken off another surface, and re-sending it would pin the
-    // window to a filter nothing can satisfy, with only 全部 as a way out.
+    // The list is re-read through the same search the list is already showing,
+    // so a window with a query typed into it does not lose it and show more rows
+    // than it should. A Tag is sent only while the history still carries it: it
+    // can be taken off another surface, and re-sending it would pin the window to
+    // a filter nothing can satisfy, with only 全部 as a way out.
     const query = app.history.query;
     const tag = app.history.tag && state.history.tags.includes(app.history.tag)
       ? app.history.tag
@@ -844,10 +827,9 @@
   /* ── start ────────────────────────────────────────────────────────── */
 
   async function start() {
-    // The copy is fetched before anything else, and before the host is checked
-    // for: `strings` needs no window state, so a page opened outside the window
-    // can still be told in the interface's own words rather than in a sentence
-    // written here — this file's whole contract is that it owns none.
+    // The copy is fetched before the host is checked for: `strings` needs no
+    // window state, so a page opened outside the window can still be told in the
+    // interface's own words, and this file owns none.
     if (invoke) {
       const strings = await invoke("strings");
       app.strings = strings.window;
@@ -856,9 +838,8 @@
 
     if (!invoke) {
       // The one place with no reachable copy: `strings` is itself a command, and
-      // there is no host to ask. The sentence is the same one `strings.rs`
-      // carries for the case where the host is there but the call has not been
-      // made yet — `call` falls back to it below.
+      // there is no host to ask. The sentence is the same one `strings.rs` carries
+      // for the case where the host is there but the call has not been made yet.
       el("body").innerHTML = '<div class="detail"><p class="note">' +
         "这个页面运行在窗口之外：请用 plainly-desktop 打开。" + "</p></div>";
       return;

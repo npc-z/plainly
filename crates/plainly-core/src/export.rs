@@ -12,9 +12,8 @@
 //!   multi-line text in a single cell.
 //!
 //! Both are pure functions of `&[Record]`, and they keep the order they are
-//! handed — the caller decides whether that is the history's own order
-//! (`last_seen`, most recent first) or one Record (the detail view of
-//! tickets/14 exports a single Record through these same functions).
+//! handed. The caller decides whether that is the history's own order
+//! (`last_seen`, most recent first) or a single Record from the detail view.
 //!
 //! [`crate::render`] is the one renderer of an Explanation: the markdown export
 //! wraps it rather than drawing a second copy of the five sections.
@@ -64,9 +63,9 @@ pub fn markdown(records: &[Record]) -> String {
 /// The instant's one RFC 3339 shape starts with the date, so the date is the
 /// first ten characters of it rather than a second calendar implementation. It is
 /// the **UTC** date, which is the clock every other timestamp Plainly prints
-/// reads; the interface's today/yesterday grouping (tickets/14) reads the same
-/// instant in the reader's own zone, so the two differ only for Records made
-/// within the reader's offset of their midnight.
+/// reads; the interface's today/yesterday grouping reads the same instant in the
+/// reader's own zone, so the two differ only for Records made within the reader's
+/// offset of their midnight.
 fn day(at: Timestamp) -> String {
     at.to_rfc3339().chars().take(10).collect()
 }
@@ -143,9 +142,8 @@ pub fn raw_csv(records: &[Record]) -> String {
 ///
 /// The same three lines the document and the card draw, and deliberately without
 /// the document's block quote around the Example: a spreadsheet cell is not a
-/// document (see [`plainly_core::render`]), and a `>` in a data cell is noise. A
-/// Gloss with no Example — an old Record, or a model that left the field blank
-/// (ADR 0002) — is two lines. The Example's presence and text are settled by
+/// document (see [`crate::render`]), and a `>` in a data cell is noise. A Gloss
+/// with no Example is two lines. The Example's presence and text are settled by
 /// [`render::GlossView::of`], the same value the document and the card draw.
 fn glosses_text(explanation: &Explanation) -> String {
     explanation

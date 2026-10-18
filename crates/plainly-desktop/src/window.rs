@@ -1,26 +1,11 @@
 //! The process: one window, one socket, one listener, and the two commands that
 //! are not about the window's own state.
 //!
-//! Startup order matters here and is the whole point of this file:
-//!
-//! 1. the window's state is opened — the history store and the configuration —
-//!    because a failure there is something the window has to *show*, not
-//!    something to exit over;
-//! 2. the single-instance lock is claimed, and a second launch hands over and
-//!    stops here;
-//! 3. the listener is started, if this launch was asked for one;
-//! 4. the window is built and the socket begins to listen.
-//!
-//! (1) deliberately happens before (2), because between (2) and (3) this process
-//! is a window that nobody can reach: a second launch while the store is being
-//! opened would wait on a handover that is minutes away on a cold machine.
-//! Opening the store first costs a handed-over launch a little work it discards,
-//! and buys every handover a socket that is already there.
-//!
-//! The listener is started **before** the webview and on a thread of its own, so
-//! that a clipboard the session will not give up cannot hold the window back: a
-//! `--watch` launch is also a window, and a window that never opened because the
-//! clipboard was busy would be the worst of both.
+//! The startup order inside [`run`] is a constraint. The state opens before the
+//! single-instance lock, so a handover only reaches a process ready to answer it;
+//! the listener starts before the webview, so a clipboard the session will not
+//! give up cannot keep the window from opening, because a `--watch` launch is also
+//! a window.
 
 use std::path::PathBuf;
 use std::sync::mpsc;
@@ -64,26 +49,26 @@ pub enum Run {
 
 /// Give GDK the DPI it needs when the session does not supply one.
 ///
-/// WebKitGTK derives its device pixel ratio from GDK's screen resolution —
-/// multiplied by the GTK scale factor, over 96 — and `gdk_screen_get_resolution`
-/// answers `-1` when nothing provides one. An XSettings daemon is what normally
-/// provides one and a niri or sway session usually runs none, so on those
-/// sessions the ratio comes out at 1/48: the layout viewport becomes 96 times
-/// the window (1180×760 logical px laid out on a 113280×72960 CSS viewport), the
-/// `.win` column resolves to `height: 0`, and the interface is drawn into the
-/// window's top-left corner with the rest of it blank. Nothing the frontend can
-/// ask would recover from that — `100vh`, `devicePixelRatio` and every rect are
-/// wrong — so the missing DPI is supplied here instead.
+/// WebKitGTK derives its device pixel ratio from GDK's screen resolution,
+/// multiplied by the GTK scale factor and divided by 96, and
+/// `gdk_screen_get_resolution` answers `-1` when nothing provides one. An
+/// XSettings daemon normally provides one and a niri or sway session usually
+/// runs none, so on those sessions the ratio comes out at 1/48: the layout
+/// viewport becomes 96 times the window (1180×760 logical px laid out on a
+/// 113280×72960 CSS viewport), the `.win` column resolves to `height: 0`, and
+/// the interface is drawn into the window's top-left corner with the rest
+/// blank. Nothing the frontend can ask would recover from that (`100vh`,
+/// `devicePixelRatio` and every rect are wrong), so the missing DPI is supplied
+/// here instead.
 ///
 /// Only an *unset* resolution is filled in: a session that has one (a real
 /// `Xft.dpi` from an XSettings daemon, text scaling and all) keeps it, because
-/// that value is the user's and is what the ratio is meant to follow.
+/// that value is the user's.
 ///
 /// It has to happen before the webview exists. Changing the device scale factor
 /// afterwards is not applied to the live page (WebKit bug 259334), which is why
-/// this is called from the top of [`run`] rather than from a window callback.
-/// `gtk::init` here is also what makes the later one in Tauri's own backend a
-/// no-op: it returns `Ok` immediately once the main thread is initialized.
+/// this is called from the top of [`run`]; `gtk::init` here also makes the later
+/// one in Tauri's own backend a no-op.
 fn screen_dpi() {
     if gtk::init().is_err() {
         // No display for GTK to initialize against. The window cannot open at
@@ -102,20 +87,13 @@ fn screen_dpi() {
 
 /// Build and run the window.
 pub fn run(mode: Mode) -> Result<Run, String> {
-    // First, before the store, the lock and the webview: it is the one thing the
-    // interface's whole layout depends on.
     screen_dpi();
 
     let (activate, activations) = mpsc::channel::<Activation>();
 
-    // Opened first, and a failure is carried rather than fatal: a store that
-    // will not open is exactly the thing a person needs the window to tell them
-    // about, and a process that exits with a line on stderr tells nobody who
-    // started it from a desktop launcher. `commands::Window` holds the `Result`
-    // and every screen draws it.
-    //
-    // Before the lock, so that the lock is only held by a process that is ready
-    // to answer a handover.
+    // A failure is carried rather than fatal: a store that will not open is what
+    // the window exists to tell a person about, and a process that exits with a
+    // line on stderr tells nobody who started it from a desktop launcher.
     let desktop = match Desktop::open(Environment::observe()) {
         Ok(desktop) => Ok(desktop),
         Err(error) => Err(crate::strings::cannot_open(&error.to_string())),
@@ -128,9 +106,8 @@ pub fn run(mode: Mode) -> Result<Run, String> {
         return Ok(Run::Handed);
     }
 
-    // Started before the webview: the listener has nothing to do with the window
-    // and everything to do with the switch, and a session that will not give up
-    // the clipboard must not become a window that never opens.
+    // Started before the webview: a session that will not give up the clipboard
+    // must not become a window that never opens.
     let watching = Arc::new(Mutex::new(None));
     let reported = Arc::new(Mutex::new(None));
     let listening = match (&desktop, mode) {
@@ -151,9 +128,8 @@ pub fn run(mode: Mode) -> Result<Run, String> {
         _ => false,
     };
 
-    // The listener's config path, so that a handover can start a listener this
-    // process does not have: the handover is the same request `--watch` makes, and
-    // it arrives at a window that is already open.
+    // The listener's config path, so a handover can start a listener this
+    // process does not have: the handover is the same request `--watch` makes.
     let setup_watching = Watching {
         config: match &desktop {
             Ok(desktop) => Some(desktop.config_file()),
@@ -174,9 +150,6 @@ pub fn run(mode: Mode) -> Result<Run, String> {
                 .ok_or_else(|| "the window is missing from the configuration".to_string())?;
             forward(activations, window, setup_watching);
 
-            // Said on the launch that asked for it, and only there: a watcher
-            // that started silently is one nobody can tell from a watcher that
-            // failed to start.
             if listening {
                 eprintln!("{}", crate::strings::WATCH_STARTED);
             }
@@ -188,9 +161,8 @@ pub fn run(mode: Mode) -> Result<Run, String> {
 
     application.run(|_, _| {});
 
-    // The window is gone, so the listener has nothing to report to and no reason
-    // to outlive it: it is one process, and `--watch` made it resident, not
-    // immortal. Joined rather than detached so that the exit is one event.
+    // The window is gone, so the listener has no reason to outlive it. Joined
+    // rather than detached, so the exit is one event.
     Watching {
         config: None,
         running: Arc::clone(&watching),
@@ -206,22 +178,20 @@ pub fn run(mode: Mode) -> Result<Run, String> {
 ///
 /// A value rather than two fields inside the closure, because the decision is
 /// the part worth testing: whether a handover starts, keeps or stops the
-/// listener has nothing to do with webviews, and the window it is reached
-/// through is exactly what the tests in this crate cannot build.
+/// listener has nothing to do with webviews.
 #[derive(Clone, Default)]
 pub struct Watching {
     /// Where the configuration is, or `None` when the window could not open its
-    /// state at all — in which case there is no switch to read and no listener to
+    /// state at all, in which case there is no switch to read and no listener to
     /// start.
     config: Option<PathBuf>,
     running: Arc<Mutex<Option<watch::Handle>>>,
     /// The last refusal, if the one in hand is a repeat of it.
     ///
-    /// It is what keeps a refusal from being *reported* twice — the launch that
-    /// asked for the listener starts one, and then the handover it addressed to
-    /// itself arrives and would ask again — without stopping a later attempt from
-    /// being made: a session that could not give the clipboard up a moment ago
-    /// may be able to now, and a latch would hide that it works.
+    /// It keeps a refusal from being *reported* twice (the launch that asks for
+    /// the listener also sends itself an activation) without latching: a session
+    /// that could not give the clipboard up a moment ago may be able to now, and
+    /// a latch would hide that it works.
     reported: Arc<Mutex<Option<String>>>,
 }
 
@@ -297,12 +267,9 @@ impl Watching {
 
     /// The same, over the real listener.
     ///
-    /// The failure is reported rather than returned: a handover is answered on a
-    /// thread with nobody to hand a `Result` to, and the sentence belongs on
-    /// stderr either way. It is reported **once**, which is why the attempts are
-    /// remembered: the launch that starts a listener sends itself an activation
-    /// as well, and a start that failed would otherwise be tried and printed
-    /// twice in a row.
+    /// The failure is reported rather than returned, because a handover is
+    /// answered on a thread with nobody to hand a `Result` to. It is reported
+    /// **once**, which is why the last attempt is remembered.
     pub fn serve(&self, activation: Activation) {
         let outcome = self.ask(activation, |config| {
             let handle = watch::start(config)?;
@@ -329,8 +296,8 @@ impl Watching {
 
     /// Stop the listener, if one is running, and wait for it.
     ///
-    /// Called when the window closes: the listener is one process, and `--watch`
-    /// made it resident, not immortal.
+    /// Called when the window closes: `--watch` made the listener resident, not
+    /// immortal.
     pub fn shut(&self) {
         let running = self
             .running
@@ -362,15 +329,10 @@ fn forward(activations: mpsc::Receiver<Activation>, window: WebviewWindow, watch
             let _ = window.unminimize();
             let _ = window.set_focus();
 
-            // A launch that is a watcher means "keep listening", and a launch
-            // that is not means "the window, not a listener". The first is what
-            // starts one here at all: the window a handover reaches may have been
-            // opened without one — the panel's ⤢, a desktop shortcut, a first run
-            // — and `--watch` is the request for a listener whether or not this
-            // process is the one that was started with it. The second is what
-            // stops it, because otherwise one `--watch` would keep a process
-            // watching for copies forever and nothing in the interface could stop
-            // it.
+            // A watcher launch means "keep listening", and one that is not means
+            // "the window, not a listener". The second stops a listener, because
+            // otherwise one `--watch` would keep watching forever with nothing in
+            // the interface to stop it.
             watching.serve(activation);
         }
     });
@@ -382,9 +344,8 @@ mod tests {
 
     /// What the tests asked of the listener, and the handle they hand back.
     ///
-    /// Per test rather than global: these run in parallel inside one binary, and
-    /// a shared counter made two of them disagree about which call they were
-    /// looking at.
+    /// Per test rather than global, because these run in parallel inside one
+    /// binary.
     #[derive(Default)]
     struct Asked {
         started: usize,
@@ -394,8 +355,8 @@ mod tests {
     ///
     /// The production handle owns a real listener, and starting one needs a
     /// Wayland session and a panel binary. What these tests are about is the
-    /// *decision* — start, keep, stop — which is why [`Watching::ask`] takes the
-    /// starting as a parameter at all.
+    /// *decision* (start, keep, stop), which is why [`Watching::ask`] takes the
+    /// starting as a parameter.
     fn fake(asked: &mut Asked) -> Result<watch::Handle, String> {
         asked.started += 1;
         let (stop, stopped) = mpsc::channel::<bool>();

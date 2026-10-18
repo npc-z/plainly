@@ -48,8 +48,6 @@ impl FakeLister {
             .collect()
     }
 
-    /// What it was asked, as `(endpoint, provider)`: the name travels with the
-    /// endpoint because a credential belongs to the name (tickets/06).
     fn asked_with_names(&self) -> Vec<(String, String)> {
         self.asked.borrow().clone()
     }
@@ -83,7 +81,7 @@ fn model(id: &str, loaded: Option<bool>, context: Option<u64>) -> EndpointModel 
 }
 
 /// A configuration with nothing in it: the candidate list is then exactly the
-/// shipped common ports, which is the list this test pins.
+/// shipped common ports.
 fn empty_config() -> Config {
     Config::parse("").expect("an empty document is the default configuration")
 }
@@ -113,8 +111,6 @@ fn a_runtime_that_answers_is_found_under_the_provider_its_port_belongs_to() {
     );
 }
 
-/// The four ports the ticket names, in the order it names them: the list is what
-/// "the common ports" means, so it is pinned rather than described.
 #[test]
 fn the_common_ports_are_the_documented_ones() {
     let lister = FakeLister::new([]);
@@ -132,8 +128,6 @@ fn the_common_ports_are_the_documented_ones() {
     );
 }
 
-/// Every common port is tried and none of them answered: the answer is "nothing
-/// is there", not a port guessed from a provider's reputation.
 #[test]
 fn a_scan_that_finds_nothing_finds_nothing() {
     let lister = FakeLister::new([]);
@@ -145,8 +139,6 @@ fn a_scan_that_finds_nothing_finds_nothing() {
     assert_eq!(scan.unanswered.len(), 4, "and every one of them said why");
 }
 
-/// A port that refused does not hide a runtime that answered, and what the
-/// runtime said about a model — loaded or not — travels with it.
 #[test]
 fn a_silent_port_does_not_hide_a_runtime_that_answered() {
     let lister = FakeLister::new([(
@@ -165,8 +157,6 @@ fn a_silent_port_does_not_hide_a_runtime_that_answered() {
     assert_eq!(scan.runtimes[0].models[1].context_length, None);
 }
 
-/// A runtime on a port of the user's own choosing is found too: its configured
-/// endpoint is not a guess, and the name it is found under is the user's own.
 #[test]
 fn a_configured_loopback_endpoint_is_a_candidate_under_the_configured_name() {
     let config =
@@ -184,9 +174,6 @@ fn a_configured_loopback_endpoint_is_a_candidate_under_the_configured_name() {
     );
 }
 
-/// A hosted endpoint is not scanned: discovery is about this machine, and
-/// asking a vendor's API what it serves is a different question with a different
-/// answer (and would need a key).
 #[test]
 fn a_configured_remote_endpoint_is_not_scanned() {
     let config = Config::parse(
@@ -204,9 +191,6 @@ fn a_configured_remote_endpoint_is_not_scanned() {
     );
 }
 
-/// A name pointing at a common port's own endpoint is not asked twice under two
-/// names: the preset already names that port, and the configured spelling is the
-/// same one.
 #[test]
 fn an_endpoint_with_the_name_it_already_has_is_not_asked_twice() {
     let config = Config::parse(
@@ -224,8 +208,6 @@ fn an_endpoint_with_the_name_it_already_has_is_not_asked_twice() {
     assert_eq!(candidates.len(), 4, "the other three ports are still there");
 }
 
-/// One endpoint under two names keeps both: merging them by service would make
-/// one of the user's providers unselectable, while asking twice costs a GET.
 #[test]
 fn one_service_under_two_names_is_asked_under_both() {
     let config = Config::parse(
@@ -253,13 +235,10 @@ fn runtime_with(provider: &str, endpoint: &str, id: &str) -> LocalRuntime {
     }
 }
 
-/// A runtime, as the scan would have found it, listing `m`.
 fn runtime(provider: &str, endpoint: &str) -> LocalRuntime {
     runtime_with(provider, endpoint, "m")
 }
 
-/// Serving a model is the runtime's own list, and it is what a selection asks
-/// before it writes anything.
 #[test]
 fn a_runtime_knows_which_models_it_serves() {
     let runtime = runtime("llamacpp", "http://127.0.0.1:3060/v1");
@@ -270,9 +249,6 @@ fn a_runtime_knows_which_models_it_serves() {
     assert!(runtime.model("nosuch").is_none());
 }
 
-/// The name travels with the endpoint into the transport, because a credential
-/// belongs to the name: an implementation that authenticates has nothing else to
-/// look a key up by.
 #[test]
 fn a_scan_asks_each_candidate_under_its_own_provider_name() {
     let config =
@@ -297,9 +273,6 @@ fn a_scan_asks_each_candidate_under_its_own_provider_name() {
     );
 }
 
-/// The name's own runtime, when it has the model, is the one — whether the name
-/// was configured or only guessed a port, and whether the endpoint is spelled
-/// the same way or is the same service spelled differently.
 #[test]
 fn a_selection_takes_the_names_own_runtime_when_it_has_the_model() {
     let at_3060 = runtime("llamacpp", "http://127.0.0.1:3060/v1");
@@ -317,9 +290,6 @@ fn a_selection_takes_the_names_own_runtime_when_it_has_the_model() {
     );
 }
 
-/// A name that only guessed a port takes the runtime that has the model: the
-/// model is what tells two runtimes under one name apart, and finding the right
-/// port without being told is the point (tickets/06).
 #[test]
 fn a_guessed_name_takes_the_runtime_that_lists_the_model() {
     let holding = runtime_with("llamacpp", "http://127.0.0.1:3060/v1", "wanted");
@@ -339,9 +309,6 @@ fn a_guessed_name_takes_the_runtime_that_lists_the_model() {
     );
 }
 
-/// A name the user pointed somewhere is never moved: the runtime that has the
-/// model is reported instead, and so is one that answered where the user's own
-/// endpoint did not.
 #[test]
 fn a_configured_name_is_told_where_the_model_is_instead_of_moved() {
     let holding = runtime_with("llamacpp", "http://127.0.0.1:3060/v1", "wanted");
@@ -369,8 +336,6 @@ fn a_configured_name_is_told_where_the_model_is_instead_of_moved() {
     );
 }
 
-/// Nothing under the name has the model, or nothing under the name answered at
-/// all: two different reports, both from what answered rather than from a guess.
 #[test]
 fn a_model_nobody_serves_and_a_name_nobody_answered_are_told_apart() {
     let runtimes = [runtime_with(
@@ -401,9 +366,6 @@ fn a_model_nobody_serves_and_a_name_nobody_answered_are_told_apart() {
     );
 }
 
-/// A candidate that answered and refused is kept with what it said: "nothing is
-/// listening" and "something wants a key" are different facts, and only one of
-/// them is fixed by starting a runtime (tickets/06).
 #[test]
 fn a_candidate_that_answered_and_refused_keeps_its_reason() {
     let lister = FakeLister::new([(
@@ -424,10 +386,6 @@ fn a_candidate_that_answered_and_refused_keeps_its_reason() {
     assert!(refused.error.to_string().contains("401"), "{refused:?}");
 }
 
-/// A silent configured endpoint is reported with the same-name runtime that can
-/// actually serve the model, not merely the first one that answered: sending a
-/// reader to a runtime that does not have the model is a report that cannot be
-/// acted on.
 #[test]
 fn a_silent_name_is_reported_with_the_runtime_that_serves_the_model() {
     let without = runtime_with("llamacpp", "http://127.0.0.1:3060/v1", "different");

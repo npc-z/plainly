@@ -1,20 +1,17 @@
 #!/usr/bin/env bash
 #
-# The acceptance seam for the packaging ticket: what `nix build` produces, and
-# whether the thing it produces actually runs.
+# The acceptance check for packaging: what `nix build` produces, and whether it
+# actually runs.
 #
-# `cargo test` cannot answer either question — both crates' tests run against
-# `target/debug`, where the Rust toolchain's `LD_LIBRARY_PATH` or the dev shell's
-# is in force. The failure this script exists to catch is specifically the one
-# that only appears *outside* that environment: a binary that links GTK and then
-# cannot find it, which is what a compositor's key binding would hit.
+# `cargo test` cannot answer either question, because both crates' tests run
+# against `target/debug` with the dev shell's `LD_LIBRARY_PATH` in force. The
+# failure this script exists to catch only appears outside that environment: a
+# binary that links GTK and then cannot find it, which is what a compositor's
+# key binding would hit.
 #
 # Usage:
 #   scripts/check-flake-packages.sh            # build and check
 #   scripts/check-flake-packages.sh --no-build # check already-built outputs
-#
-# Every check prints what it observed, so a failure is a line of evidence rather
-# than a bare "FAIL".
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -26,9 +23,6 @@ cd "$(dirname "$0")/.."
 export NIX_CACHE_HOME
 mkdir -p "$NIX_CACHE_HOME"
 
-# `--no-build` skips the `nix build` calls and asks Nix for the store paths it
-# already has; useful when a full build has just run and the question is only
-# whether the outputs are shaped right.
 build=true
 if [ "${1:-}" = "--no-build" ]; then
     build=false
@@ -43,7 +37,6 @@ note() {
     echo "   $*"
 }
 
-# --- the flake declares the two packages ------------------------------------
 echo "== the flake's packages"
 packages=$(nix flake show --json 2>/dev/null | python3 -c '
 import json, sys
@@ -60,7 +53,6 @@ case " $packages " in
     *) fail "the flake exposes no \`default\` package (got: ${packages:-none})" ;;
 esac
 
-# --- built, or build it -----------------------------------------------------
 if [ "$build" = true ]; then
     out_cli=$(nix build --no-link --print-out-paths .#plainly)
     out_all=$(nix build --no-link --print-out-paths .)
@@ -77,7 +69,6 @@ fi
 note "plainly: $out_cli"
 note "default: $out_all"
 
-# --- `nix run` reaches a real program ---------------------------------------
 echo "== nix run"
 # `< /dev/null` matters: with no Passage named, `plainly` reads stdin, and a check
 # that leaves it a terminal waits for a human instead of failing.
@@ -94,7 +85,6 @@ case "$cli_version" in
     *) fail "\`nix run .#plainly\` does not reach a working plainly (got: ${cli_version:-nothing})" ;;
 esac
 
-# --- the default package carries all three binaries and the desktop entry ----
 echo "== the default package's contents"
 for bin in plainly plainly-panel plainly-desktop; do
     [ -x "$out_all/bin/$bin" ] || fail "default has no bin/$bin"
@@ -103,9 +93,8 @@ done
 ls "$out_all/share/applications/"*.desktop >/dev/null 2>&1 \
     || fail "default carries no .desktop entry"
 note "$(ls "$out_all/share/applications/"*.desktop)"
-# The size is read out of the icon rather than written here: a hard-coded size is
-# a second place to keep in step with the file, and it would fail the day somebody
-# redraws the icon bigger for no reason.
+# The size is read from the icon rather than hard-coded, so redrawing it bigger
+# does not need a second edit here.
 icon_size=$(python3 - "$out_all/share/icons/hicolor" <<'PYEOF'
 import pathlib, struct, sys
 root = pathlib.Path(sys.argv[1])
@@ -120,21 +109,18 @@ PYEOF
 [ -n "$icon_size" ] || fail "default carries no icon under share/icons/hicolor/*/apps/dev.plainly.app.png"
 note "icon present at ${icon_size}"
 
-# --- the CLI package is the CLI only ----------------------------------------
 echo "== the CLI package carries one binary and no GUI libraries"
 [ -x "$out_cli/bin/plainly" ] || fail "plainly has no bin/plainly"
 for unwanted in plainly-panel plainly-desktop; do
     [ ! -e "$out_cli/bin/$unwanted" ] \
         || fail "plainly ($out_cli) carries $unwanted: the split did not happen"
 done
-# The words a graphics stack arrives as in nixpkgs, plus the names its *sources*
-# have: `wayland` catches both the C library and the `wayland-1.26.0` package,
-# which a `libwayland` pattern would miss. `dbus` is not graphics, it is the
-# session bus: the CLI talks to no session, and a package that pulled it in would
-# have to substitute it on a machine that has none. `scripts/check-headless-cli.sh`
-# asks the same question of the dependency graph; its list is narrower because it
-# sees the graph rather than the store paths, so neither list is the other's source
-# of truth.
+# The words a graphics stack arrives as in nixpkgs, plus the names of its
+# sources: `wayland` catches both the C library and the `wayland-<version>`
+# package, which a `libwayland` pattern would miss. `dbus` is here because the
+# CLI talks to no session bus, and a machine without one must not have to
+# substitute it. The list stays looser than `scripts/check-headless-cli.sh`'s,
+# because it sees store paths rather than the dependency graph.
 graphical='gtk|webkit|gdk|cairo|pango|at-spi|wayland|layer-shell|soup|glib-|dbus'
 cli_closure=$(nix path-info -r "$out_cli")
 if echo "$cli_closure" | grep -Ei "$graphical" >/dev/null; then
@@ -143,10 +129,9 @@ if echo "$cli_closure" | grep -Ei "$graphical" >/dev/null; then
 fi
 note "runtime closure is graphics-free"
 
-# A buildInput that never reaches the closure still has to be substituted or built
-# on the machine installing this, so the derivation's own inputs are the honest
-# place to look — this is the check that caught a shared `buildInputs` handing the
-# CLI the whole GTK stack while its runtime closure looked clean.
+# A buildInput that never reaches the closure still has to be substituted or
+# built on the machine installing this, so the derivation's own inputs are the
+# honest place to look.
 cli_drv=$(nix path-info --derivation "$out_cli")
 drv_inputs=$(nix-store --query --references "$cli_drv")
 if echo "$drv_inputs" | grep -Ei "$graphical" >/dev/null; then
@@ -155,7 +140,6 @@ if echo "$drv_inputs" | grep -Ei "$graphical" >/dev/null; then
 fi
 note "build inputs are graphics-free ($(echo "$drv_inputs" | wc -l) direct)"
 
-# --- the split is real, not just two names ----------------------------------
 echo "== the two closures differ"
 all_closure=$(nix path-info -r "$out_all")
 if [ "$(echo "$cli_closure" | wc -l)" -ge "$(echo "$all_closure" | wc -l)" ]; then
@@ -163,16 +147,15 @@ if [ "$(echo "$cli_closure" | wc -l)" -ge "$(echo "$all_closure" | wc -l)" ]; th
 fi
 note "plainly $(echo "$cli_closure" | wc -l) paths, default $(echo "$all_closure" | wc -l) paths"
 
-# --- the GUI binaries load their libraries without the dev shell ------------
-# This is the ticket's whole point: a compositor's key binding spawns the panel
-# with an environment of its own, and the binary has to carry its own answer to
-# "where is GTK". `env -i` strips everything, including any LD_LIBRARY_PATH a
-# caller happened to have, so whatever still resolves came from the build.
+# A compositor's key binding spawns the panel with an environment of its own, so
+# the binary has to carry its own answer to "where is GTK". `env -i` strips
+# everything, including any `LD_LIBRARY_PATH` a caller happened to have, so
+# whatever still resolves came from the build.
 #
 # The argument is one the binary refuses (`--help` is not a flag it has). The
-# refusal happens after the dynamic linker has mapped the GTK stack, so a missing
-# library shows up here while nothing ever opens a display — which is what makes
-# this safe to run on someone's live session, where the panel would otherwise
+# refusal happens after the dynamic linker has mapped the GTK stack, so a
+# missing library shows up here while nothing ever opens a display, which makes
+# this safe to run on someone's live session where the panel would otherwise
 # take the keyboard.
 echo "== the GUI binaries start with no environment"
 for bin in plainly-panel plainly-desktop; do
@@ -189,12 +172,12 @@ for bin in plainly-panel plainly-desktop; do
     esac
 done
 
-# The refusals above load the two libraries the binaries link against directly,
-# but GTK opens the rest lazily, when a widget first needs them. `ldd` is the
-# check that asks the linker for *every* library in the set the wrapper's
-# `LD_LIBRARY_PATH` has to satisfy, so it is the one that would catch a
-# transitive gap the running process has not reached yet. The wrapped binary is
-# the ELF file; `bin/plainly-panel` is the shell script around it.
+# The refusals above load only the libraries the binaries link against
+# directly, and GTK opens the rest lazily when a widget first needs them. `ldd`
+# asks the linker for every library the wrapper's `LD_LIBRARY_PATH` has to
+# satisfy, so it catches a transitive gap the running process has not reached
+# yet. The wrapped binary is the ELF file and `bin/plainly-panel` is the shell
+# script around it.
 echo "== the GUI binaries resolve every library"
 for bin in plainly-panel plainly-desktop; do
     missing=$(env -i ldd "$out_all/bin/.$bin-wrapped" 2>/dev/null | grep 'not found' || true)
@@ -202,17 +185,16 @@ for bin in plainly-panel plainly-desktop; do
     note "$bin: $(env -i ldd "$out_all/bin/.$bin-wrapped" 2>/dev/null | grep -c '=>') libraries, none missing"
 done
 
-# --- the CLI reads a Passage with no dev shell ------------------------------
 echo "== the CLI reads a Passage with no environment"
 # `HOME` is set and everything else is not: the CLI needs a home to look for a
 # store in, and pointing it at the cache directory keeps it from touching the
 # real config while still exercising the no-key path.
 #
-# The keyring is *disabled* rather than merely unmentioned: it is reached over
-# the session bus, which `env -i` does not take away, so on a machine where one
-# is unlocked and holds a key this check would explain a Passage for real — it
-# would spend that key's quota to answer a dynamic-linker question, and it would
-# fail, because the refusal it is looking for is then never printed.
+# The keyring is *disabled* rather than merely unmentioned, because it is
+# reached over the session bus, which `env -i` does not take away. On a machine
+# where one is unlocked and holds a key, this check would explain a Passage for
+# real, spending that key's quota on a dynamic-linker question and never
+# reaching the refusal it looks for.
 echo "The manager had already gone to ground." \
     | env -i HOME="$NIX_CACHE_HOME" PLAINLY_DISABLE_KEYRING=1 "$out_cli/bin/plainly" \
         >"$NIX_CACHE_HOME/cli.out" 2>"$NIX_CACHE_HOME/cli.err" || true

@@ -122,7 +122,7 @@ fn a_file_longer_than_the_panel_limit_is_a_batch_in_the_original_order() {
 }
 
 /// A batch in markdown is one document per chunk, in order, with a blank line
-/// between them — the whole product on stdout and nothing else.
+/// between them.
 #[test]
 fn a_markdown_batch_is_one_document_per_chunk_separated_by_a_blank_line() {
     let dir = TempDir::new("batch-markdown");

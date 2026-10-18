@@ -3,26 +3,13 @@
 //! The prompt is content, not code, and it has three parts (spec §5):
 //!
 //! - **The factory prompt**, shipped inside the application and immutable within
-//!   a build. It is the calibrated `v6-synthesis` with one change: the level
-//!   site carries the level's *meaning* as well as its label, because a bare
-//!   label is close to sending nothing — two of three levels produced
-//!   byte-identical paraphrases without a meaning beside them
-//!   (`bench/FINDINGS.md`). The C1 wording no longer says "keep most of the
-//!   original structure": that sentence fought the prompt's own rule ("it must
-//!   be a real restatement") and lost, which is the likely reason B2 and C1 were
-//!   indistinguishable.
-//!
-//!   **v8 adds the Gloss Example** (`v8-examples`): every gloss carries a
-//!   sentence the model writes itself, in the same sense the Passage gives the
-//!   expression and in the Level's own words. The accuracy rules had to say so
-//!   out loud — the Example is the one thing in an Explanation that is *not* on
-//!   the page — and the calibration that came with it is in
-//!   `bench/FINDINGS.md` (12/12 cloud, both at B2 and at A2, no empty examples).
+//!   a build. It carries the level's meaning beside its label, because a bare
+//!   label is close to sending nothing (`bench/FINDINGS.md`).
 //! - **The user's appendix**, appended after every factory rule. Append-only is
 //!   structural, not a promise in a document: nothing here prepends it or merges
 //!   it into the factory text, so no appendix can delete a factory rule. The
-//!   factory rules are what keep two people's histories comparable; a user who
-//!   wants to counteract one writes the opposite rule after it, which is the
+//!   factory rules are what keep two people's histories comparable, and a user
+//!   who wants to counteract one writes the opposite rule after it, which is the
 //!   weaker capability the spec records rather than hides.
 //! - **The level descriptors**, the wording handed to the model beside a level
 //!   label. They ship with the application, a user may override a row, and an
@@ -32,8 +19,8 @@
 //! factory text: the Level and the Native Language are already separate
 //! components of the Lookup Key (spec §9), so substituting them here would give
 //! one question two identities. Because the descriptor table is part of the
-//! hashed data, "change a descriptor and forget to bump the version" is not a
-//! discipline anyone has to keep — it cannot happen (issue 09).
+//! hashed data, changing a descriptor and forgetting to bump the version cannot
+//! happen (issue 09).
 
 use std::collections::BTreeMap;
 
@@ -81,13 +68,10 @@ The passage is authoritative: never correct it, never simplify it in place, and 
 
 /// The meaning that ships beside `level`.
 ///
-/// Three of the four rows are the source contract's own wording, unchanged:
-/// A1 and A2 share one meaning ("very common words, short sentences, concrete")
-/// because that is how the contract states it, and B2 is its B2 sentence. Only
-/// C1 is reworded, and that reword is the one change spec §5 asks for: "keep
-/// most of the original structure" fought the prompt's own rule that the result
-/// must be a real restatement, and the rule won — so the descriptor says what it
-/// means instead of contradicting it.
+/// The level contract states A1 and A2 with one shared meaning and B2 with its
+/// own sentence. C1's wording says the restatement is still full: a descriptor
+/// telling the model to keep most of the original structure contradicted the
+/// prompt's own rule, so the descriptor says what the level means.
 ///
 /// A `match` rather than a table to be searched: a new [`Level`] is then a
 /// compile error here, not a panic inside [`Prompt::descriptor`].
@@ -108,7 +92,7 @@ pub fn factory_descriptor(level: Level) -> &'static str {
 ///
 /// The factory text is a constant rather than a field: it cannot be edited by a
 /// user, and an application update replacing it is the point of the split. What
-/// varies is held here, and only here — the CLI, the panel and the settings page
+/// varies is held here, and only here: the CLI, the panel and the settings page
 /// all ask this one value what to send and what version to stamp.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Prompt {
@@ -206,7 +190,7 @@ impl Prompt {
     ///
     /// Two cases are deliberately not a fallback. A provider failure is not the
     /// prompt's doing (only [`FailureKind::is_contract`] failures are), and a run
-    /// already sending the factory text has nothing to fall back from — telling
+    /// already sending the factory text has nothing to fall back from, and telling
     /// the user to use what they are using would be noise. The run does not apply
     /// this itself: spec §5 refuses to silently undo the user's prompt, so the
     /// retry happens on the user's say-so, and the Artifact it produces carries

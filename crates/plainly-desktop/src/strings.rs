@@ -1,14 +1,12 @@
 //! The window's copy, in one place.
 //!
 //! The interface is Chinese while the Explanation stays English (spec §12), so
-//! nothing here is a domain word: "Passage" and "Gloss" never appear, and what
-//! does appear is what a learner reads. There is deliberately no i18n framework —
-//! one module is the difference between "translatable later" and "rewrite
-//! later".
+//! nothing here is a domain word: "Passage" and "Gloss" never appear. There is
+//! deliberately no i18n framework, because one module is the difference between
+//! "translatable later" and "rewrite later".
 //!
-//! The frontend asks for these once, as data ([`Strings`]), which is what keeps
-//! the copy out of the JavaScript. A string typed into a template is a string
-//! nobody can find later; a string that arrives from here is one grep away.
+//! The frontend asks for these once, as data ([`Strings`]), which keeps the copy
+//! out of the JavaScript: a string that arrives from here is one grep away.
 
 use serde::Serialize;
 
@@ -69,12 +67,11 @@ pub struct Strings {
     /// listener that spends it is started.
     pub copy_auto_note: &'static str,
     /// What the frontend says when it is being viewed outside the window, where
-    /// no command — not even this one — can be reached. It is here rather than
-    /// written into the JavaScript because the interface's copy has one home.
+    /// no command can be reached. It is here because the interface's copy has one
+    /// home.
     pub outside_window: &'static str,
     /// The frontend or a caller asked for an export format Plainly does not
-    /// have. A field rather than a function because the command that words it
-    /// has one to hand.
+    /// have. A field because the command that words it has one to hand.
     pub unknown_export: &'static str,
 }
 
@@ -133,10 +130,8 @@ pub fn strings() -> Strings {
 /// The settings screen's labels and notes, one field per piece of copy.
 ///
 /// The section *data* is [`crate::settings::SettingsView`]; this is the words
-/// beside it. They are together in this module so that the interface's copy is
-/// one file a translator can be handed (spec §12) — including the sentences that
-/// explain why something is the way it is, which are the ones a rewrite usually
-/// loses.
+/// beside it. They are together here so the interface's copy is one file a
+/// translator can be handed (spec §12).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SettingsStrings {
     pub level: &'static str,
@@ -282,8 +277,7 @@ pub fn key_in_environment(variable: &str) -> String {
 }
 
 /// A key in the OS keyring: it survives the window. This is both what the
-/// Provider section reports as the key's state and what storing one says — the
-/// same fact, in the same words, in the two places it is read.
+/// Provider section reports as the key's state and what storing one says.
 pub const KEY_IN_KEYRING: &str = "已保存在 keyring";
 
 /// A key only this process holds: it does not survive the window.
@@ -320,8 +314,8 @@ pub fn auto_hide_out_of_range(low: u32, high: u32) -> String {
 /// A panel size outside what the number input accepts.
 ///
 /// The label travels with the numbers because the two sizes are refused by the
-/// same rule and a sentence that named neither would leave a person looking at two
-/// inputs and one complaint.
+/// same rule and a sentence that named neither would leave a person looking at
+/// two inputs and one complaint.
 pub fn panel_size_out_of_range(label: &str, low: u32, high: u32) -> String {
     format!("{label}要在 {low} 到 {high} px 之间")
 }
@@ -341,40 +335,28 @@ pub fn update_failed(reason: &str) -> String {
     format!("这次改动没有写入：{reason}")
 }
 
-// A failure with no sentence of its own — a command whose argument made no
-// sense, a system call that did not work — is still said in Chinese, because the
-// banner is part of the interface. The one prefix that does it is
-// [`Strings::error_prefix`], which the frontend prepends to the reason: there is
-// no function here, because the sentence is assembled on the side that has the
-// reason in hand.
-
 /// "Explain on copy" can work here. What it costs is said underneath this line
-/// ([`COPY_AUTO_NOTE`]) rather than in it: the capability and the price are two
-/// facts, and one sentence holding both would leave the switch looking available
-/// when the process that honours it is not running (spec §12).
+/// ([`COPY_AUTO_NOTE`]) rather than in it, so the switch is not made to look
+/// available when the process that honours it is not running (spec §12).
 pub const COPY_AUTO_AVAILABLE: &str = "这个桌面支持 data-control。";
 
 /// What the switch costs and what starts the listener.
 ///
-/// Under the switch in both directions, because both are true: on a session that
-/// has no data-control the switch is greyed and this is the same "off" the note
-/// above it describes. The key fact is the third sentence — the listener is a
-/// process the user starts, and a switch turned on with nobody listening is on
-/// in the file and off in the world. Saying that here is the difference between
-/// a switch and a switch that appears to work (spec §12, tickets/14).
+/// Said in both directions, because both are true: on a session with no
+/// data-control the switch is greyed, and a switch turned on with nobody
+/// listening is on in the file and off in the world (spec §12).
 pub const COPY_AUTO_NOTE: &str =
     "开启后由 plainly-desktop --watch 监听剪贴板：打开这个开关才引入一个常驻进程，默认路径下没有东西需要常驻。";
 
 /// "Explain on copy" cannot work here. The switch is drawn greyed with this
-/// sentence rather than hidden, so that a missing capability is a fact the user
-/// knows rather than a feature they think does not exist (spec §12).
+/// sentence rather than hidden, so a missing capability is a fact the user knows
+/// rather than a feature they think does not exist (spec §12).
 pub const COPY_AUTO_UNAVAILABLE: &str = "你的桌面不支持：需要 wlroots 类合成器的 data-control 协议。换成 niri / sway 这类合成器后可用。";
 
 /// `--watch` on a session with no data-control.
 ///
 /// The same fact as [`COPY_AUTO_UNAVAILABLE`], said from the process rather than
-/// the settings screen: the switch is greyed there, so the only way to ask for a
-/// listener anyway is `--watch` by hand.
+/// the settings screen.
 pub fn watch_needs_data_control() -> &'static str {
     "plainly-desktop --watch：这个桌面没有 data-control（需要 wlroots 类合成器），监听不会启动。"
 }
@@ -382,8 +364,7 @@ pub fn watch_needs_data_control() -> &'static str {
 /// `--watch` with the listener actually started.
 ///
 /// Said out loud on the launch that asked for it: a resident process that
-/// started quietly is one a person cannot tell from one that failed, and the
-/// whole point of `--watch` is that it is a deliberate, visible cost.
+/// started quietly is one a person cannot tell from one that failed.
 pub const WATCH_STARTED: &str =
     "plainly-desktop --watch：复制自动弹的监听已启动（配置里 copy_auto_popup 打开时才真的弹面板）。";
 
@@ -403,8 +384,7 @@ pub const WATCH_ENDED: &str =
 /// A clipboard that could not be read at all, with the library's reason.
 ///
 /// The listener has no surface to put this on, so it goes to stderr: a resident
-/// process that is not working has to say so somewhere, and a silent one is the
-/// one thing it must not be.
+/// process that is not working has to say so somewhere.
 pub fn watch_read_failed(reason: &str) -> String {
     format!("plainly-desktop --watch：读不了剪贴板：{reason}")
 }
@@ -426,9 +406,8 @@ pub fn settings_strings() -> SettingsStrings {
 /// What storing a key did.
 ///
 /// The session case is the one that is not a success: the key works for this
-/// window and no longer. Core words that warning, and it is in English because
-/// it is core's — so the window says what happened and core's reason follows
-/// after the colon, the same split every other failure takes.
+/// window and no longer. Core words that warning, so the window says what
+/// happened and core's reason follows after the colon.
 pub fn key_outcome(stored: &plainly_core::Stored) -> String {
     match stored {
         plainly_core::Stored::Keyring => KEY_IN_KEYRING.to_string(),
@@ -437,8 +416,8 @@ pub fn key_outcome(stored: &plainly_core::Stored) -> String {
 }
 
 /// The configuration file changed on disk since this window read it. Core words
-/// this for a command line — "re-run the command" — and the window says the same
-/// fact in its own terms: what it will not do is overwrite the other write.
+/// this for a command line, and the window says the same fact in its own terms.
+/// What it will not do is overwrite the other write.
 pub fn settings_changed_on_disk() -> &'static str {
     "配置文件在窗口打开之后被别的程序改过：这次改动没有写入，请先看一眼文件再重试"
 }
@@ -464,24 +443,23 @@ pub fn clipboard_xclip(reason: &str) -> String {
 
 /// The data directory could not be opened by the desktop.
 ///
-/// Shown beside the path itself, which the window names either way: "the desktop
-/// would not open it" is an answer a person can act on, and the path is how.
+/// Shown beside the path itself, which the window names either way: the path is
+/// how a person acts on "the desktop would not open it".
 pub fn open_failed(reason: &str) -> String {
     format!("打不开：{reason}")
 }
 
 /// The window could not open its own state: the history store or the
 /// configuration file. Said in the window rather than on stderr, because the
-/// window is the surface the person is looking at — and the reason core gives
-/// (which names the file) follows after the colon.
+/// window is the surface the person is looking at, and the reason core gives
+/// follows after the colon.
 pub fn cannot_open(reason: &str) -> String {
     format!("打不开历史库或配置文件：{reason}")
 }
 
 /// The window could not be built or started: no display, a webview that will not
 /// come up, a configuration Tauri rejects. It is the failure a person is most
-/// likely to meet on a machine that is not set up for a GUI, and it is said in
-/// the same words as the rest of the crate's exit paths.
+/// likely to meet on a machine that is not set up for a GUI.
 pub fn cannot_start(reason: &str) -> String {
     format!("窗口起不来：{reason}")
 }
@@ -495,9 +473,8 @@ pub fn export_names_exhausted(directory: &str) -> String {
 
 /// One output of the compositor, as the picker names it.
 ///
-/// Numbered rather than named, because the connector name (`eDP-1`) comes from
-/// the `xdg-output` protocol and `wl_output`'s own events carry only a make and
-/// a model: a name this build cannot read would be a lie told confidently.
+/// Numbered rather than named, because the connector name comes from the
+/// `xdg-output` protocol this build cannot read.
 pub fn output_label(index: usize) -> String {
     format!("显示器 {}", index + 1)
 }

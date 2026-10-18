@@ -3,7 +3,7 @@
 规格 §Testing Decisions 把面板与主窗口排除在自动化之外：GTK 的渲染、图层、看门狗与
 退出路径需要**一块屏、一个合成器和一个真的剪贴板**，这些在测试进程里都不存在。自动化覆盖
 停在两条缝上（`plainly-core` 的公共 API、`plainly` 二进制）加上各表面的纯决策函数；
-`crates/plainly-panel/src/{plan,state,prefs,position,provenance,document,watchdog}.rs`
+`crates/plainly-panel/src/{state,prefs,position,provenance,document,watchdog}.rs`
 与 `crates/plainly-desktop/src/watch.rs` 的判定都有单元测试，剩下的是「它到底上不上屏」。
 
 本文件是**面板、会话降级与 CLI** 这份；主窗口与「复制自动弹」在
@@ -22,8 +22,7 @@ export PATH="$PWD/result/bin:$PATH"   # 键绑按名字找 plainly-panel，就�
 ```
 
 （`nix profile install .` 装进 profile 也一样，只是 `PATH` 由 profile 提供。开发中要改代码时才用
-`nix develop` + `cargo build --workspace`，那时记得 §6 里那句话：dev shell 里的二进制是**另一个**
-环境。）
+`nix develop` + `cargo build --workspace`；那时 `target/debug` 里的二进制是**另一个**环境。）
 
 面板从裸会话起得来这件事本身有机器判据，不用靠肉眼：`scripts/check-flake-packages.sh` 会断言
 CLI 的闭包里没有图形库、两个闭包大小不同、面板在 `env -i`（空环境）下不会报
@@ -83,7 +82,7 @@ plainly-panel --clipboard        # 装出来的那个（PATH 上是 result/bin�
 | 1.7 | 位置设置生效 | `plainly config set app.panel_corner bottom-right` 之后再触发，面板落在右下；四个角各一次 |
 | 1.8 | 自动消失 | `app.panel_autohide = true` + `app.panel_autohide_seconds = 12`：约 12 秒后进程自己退出（退出码 0）；把开关关回去，同一份配置下面板一直活着 |
 | 1.9 | 关掉开关不等于时长 0 | `panel_autohide = false` 且 `panel_autohide_seconds = 5` 时**不**自动消失（开关与时长是两个独立键） |
-| 1.10 | 看门狗：正常路径 | 面板出现后**仍然活着**超过 5 秒（看门狗只在「从没上屏」时开枪）。本机已验，见 §6 |
+| 1.10 | 看门狗：正常路径 | 面板出现后**仍然活着**超过 5 秒（看门狗只在「从没上屏」时开枪）。本机已验 |
 | 1.11 | 看门狗：病态路径 | **要造出「永远画不出来」才行**，而正常的 layer 表面一旦 map 就立刻画（`connect_draw` 只在 `is_mapped()` 时解除看门狗），所以这一项在 niri 上无法可靠复现。可以试的构造：阻止合成器 map（例如把一个假的 `wayland-99` socket 配给 `GDK_BACKEND=wayland`，但那会在**连上之前**就退出，走不到绘制阶段）、或在嵌套/无渲染输出的合成器里跑。判定的边界本身有单元测试（`crates/plainly-panel/src/watchdog.rs`：`expired_at` 正好在 grace 到点时到期、`note_drawn` 之后永不到期）。**本机未复现** |
 
 ### 多块与两种拒绝
@@ -113,12 +112,12 @@ sqlite3 "$XDG_DATA_HOME/dev.plainly.app/history.db" 'select count(*) from record
 | 1.19 | ⤢ | 点 ⤢ 打开主窗口（或把已开的那个带到前面）；主窗口没开时落在历史页 |
 | 1.20 | chip | 本地 provider 显示「本地」，云端显示「云端」；模型名与实际一致 |
 | 1.21 | **高度跟着内容，到上限为止** | 一段短原文：面板正好容下五节加底部那句本地模型说明，最后一行不会被面板边缘切掉；换成很长的一段：正文最多到 `app.panel_height`（含标题栏与底部说明），其余在面板内滚动，标题栏与底部说明始终可见。面板只有一行高就是这条没做到——layer surface 的高度取自窗口的**最小**尺寸（gtk-layer-shell 这么要），所以得由 `Surface::state_body_height` 说出来；没有 XSettings 守护进程的会话还会先丢掉那把尺子（见 `measuring_screen`） |
-| 1.22 | 宽高按配置 | `plainly config set app.panel_width 700` 与 `app.panel_height 300` 之后再触发：面板确实变宽、变矮，长内容在面板内滚动，标题栏与底部说明仍可见；手工把配置文件里的 `panel_width` 改成 2000（超出 320..900）面板按 900 收住——`plainly config set app.panel_width 2000` 现在会被拒绝（exit 2），不会写进文件。设置界面「行为」里的两个数字框写的是同样的两个键 |
+| 1.22 | 宽高按配置 | `plainly config set app.panel_width 700` 与 `app.panel_height 300` 之后再触发：面板确实变宽、变矮，长内容在面板内滚动，标题栏与底部说明仍可见；手工把配置文件里的 `panel_width` 改成 2000（超出 320..900）面板按 900 收住——`plainly config set app.panel_width 2000` 会被拒绝（exit 2），不会写进文件。设置界面「行为」里的两个数字框写的是同样的两个键 |
 
-### 未入库与重复 Passage（ADR-0003 统一后的两处面板行为）
+### 未入库与重复 Passage（ADR-0003 的两处面板行为）
 
 这两项用 §3 的假 provider：先按 §3 起好 stub、让 provider 指过去，并跑一次 §3.1 让历史库里有记录。
-它们验的是 CLI 与面板现在共用的那一条运行路径——两边都由 `plainly_core::Runner` 决定一个 turn。
+它们验的是 CLI 与面板共用的那一条运行路径——两边都由 `plainly_core::Runner` 决定一个 turn。
 
 | # | 检查 | 期望 |
 | --- | --- | --- |
@@ -164,9 +163,7 @@ plainly providers discover                # stdout：答了的那些（这些端
                                           # 加上你在配置里指过的 loopback 端点）
 ```
 
-`discover` **stdout** 上列出的地址（例如 `http://127.0.0.1:3060/v1`）就是你**不能**拿来做 stub 的地方；
-它去问、但没人答的那几个（在 stderr 那行里；默认是四个常见端口，你配过的 loopback 端点也会被加上）才是空的。挑一个空的，一路写进下面两处；
-下面是「你的 runtime 在 3060」时的那份：
+`discover` **stdout** 上列出的地址（例如 `http://127.0.0.1:3060/v1`）不能拿来做 stub；挑一个它去问、但没人答的端口，一路写进下面两处。下面是「你的 runtime 在 3060」时的那份：
 
 ```sh
 python3 scripts/stub-provider.py --port 8080 &   # 每次请求追加一行到
@@ -190,7 +187,7 @@ plainly config set providers.llamacpp.model stub-model
 | 3.5 | 面板命中缓存 | 关掉面板，再对**同一段**触发：provider 不收到新请求，面板立刻出结果 |
 | 3.6 | 主窗口 | `plainly-desktop` 打开后历史页有 3.x 的记录；搜索原文片段命中，搜译文里的中文命中 0 条，且搜索框下写着「中文翻译与例句暂不可搜」 |
 | 3.7 | 主窗口的 ⤢ 交接 | 面板里点 ⤢：只有一个窗口，第二次启动把它带到前面（单实例）；窗口已经开着且停在设置页时它**不会**切回历史——这是已知缺口，见 §5 |
-| 3.8 | 关键帮助是 bullet + 引文块 | 上面那条 stdout 里每条 Gloss 是 `- \`expression\`` + 缩进一行释义 + **空行 + `  > 例句`**；条目之间空行（松列表）。`glow` 那条命令下例句会画成内缩的引用块，**不再**和释义挤成一段。stub 的例句是 `The reporter went to ground until the trial was over.` |
+| 3.8 | 关键帮助是 bullet + 引文块 | 上面那条 stdout 里每条 Gloss 是 `- \`expression\`` + 缩进一行释义 + **空行 + `  > 例句`**；条目之间空行（松列表）。`glow` 那条命令下例句画成内缩的引用块，不和释义挤成一段。stub 的例句是 `The reporter went to ground until the trial was over.` |
 | 3.9 | raw 导出无 markdown 记号 | `plainly history export raw`：`glosses` 单元格里每条三行——表达 / 缩进释义 / 缩进例句，**没有箭头、没有 `_`、没有 `>`**（电子表格单元格不是文档）；仍是一个单元格、仍按 CSV 规则转义 |
 | 3.10 | 历史库拒绝写入：CLI 仍出答案、exit 1 | 先按 §1 的命令装好 `refuse_write` trigger。`echo "A sentence the history has never seen." \| plainly`：stdout 仍是完整的 markdown 产物；stderr 有 `plainly: chunk 1/1 was not stored: the history refused the write` 和结尾的 `1 of 1 chunks were not stored`；`echo $?` 是 **1**；库里没有这条。验完 `DROP TRIGGER`。这一条与面板的 1.23 是同一条运行路径的两个适配层 |
 
@@ -238,7 +235,7 @@ DISPLAY=:0 env -u WAYLAND_DISPLAY sh -c 'echo "The manager had already gone to g
 - **规格的 Out of Scope 整张表**都是没做的（下面照 `spec.md` §Out of Scope 逐条抄，不是摘要）：web API、MCP server、截图 OCR、多设备同步、
   SRS 复习循环、macOS / Windows 桌面、Tauri 发布链路（公证 / 签名 / 自动更新）、浏览器插件、
   X11 会话支持、面板自由拖动、敏感内容的启发式判定、历史库加密、中文翻译的全文搜索、
-  自动打标、卡片 / 复习式导出（Anki CSV，2026-10-12 移除）、提示词片段注册表、**删除出厂提示词自己的规则**（附录只能追加）、
+  自动打标、卡片 / 复习式导出（Anki CSV）、提示词片段注册表、**删除出厂提示词自己的规则**（附录只能追加）、
   项目级配置覆盖、流式输出、**对本地模型输出正确性的任何承诺**。
 - **GNOME 那一节（§4.1–4.5）没有本地证据**：本机是 niri，清单里其余每一项都能在这里跑，
   这一节需要一台 GNOME 机器。
@@ -248,8 +245,8 @@ DISPLAY=:0 env -u WAYLAND_DISPLAY sh -c 'echo "The manager had already gone to g
 - **面板的四角只在 layer 路径上成立**：GNOME 的普通窗口上 `gtk_window_move` 是请求而非命令，
   见 §4.3。
 - **`panel_display` 从某个 `output-N` 改回 `current` 不会当场解绑**：已经 map 的 layer surface
-  会留在原输出，直到下一个面板进程（票据 15 的记录）。
-- **⤢ 不切屏**：窗口已经开着并在设置页时，⤢ 不会把它切回历史页（票据 15 的交接）。
+  会留在原输出，直到下一个面板进程。
+- **⤢ 不切屏**：窗口已经开着并在设置页时，⤢ 不会把它切回历史页。
 - **复制走 data-control 写**：`wl-clipboard-rs` 的 `copy` 在一条独立线程上 serve selection
   （owner 是进程），面板自己退出时这条线程一起消失——「已复制」到「粘贴」之间就是它要覆盖的
   窗口，而面板正好在那段时间里在屏幕上。
@@ -259,7 +256,7 @@ DISPLAY=:0 env -u WAYLAND_DISPLAY sh -c 'echo "The manager had already gone to g
 - **看门狗的病态路径没有反向复现**：正常路径「从不触发」是清单 1.10（本机验过）；「渲染真的
   失败时 5 秒自退」是 1.11，本机造不出来（假 `WAYLAND_DISPLAY` 在连接前就退出，走不到绘制阶段），
   判定本身由 `crates/plainly-panel/src/watchdog.rs` 的单元测试覆盖。
-- **面板的运行级凭据 notice 没有手测步骤**（ADR-0003 三处统一的第二处）：它要的是「keyring 在、
+- **面板的运行级凭据 notice 没有手测步骤**（ADR-0003）：它要的是「keyring 在、
   但读不到」——坏掉或锁住的 session bus / 没有 Secret Service。本清单的准备段用
   `PLAINLY_DISABLE_KEYRING=1` 恰好是「不去碰 keyring」，造不出这个状态；硬造它只会验到 keyring
   库自己的行为。这条改由 core 测试钉住：
@@ -268,99 +265,5 @@ DISPLAY=:0 env -u WAYLAND_DISPLAY sh -c 'echo "The manager had already gone to g
   面板侧只是把 core 的 notice 列表逐条读一遍（`crates/plainly-panel/src/worker.rs` 的
   `report_new_notices`），文案由 `crates/plainly-panel/src/strings.rs` 的单元测试覆盖。这里不写
   一条按不出来的手测项。
-- **键绑 spawn 现在有解了**：装出来的面板（`nix build .` → `result/bin`）自带库路径，不再需要
-  §0 早期那版说的包装脚本。剩下要人做的是把 `result/bin` 放进 `PATH`，然后按 §2.1 按一次键。
-
-## 6. 2026-10-10 的一次实际走查
-
-这一节是清单里**已经在真机上跑过**的那部分，留着当证据与对照；它不改变上面任何一项的性质，
-没列进来的就是没走的。
-
-环境：本机 niri 26.04（Wayland），`scripts/stub-provider.py` 在 8080 冒充 `llamacpp`，
-临时 `HOME` / `XDG_*`（真实配置与历史没被碰）。
-
-| 项 | 观察 |
-| --- | --- |
-| §3.1 CLI 端到端 | `echo … \| plainly` 退出 0，stdout 是四节 markdown（`grammar` 为 null，空节被省掉；五节形状里的 Original / Comprehensible English / Key Help / Translation），stderr 两行：`explaining with llama.cpp (stub-model, thinking off) — local model on this machine` 与 `contract: enforced by the endpoint (response_format json_schema)` |
-| §3.2 stdout 只有产物 | 上面那条重定向到文件后文件里只有 markdown，人类信息全在 stderr |
-| §3.3 历史即缓存 | 第二次同一段：退出 0，stderr 说 `reusing the stored Explanation … nothing was sent`，`scripts/stub-provider.requests.log` **一行没长** |
-| §3.4–3.5 面板端到端与命中缓存 | `plainly-panel --clipboard` 起来后从剪贴板拿到那段，走完 core 流水线（历史库的记录时间戳就是这一次），屏幕上是结果态 |
-| §1.2 焦点不变 | 面板出现前后 `niri msg focused-window` 都是同一个窗口（`zen-twilight`，id 5） |
-| §1.3 不进窗口列表 | `niri msg windows` 始终 5 个，没有面板 |
-| layer 事实 | `niri msg layers` 里多出 `{"namespace":"plainly-panel","layer":"Overlay","keyboard_interactivity":"None"}` —— 这同时是 `keyboard_mode=NONE` 的机器证据（Esc 因此无效，但用真键盘按一次仍值得做） |
-| 渲染 | 截图里标题栏五项齐全（`Plainly` · `llamacpp · stub-model · 本地` chip · 复制 · ⟳ · ⤢ · ✕）、原文在上、本地提示（那句 `本地模型；…`）在正文之下 |
-| §1.8 自动消失 | `panel_autohide = true` + `panel_autohide_seconds = 8`：面板进程自己退出，退出码 0 |
-| §1.10 看门狗正常路径 | `panel_autohide = false` 时面板进程活着超过 5 秒——看门狗没有误开枪。上屏延迟也量了：轮询 `niri msg layers`，layer 在按下后 **232 ms** 可见，进程当时还活着（grace 是 5 秒，正常路径差着二十倍） |
-| §1.11 看门狗病态路径（未复现） | `GDK_BACKEND=x11 DISPLAY=:0 WAYLAND_DISPLAY=wayland-99`（socket 不存在）：**87 ms** 就以退出码 1 结束，stderr 是 `cannot connect to the Wayland session: Could not find wayland compositor`——这是在 `capability::presentation()` 里、绘制阶段之前，所以它证不了 5 秒那条路径。本机没有嵌套合成器，造不出「已 map 但画不出」 |
-| §4.6 X11 明确报不支持 | `DISPLAY=:0 env -u WAYLAND_DISPLAY plainly-panel --clipboard` → 退出 1，stderr 一行：`plainly-panel: X11 is not supported in v0: the panel needs Wayland (niri, sway, or another wlroots-family compositor). The command line works on X11 — explain a file or a pipe with `plainly`.` |
-| §4.7 `--clipboard` 同样报不支持 | 同一环境下 `plainly explain --clipboard` → 退出 1，stderr 里是同一句（说的是 reading the clipboard） |
-| 无会话（**改完后重测**） | 既无 `WAYLAND_DISPLAY` 也无 `DISPLAY` 时：面板退出 1，stderr 是 `plainly-panel: no Wayland session: the panel needs one`；`--clipboard` 退出 1，stderr 是 `plainly: no Wayland session: reading the clipboard needs one`——与 X11 那句不同，因为修法不同。走查当时面板走的是「连不上 Wayland」那句（库的文本）；本行是 `None` 也走 `refusal()` 之后**重新构建并重跑**的结果 |
-
-**装出来的那份也走了一次**（2026-10-10，`nix build .` 之后）：`result/bin/plainly-panel` 在一个
-**最小环境**里启动（只留 `WAYLAND_DISPLAY` / `XDG_RUNTIME_DIR` / `DBUS_SESSION_BUS_ADDRESS` /
-`PATH` 等会话变量，**没有** `LD_LIBRARY_PATH`、没有 `nix develop`）：niri 的 `layers` 里出现
-`plainly-panel`，焦点仍是原来的窗口，剪贴板那段经真 DeepSeek 解释并落进历史库，`result/bin/plainly`
-随即读出了那条记录。这就是「装完能用」在真会话里的证据。
-
-**这次没走到的**（都在上面的清单里，别当成已验）：键绑 spawn 与快捷键浮层（§2.1–2.2，装出来的
-面板已具备条件，缺的只是把 `result/bin` 放进 niri 的 `PATH` 并真按一次）、Esc 用真键盘按一次（§1.4）、
-✕ 点击（§1.5，进程是用信号结束的）、看门狗的病态路径（§1.11）、多块与两种拒绝态（§1.13–1.15）、
-复制 / ⟳ / ⤢（§1.16–1.19）、四角各一次（§1.7）、GNOME 整节（§4.1–4.5）、主窗口与 `--watch`
-（[desktop-manual-checks.md](desktop-manual-checks.md)）。第二次触发是否复用同一个面板进程这一项，
-**2026-10-11 补验了**（§7 的 §1.6 行；当时那句「`pgrep` 数不准」是被沙箱里的陈旧 `target/debug`
-进程骗的，看 pid 就分得清）。
-
-## 7. 2026-10-11：装出来的那一份走查（打包票据的验收）
-
-这一节存在的理由只有一个：**走的是 `nix build` 的产物，不是 `target/debug`**，而且面板是从一个
-刻意剥掉 `LD_LIBRARY_PATH` 的环境里起的——也就是 niri 键绑 spawn 时给它的那种环境。§0 的那句
-「用装出来的二进制」就是这一节立的规矩。
-
-环境：本机 niri 26.04（Wayland），产物 `nix build .` → `result/bin`，假 provider 在 8080
-（`python3 scripts/stub-provider.py --port 8080`），`HOME` 指到 `/tmp` 下的临时目录
-（真实配置、历史与 keyring 没被碰）。
-
-| 项 | 观察 |
-| --- | --- |
-| §1.1 / §1.3 上屏与不进窗口列表 | `niri msg layers` 多出 `{"namespace":"plainly-panel","layer":"Overlay","keyboard_interactivity":"None"}`；`niri msg --json windows` 的条数在面板前后都是 5，面板不在里面 |
-| §1.2 焦点不变 | 面板出现前后 `niri msg --json focused-window` 是同一条记录：id 4 `zen-twilight`，`focus_timestamp` 的 `secs`/`nanos` 一字不差——不只是同一个窗口，是**一次焦点变化都没发生** |
-| §1.6 第二次触发复用同一个进程 | 第二次 `plainly-panel --clipboard` 之后 `pgrep` 只有一个进程且 **pid 与第一次相同**（168427）；`scripts/stub-provider.requests.log` 仍是 147 行，历史库仍是 1 条——第二次既没起新进程，也没重新请求 |
-| §3.4–3.5 面板端到端与命中缓存 | 剪贴板那段落进 `$HOME/.local/share/dev.plainly.app/history.db`（`select count(*)` = 1），`plainly history` 打印出它：`1  2026-10-11T10:55:01Z  B2  llamacpp/stub-model  thinking off  v7-descriptors@de85bff8  The manager had already gone to ground.` |
-| §2.4 退出不留东西 | 面板收到 `SIGTERM`（清单里 ✕ 的等价物）后退出，`niri msg layers` 里 `plainly-panel` 消失，没有残留的 socket / 锁 |
-| §3.6 主窗口能从裸会话起来 | 同一个最小环境里 `plainly-desktop` 起来，`niri msg windows` 里是 `id 17  plainly-desktop  |  Plainly | focused: True`——标题与 `.desktop` 的 `Name=Plainly` 一致，窗口的 **app_id 是 `plainly-desktop`**，所以 `StartupWMClass` 写的是这个名字（见 §8） |
-| §1.10 看门狗正常路径（装出来的那份） | 面板在最小环境里活着到 7 秒（`timeout` 把它结束，退出码 124），stderr 只有一条 AT-SPI 找不到辅助功能总线的警告——看门狗没有误开枪 |
-
-三个动态链接层面的判据这轮也重跑了，它们才是「不靠 dev shell」的机器证据：
-`env -i ldd result/bin/.plainly-panel-wrapped` 与 `.plainly-desktop-wrapped` 各 67 / 156 个库、
-**0 个 `not found`**；两个 GUI 二进制在 `env -i` 下都能走到自己的参数检查（打印 `usage:` 而不是
-动态链接器的报错）。**这两条是 `scripts/check-flake-packages.sh` 会重跑的**（它还断言 CLI 的
-闭包与 derivation 输入里 grep 不到图形库、两个闭包大小不同）。
-
-`nix profile install --profile /tmp/… .#plainly` 与 CLI 的 `ldd` 是**这一轮一次性的**观察，不在
-那个脚本里：装出来的 `plainly --version` 打出 `plainly 0.1.0`，`env -i ldd` 0 个 `not found`，
-profile 的闭包同样 grep 不到图形库。要重跑就照上面那条命令，用 `--profile` 指到一个临时
-profile，不要去动真实的 profile。
-
-**没走的**：真按一次键绑（§2.1–2.2）。§1.2 的焦点与上屏这一轮是在**比键绑更苛刻**的环境里验的
-（`env -i`，连 `PATH` 与 `XDG_DATA_DIRS` 都只剩手写的那几个；niri 的 `spawn` 给的是它自己的继承
-环境），缺的只是把 `result/bin` 放进 niri 的 `PATH`、把那一行 `binds` 写进去、然后真按一下；
-`hotkey-overlay-title` 那一项只能人看。其余没走的：✕ 的鼠标点击（§1.5，用的是信号）、Esc（§1.4）、
-复制 / ⟳ / ⤢（§1.16–1.19）、四角（§1.7）、自动消失（§1.8–1.9，§6 记过一次）。
-
-## 8. `.desktop` 的身份：文件名不是窗口类
-
-`packaging/dev.plainly.app.desktop` 同时带着两个名字，它们不是同一个东西：
-
-- **`dev.plainly.app`**：文件名与 `Icon=`。这是仓库的 identifier（`plainly_core::paths::IDENTIFIER`），
-  配置目录、数据目录与 D-Bus 名都跟着它。启动器按文件名与 `Icon` 找到图标与名字。
-- **`plainly-desktop`**：`StartupWMClass=`。这是窗口的 **Wayland app_id**，而它不是 identifier：
-  `tao` 用**没有 application ID** 的 `gtk::Application`（`event_loop.rs` 的 `new_gtk`），GTK 于是
-  公布程序名。2026-10-11 在 niri 上实测 `niri msg --json windows` 的 `app_id` 就是
-  `plainly-desktop`。
-
-要让 app_id 变成 identifier 得打开 Tauri 的 `app.enableGTKAppId`，**这一版故意不打开**：它会让
-GTK 用那个 ID 在会话总线上注册，第二个实例的启动就由 D-Bus 激活接管——而 `--watch` 的交接
-（`crates/plainly-desktop/src/single.rs` 的锁文件 + socket）正是要亲手处理第二次启动的请求
-（「把窗口带到前面」），两条单实例机制撞在一起会把后者短路。所以这一版选的是：**让
-`.desktop` 说出窗口真实的 app_id**，而不是让窗口去够 identifier。桌面按 `StartupWMClass`
-把窗口与启动器里的那一条配对；配不上时启动器会把窗口归到一个没有名字、没有图标的第二组里。
+- **键绑 spawn 的前提**：`nix build .` 装出来的面板自带库路径，但 `result/bin` 必须在 `PATH` 上；
+  剩下的只是把那一行 `binds` 写进 niri 配置，然后按 §2.1 真按一次键。

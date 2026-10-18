@@ -24,8 +24,7 @@ use plainly_core::ExportFormat;
 pub struct Cli {
     /// `explain`'s own arguments, so that the default command can be spelled
     /// without naming it: `plainly --format json` and `plainly passage.md` mean
-    /// what `plainly explain …` means. The subcommand form still exists, and the
-    /// two are folded together rather than one silently winning.
+    /// what `plainly explain …` means.
     #[command(flatten)]
     pub explain: ExplainArgs,
     #[command(subcommand)]

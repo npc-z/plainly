@@ -1,19 +1,18 @@
-//! A fake OpenAI-compatible endpoint on loopback, with Ollama's own route
-//! beside it.
+//! A fake OpenAI-compatible endpoint on loopback, with Ollama's own route beside
+//! it.
 //!
-//! The second seam of ticket 03, extended by ticket 05: the real binary, a real
-//! (temporary) set of XDG directories, and this stub in place of the cloud. It
-//! answers exactly the way a provider does — `POST /v1/chat/completions`, a
-//! `choices[0].message.content`, `GET /v1/models` for the model list, and
-//! `POST /api/chat` for Ollama — so a test can assert both what the CLI sent and
-//! what it did with an answer, without a key, a model or any network beyond the
-//! loopback interface.
+//! The real binary, a real (temporary) set of XDG directories, and this stub in
+//! place of the cloud. It answers the way a provider does — `POST
+//! /v1/chat/completions`, a `choices[0].message.content`, `GET /v1/models` for
+//! the model list, and `POST /api/chat` for Ollama — so a test can assert both
+//! what the CLI sent and what it did with an answer, without a key, a model or
+//! any network beyond the loopback interface.
 //!
-//! Probe requests are answered from [`Capability`] rather than from the script.
-//! A probe is not the product under test in a test about explaining; it is the
-//! thing that has to have happened, and scripting it per test would make every
-//! explanation test say what shape the endpoint takes before it can say anything
-//! about the Explanation.
+//! Probe requests are answered from [`plainly_core::Capability`] rather than from
+//! the script. A probe is not the product under test in a test about explaining;
+//! it is the thing that has to have happened, and scripting it per test would
+//! make every explanation test say what shape the endpoint takes before it can
+//! say anything about the Explanation.
 
 use std::collections::VecDeque;
 use std::io::{Read, Write};
@@ -32,7 +31,7 @@ pub struct Recorded {
     pub path: String,
     /// The `Authorization` header, when the request carried one. Local
     /// discovery sends a key where a name has one, and a test has to be able to
-    /// tell that it did (tickets/06).
+    /// tell that it did.
     pub authorization: Option<String>,
     pub body: Value,
 }
@@ -166,8 +165,7 @@ impl FakeProvider {
     }
 
     /// Change what the endpoint takes, mid-test: an endpoint that changed its
-    /// mind after a cache was written is the case ticket 05's downgrade path
-    /// exists for.
+    /// mind after a cache was written.
     pub fn set_capability(&self, capability: StubCapability) {
         *self
             .capability

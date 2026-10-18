@@ -2,24 +2,23 @@
 //!
 //! The four documented classes each go their own way (spec §7):
 //!
-//! - an unusable **answer** — malformed JSON, a schema violation, nothing usable
-//!   at all — is asked for again, up to twice more, because a model at
+//! - an unusable **answer** (malformed JSON, a schema violation, nothing usable
+//!   at all) is asked for again, up to twice more, because a model at
 //!   temperature 0 can still miss once;
 //! - **the same answer twice** ends it there: a contract violation that
-//!   reproduces is systematic drift, not sampling noise, and the measured
-//!   example (a renamed field, 3 times out of 3) says the third call is wasted;
+//!   reproduces is systematic drift, not sampling noise, and the third call would
+//!   buy the same answer;
 //! - a **4xx that rejects the request's shape** is not retried at all: the
-//!   capability we assumed for that endpoint is wrong, and tickets/05 downgrades
-//!   it and probes again;
+//!   capability we assumed for that endpoint is wrong, so it is downgraded and
+//!   probed again;
 //! - **429, 5xx, timeouts and dropped connections** are transient, so they back
-//!   off — about a second, then about four — and that schedule runs even when
-//!   the error repeats, because a rate limit that repeats is exactly what
-//!   backing off is for. Repeat detection belongs to the answer's shape, not to
-//!   the network.
+//!   off, about a second and then about four. That schedule runs even when the
+//!   error repeats, because a rate limit that repeats is exactly what backing off
+//!   is for. Repeat detection belongs to the answer's shape, not to the network.
 //!
 //! Everything the policy decides is injected: the waiting is a closure, so a test
 //! can read the schedule instead of sleeping through it, and the clock is an
-//! instant the caller chose (tickets/02).
+//! instant the caller chose.
 
 use std::time::Duration;
 
@@ -42,9 +41,9 @@ const _: () = assert!(BACKOFF.len() == MAX_EXTRA_ATTEMPTS as usize);
 
 /// Produce the Artifact for one Passage, retrying as the policy allows.
 ///
-/// `pause` is called before every retry with the wait the policy chose — zero
-/// for a class that retries at once. Whether that wait is slept through is the
-/// caller's move, and the CLI reports progress there too.
+/// `pause` is called before every retry with the wait the policy chose, zero for
+/// a class that retries at once. Whether that wait is slept through is the
+/// caller's move.
 ///
 /// The instant belongs to the caller and stands for the whole run: a retry that
 /// spans the backoff does not move it, because an Explanation is stamped with
@@ -114,11 +113,9 @@ pub fn explain(
 /// Why an Explanation was not produced, after the policy gave up.
 ///
 /// The surface has everything it needs to say what happened: the class, the
-/// reason to show, and how many requests were made. A `Failure` is the only
-/// outcome of a failed run — there is no Artifact — and an Artifact is the only
-/// thing a Record can be written from (tickets/08), so nothing was stored, and
-/// neither the Passage nor anything it came from was touched. The sentence the
-/// panel puts around that (spec §12) is the panel's copy (tickets/15).
+/// reason to show, and how many requests were made. A failed run has no Artifact,
+/// and only an Artifact can be written to a Record, so nothing was stored and
+/// neither the Passage nor anything it came from was touched.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Failure {
     /// The class, for a caller that branches rather than prints.
@@ -145,8 +142,8 @@ impl Failure {
 /// policy*, which is the sentence each variant carries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FailureKind {
-    /// The endpoint rejected the request's shape; tickets/05 downgrades the
-    /// capability and probes again.
+    /// The endpoint rejected the request's shape, so the capability is downgraded
+    /// and probed again.
     UnsupportedParameter,
     /// Transient trouble — 429, 5xx, a timeout, a dropped connection — so the
     /// same request is worth making again later.
@@ -156,7 +153,7 @@ pub enum FailureKind {
     /// The model declined; asking again is not a fix.
     Refused,
     /// The answer was not an Explanation: malformed JSON or a schema violation
-    /// on this side, or a response that is not a chat completion at all.
+    /// on this side.
     Malformed,
     /// The model produced nothing usable: empty content, a chain of thought
     /// where the answer should have been, a response with no choices.
@@ -240,11 +237,9 @@ impl FailureKind {
     ///
     /// [`FailureKind::Empty`] is deliberately not included, even though it
     /// repeats as drift alongside this one. An empty answer also covers an
-    /// endpoint that did not answer with a chat completion at all — no choices,
-    /// no message, a 200 whose body is not JSON — and blaming the user's prompt
-    /// for that (tickets/07 answers a contract failure with "your prompt did not
-    /// pass the contract" and a retry on the factory prompt) would be wrong, on
-    /// a retry that could not differ.
+    /// endpoint that did not answer with a chat completion at all: no choices, no
+    /// message, a 200 whose body is not JSON. Blaming the user's prompt for that
+    /// would be wrong, and the retry on the factory prompt could not differ.
     pub fn is_contract(self) -> bool {
         matches!(self, FailureKind::Malformed)
     }

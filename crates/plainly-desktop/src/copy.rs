@@ -1,26 +1,14 @@
 //! Putting an Explanation on the clipboard.
 //!
-//! The main window is a focused, ordinary window, so it has no need of the
-//! panel's data-control read (spec §12). It *writes*, which is a different
-//! problem: the selection has to outlive the call, and a window that exits is
-//! not allowed to take the clipboard with it.
+//! The main window is a focused, ordinary window, so it only writes the
+//! clipboard; the selection has to outlive the call, and a window that exits
+//! must not take it away.
 //!
-//! Two routes, in order:
-//!
-//! - `wl-copy` from `wl-clipboard`, which forks and serves the selection until
-//!   something else claims it. It is in the development shell, which is where
-//!   Plainly is run from in v0;
-//! - `xclip` with the same trick for an X11 session, which is what a fallback
-//!   window on a compositor with no data-control is likely to be inside.
-//!
-//! Neither is a crate dependency: both are tiny, both already exist on a
-//! desktop, and writing the selection-serving loop here would be a third copy
-//! of it. Both failing is reported rather than swallowed — a "已复制" that
-//! copied nothing is worse than a sentence saying the clipboard did not take it.
-//!
-//! The two routes differ in a program name, its arguments and how a failure of
-//! it is worded, and in nothing else, so they are a table ([`ROUTES`]) and one
-//! function rather than two copies of spawn, write and wait.
+//! Two routes, in order: `wl-copy` from `wl-clipboard`, which forks and serves
+//! the selection until something else claims it, and `xclip` with the same trick
+//! for an X11 session. Neither is a crate dependency: both are tiny and already
+//! on a desktop. Both failing is reported rather than swallowed, because a
+//! "已复制" that copied nothing is worse than a sentence saying it did not take.
 
 use std::io::Write;
 use std::process::{Command, Stdio};
@@ -30,29 +18,21 @@ use crate::error::WindowError;
 
 /// How long a route is given to finish.
 ///
-/// Not a timeout on the *work*: both programs hand the selection to a process
-/// that outlives them and return. It is a bound on a client stuck before it gets
-/// there — a compositor that never answers, a program waiting on something that
-/// will not come — because these commands run on the window's own thread, and a
-/// thread that waits forever is a window that freezes with no sentence on
-/// screen.
+/// Not a bound on the work: both programs hand the selection to a process that
+/// outlives them. It bounds a client stuck before that, because these run on the
+/// window's own thread and a thread that waits forever is a window that freezes.
 const ROUTE_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// How often the route is looked at while it runs.
 const POLL: Duration = Duration::from_millis(25);
 
 /// One route to the clipboard: a program that takes the text on stdin and keeps
 /// serving the selection after this call returns.
 struct Route {
-    /// The program, which is one a desktop already has.
     program: &'static str,
-    /// Its arguments, if any.
     args: &'static [&'static str],
-    /// How a failure of this route is worded.
     failure: fn(&str) -> String,
-    /// How long this route is given, and how often it is looked at while it
-    /// runs. Per route rather than per module so that the test of the deadline
-    /// does not spend five seconds proving one.
+    /// How long this route is given, and how often it is looked at. Per route so
+    /// the deadline test does not spend five seconds proving one.
     timeout: Duration,
     poll: Duration,
 }
@@ -98,13 +78,11 @@ pub fn copy(text: &str) -> Result<(), WindowError> {
 /// and then died leaves nothing on the clipboard, so "it started" is not "it
 /// worked".
 ///
-/// Its **stderr is not read, and deliberately not piped**. `wl-copy` is started
-/// precisely because it forks a child that keeps serving the selection after the
-/// parent returns; that child inherits the pipe, so reading until EOF would wait
-/// for the selection to be claimed rather than for the command to finish, and
-/// 「复制 markdown」 would appear to hang for as long as the clipboard was held.
-/// The cost is the program's own diagnostic in the failure message; the exit
-/// status, which is what says whether the text went anywhere, is still read.
+/// Its **stderr is not read, and deliberately not piped**. `wl-copy` forks a
+/// child that keeps serving the selection after the parent returns, and that
+/// child inherits the pipe, so reading to EOF would wait for the selection to be
+/// claimed and 「复制 markdown」 would appear to hang. The cost is the program's
+/// own diagnostic in the failure message. The exit status is still read.
 fn run(route: &Route, text: &str) -> Result<(), String> {
     let mut child = Command::new(route.program)
         .args(route.args)
@@ -115,10 +93,9 @@ fn run(route: &Route, text: &str) -> Result<(), String> {
         .map_err(|error| format!("起不来：{error}"))?;
 
     // A route that has already exited closed its input, and a `BrokenPipe` here
-    // means exactly that: there was nobody left to read the text. It is not the
-    // failure to report — the exit status below is what says whether the
-    // clipboard got anything — so the write is best-effort and the status is the
-    // answer. Every other write error is real.
+    // means there was nobody left to read the text. The exit status below is what
+    // says whether the clipboard got anything, so the write is best-effort and
+    // every other write error is real.
     if let Some(mut input) = child.stdin.take() {
         if let Err(error) = input.write_all(text.as_bytes())
             && error.kind() != std::io::ErrorKind::BrokenPipe
@@ -127,13 +104,10 @@ fn run(route: &Route, text: &str) -> Result<(), String> {
             return Err(format!("写不进去：{error}"));
         }
     }
-    // The stdin handle is dropped at the end of the block above, which is what
-    // tells the program that the text has ended.
+    // Dropping stdin is what tells the program that the text has ended.
 
     // Polled rather than waited on with a deadline, because the standard library
-    // has no such wait and these commands run on the window's own thread: a
-    // client that never exits must not take the window with it. Every 25ms of a
-    // five-second ceiling, on a click, is not a cost worth a thread for.
+    // has no such wait and these commands run on the window's own thread.
     let started = Instant::now();
     loop {
         match child.try_wait() {

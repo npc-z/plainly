@@ -6,13 +6,11 @@
 //! first, and a cut-off answer is malformed JSON, which reads as a model fault
 //! while the root cause is the request.
 //!
-//! The rule, in order (spec §6):
+//! The rule, in order (spec §6): paragraphs are packed up to [`CHUNK_WORDS`], a
+//! paragraph over the threshold on its own drops to sentence boundaries, and a
+//! sentence over it on its own drops to word boundaries.
 //!
-//! 1. paragraphs, packed up to [`CHUNK_WORDS`];
-//! 2. a paragraph over the threshold on its own drops to sentence boundaries;
-//! 3. a sentence over the threshold on its own drops to word boundaries.
-//!
-//! Step 3 is not in the spec's wording, but it is what keeps the threshold a
+//! The last step is not in the spec's wording, but it keeps the threshold a
 //! promise: a single sentence can be any length, and the alternative to a
 //! fragment is a request the completion budget may not cover.
 //!

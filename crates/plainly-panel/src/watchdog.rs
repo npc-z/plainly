@@ -1,12 +1,11 @@
 //! The render watchdog: the panel must not outlive its own failure to draw.
 //!
 //! `keyboard_mode=NONE` means Esc does nothing, and automatic dismissal is off
-//! by default, so ✕ is the panel's only way out (spec §12). That makes "the
-//! panel never reached the screen" a state nobody can escape — and it has
-//! happened: a probe surface stayed up for 23 minutes because
-//! `gtk_main_quit()` does not stop a `GApplication`. So the panel gives itself a
-//! few seconds to paint and exits if it never does. The normal path never fires
-//! it.
+//! by default, so ✕ is the panel's only way out. That makes "the panel never
+//! reached the screen" a state nobody can escape, and it has happened: a probe
+//! surface stayed up for 23 minutes because `gtk_main_quit()` does not stop a
+//! `GApplication`. So the panel gives itself a few seconds to paint and exits if
+//! it never does. The normal path never fires it.
 
 use std::time::{Duration, Instant};
 

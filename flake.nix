@@ -1,16 +1,10 @@
 {
   description = "Plainly development environment and packages";
 
-  # The public binary cache the packages are pushed to (README, "Binary
-  # cache"). `nix build` / `nix profile install` against this flake can
-  # substitute both packages from here instead of compiling the Rust stack;
-  # `just cache-push` is what fills it. Nix only applies a flake's `nixConfig`
-  # when that flake is trusted: pass `--accept-flake-config` (or set
-  # `accept-flake-config = true` in nix.conf), or Nix treats these two settings
-  # as untrusted (it warns; an interactive run may ask first) and the build is
-  # unchanged. A flake *input* does not carry its `nixConfig` into the importing
-  # flake, so someone adding plainly as an input enables the cache in their own
-  # `nix.settings` (README says how).
+  # The public binary cache `just cache-push` fills. The cache URL and key also
+  # appear in the README's consumer instructions, and a flake input does not
+  # carry this `nixConfig` into the importing flake, so a change here means a
+  # change there too.
   nixConfig = {
     extra-substituters = [ "https://plainly-npc-z.cachix.org" ];
     extra-trusted-public-keys = [
@@ -31,10 +25,6 @@
   };
 
   outputs = { self, nixpkgs, flake-utils, fenix, crane }:
-    # v0 ships Linux only. The structure is readest's (a parameterised mkShell
-    # over an explicit system list) so that adding `aarch64-darwin` for v1 is a
-    # two-line change — but an unverified darwin shell would rot and would read
-    # as "macOS works", so it is deliberately absent.
     flake-utils.lib.eachSystem [ "x86_64-linux" ] (system:
       let
         inherit (nixpkgs) lib;
@@ -46,11 +36,10 @@
         # The Rust toolchain, pinned to one exact release rather than to whatever
         # rustc nixpkgs happens to ship. `channel` is a release number from
         # static.rust-lang.org and the sha256 is that release's channel manifest,
-        # so the compiler moves only when this file does — updating nixpkgs
-        # cannot change it. (The workspace's `rust-version` floor is a separate
-        # edit: the root `Cargo.toml` alone; the CLI package's manifest is
-        # generated from it. A wrong hash is reported by the fetch with the
-        # right one.)
+        # so the compiler moves only when this file does, and updating nixpkgs
+        # cannot change it. The workspace's `rust-version` floor is a separate
+        # edit in the root `Cargo.toml`, which the generated CLI manifest
+        # inherits. A wrong hash is reported by the fetch with the right one.
         rustToolchain = fenix.packages.${system}.toolchainOf {
           channel = "1.99.1";
           sha256 = "sha256-+xUr6Al1wZSqX8aEsq7DpuFOK4Ve/i+qTl+K5uWQ9GM=";
@@ -70,49 +59,40 @@
         ];
 
         # What the two packages build with. `makeRustPlatform` is nixpkgs' way of
-        # handing its `buildRustPackage` hooks a toolchain other than its own;
-        # only `cargo` and `rustc` are needed here, and both come from the same
-        # 1.99.1 release as the shell's components, so a `cargo build` in
-        # `nix develop` and a `nix build` compile with the same rustc.
+        # handing its `buildRustPackage` hooks a toolchain other than its own.
+        # Only `cargo` and `rustc` are needed here, and both come from the same
+        # release as the shell's components, so `cargo build` in `nix develop` and
+        # `nix build` compile with the same rustc.
         rustPlatform = pkgs.makeRustPlatform {
           cargo = rustToolchain.cargo;
           rustc = rustToolchain.rustc;
         };
 
-        # crane's library, on the same release. `overrideToolchain` is how crane
-        # is told about a toolchain that is not nixpkgs' own; `minimalToolchain`
-        # is the same cargo/rustc pair `rustPlatform` above takes — one
-        # derivation, so neither binding repeats the other's list, and the
-        # analyzer, docs and formatter do not travel with a build.
+        # crane's library, on the same release. `overrideToolchain` tells crane
+        # about a toolchain that is not nixpkgs' own. `minimalToolchain` is the
+        # same cargo/rustc pair `rustPlatform` takes, so the analyzer, docs and
+        # formatter do not travel with a build.
         craneLib = (crane.mkLib pkgs).overrideToolchain (_: rustToolchain.minimalToolchain);
 
-        # Tools for whoever is working on the code: the frontend's package
-        # manager, a C toolchain for linking, and the odds and ends the tickets
-        # reach for. None of this is needed to *run* plainly — this is a mkShell,
-        # so the list is simply what ends up on PATH.
+        # Tools for whoever is working on the code. None of them are needed to
+        # run plainly.
         #
-        # `wl-clipboard` is here for `plainly explain --clipboard`, the headless
-        # surface's reader of the session clipboard (ticket 12). The panel reads
-        # the clipboard through data-control directly; this is what a client with
-        # no window has instead. The main window *writes* the clipboard through
-        # `wl-copy` from the same package, and falls back to `xclip` on a session
-        # with no Wayland at all (ticket 14) — hence both.
+        # `wl-clipboard` is the CLI's `--clipboard` reader and the main window's
+        # writer, because a client with no window cannot use GTK's clipboard. The
+        # panel reads the clipboard through data-control directly. `xclip` is the
+        # main window's fallback on a session with no Wayland at all.
         devTools = with pkgs; [
           pnpm
           nodejs_24
-          # `just` runs the `Justfile` at the repository root, which is where the
-          # common cargo, Nix and script invocations live. It is declared here so
-          # `nix develop` then `just check` works on a machine that does not
-          # install it globally; the recipes wrap commands that need this shell
-          # in `nix develop -c`, so they also work from a plain terminal.
+          # `just` runs the root `Justfile`, which holds the common cargo, Nix and
+          # script invocations. It is declared here so `nix develop` then
+          # `just check` works on a machine that does not install it globally.
           just
-          # `python3` is asked for by name in two places a contributor is told to
-          # run inside this shell: `scripts/check-headless-cli.sh` reads cargo's
-          # JSON with it, and `scripts/stub-provider.py` is the fake provider the
-          # manual end-to-end checklist uses. On a machine whose base system has
-          # no python3, a non-pure `nix develop` would still find one by accident
-          # through the host `PATH`; declaring it here is what makes it a
-          # guarantee (AGENTS.md: a missing program is fixed in `flake.nix`).
+          # `python3` is asked for by name by two scripts a contributor runs in
+          # this shell: `scripts/check-headless-cli.sh` reads cargo's JSON with
+          # it, and `scripts/stub-provider.py` is the manual checklist's fake
+          # provider. Declaring it here is what turns a non-pure `nix develop`
+          # finding some host python3 by accident into a guarantee.
           python3
           clang
           pkg-config
@@ -122,29 +102,20 @@
           xclip
         ];
 
-        # The editor's view of the code. Not needed to build or run anything,
-        # but the alternative is every developer pointing their editor at a
-        # rust-analyzer of their own, which may disagree with the toolchain above
-        # and report errors the compiler does not have. This is the analyzer
-        # component of the same 1.99.1 release, not fenix's nightly analyzer, so
-        # the editor parses the same language the compiler accepts. It is still
-        # a separate few hundred megabytes, so it is never implied: a shell that
-        # wants it says `editors = true` (see `mkPlainlyShell` below), and no
-        # future shell inherits the download by accident.
+        # The editor's view of the code. This is the analyzer component of the
+        # same release as the compiler, not fenix's nightly analyzer, so the
+        # editor parses the same language the compiler accepts. It is a separate
+        # few hundred megabytes, so it is opt-in: a shell that wants it says
+        # `editors = true`.
         rustAnalyzer = rustToolchain.rust-analyzer;
 
-        # `glib` is here because `LD_LIBRARY_PATH` is built from this list alone,
-        # and it is not transitive: gtk3's own lib dir is on the path, but the
-        # `libglib-2.0` / `libgobject-2.0` / `libgio-2.0` its closure needs are
-        # not, so the panel would link and then fail to start inside the shell.
-        #
-        # `at-spi2-core` (which is what the `atk` alias resolves to) is the same
-        # story with a different library: gtk3's closure has
-        # `libatk-1.0.so.0` in at-spi2-core's lib dir, which is not on the path
-        # either, and the panel dies at startup with "cannot open shared object
-        # file". The panel's own tests do not need it (they never open a display),
-        # which is exactly why this gap only shows up when someone runs the panel
-        # — so it is fixable here or it is rediscovered every time.
+        # `LD_LIBRARY_PATH` is built from this list alone and is not transitive:
+        # gtk3's own lib dir is on the path, but the `libglib-2.0`,
+        # `libgobject-2.0` and `libgio-2.0` its closure needs are not, so the
+        # panel links and then fails to start inside the shell. `at-spi2-core`
+        # (which is what the `atk` alias resolves to) is the same story with
+        # `libatk-1.0.so.0`. The panel's tests never open a display, which is why
+        # the gap only shows up when someone runs the panel.
         libraries = with pkgs; [
           glib
           at-spi2-core
@@ -182,14 +153,12 @@
             buildInputs = shellLibraries;
 
             env = {
-              # readest sets `x11` here; plainly must not. layer-shell does not
-              # exist on XWayland, and GTK picks X11 whenever DISPLAY is set.
+              # Wayland only: layer-shell does not exist on XWayland, and GTK
+              # picks X11 whenever DISPLAY is set.
               GDK_BACKEND = "wayland";
               LD_LIBRARY_PATH = lib.makeLibraryPath buildInputs;
             } // extraEnv;
           };
-
-        # --- packages -------------------------------------------------------
 
         # Everything in the repository, with build output and history left out.
         # Without this filter the source copy carries `target/` — tens of
@@ -213,33 +182,26 @@
         # nothing else.
         #
         # This is the split, not tidiness. Cargo resolves every workspace member
-        # before it builds anything, so *any* invocation against the real
-        # workspace — including `cargo build --package plainly-cli` — reaches
-        # `plainly-desktop` → `tauri` → `libdbus-sys`, whose build script panics
-        # without a dbus C library. The command line must not need one (spec §2),
-        # and a workspace without the GUI crates is what makes that true of the
-        # built artifact rather than of the crate names.
+        # before it builds anything, so any invocation against the real workspace,
+        # including `cargo build --package plainly-cli`, reaches
+        # `plainly-desktop` → `tauri` → `libdbus-sys`, whose build script panics in
+        # a build sandbox without a dbus C library. The command line must not need
+        # one (spec §2), and a workspace without the GUI crates is what makes that
+        # true of the built artifact rather than of the crate names.
         #
-        # The manifest and the lock file are generated, not written here: they are
-        # derived from the root ones by `scripts/generate-cli-workspace.sh` and
-        # committed under `nix/cli-workspace/`, and
-        # `scripts/check-cli-workspace.sh` fails when the two drift apart. The lock
-        # is cargo's own normalisation of the pruned root lock, so it keeps the
-        # versions the root lock pinned while dropping the optional edges only the
-        # GUI activates — `cargo --locked`, which crane always passes, is what the
-        # committed pair must satisfy. The lock is a small fraction of the real
-        # workspace's package set.
+        # Building the real workspace with `--package plainly-cli` is not an
+        # alternative, because in the sandbox that path still runs the build script
+        # and fails on its panic. In the dev shell it succeeds, because the shell
+        # has `dbus-1.pc` and a compiler for the probe, which is why the sandbox
+        # case needs a source tree of its own.
         #
-        # It is kept, rather than the root workspace built with `--package
-        # plainly-cli`, because of one word in the sentence above: *panics*. Built
-        # inside the sandbox, that path does run `libdbus-sys`'s build script and
-        # fails on `explicit panic` (observed 2026-10-11); a `cargo build -p
-        # plainly-cli` in the dev shell does *not*, because the shell has
-        # `dbus-1.pc` and a compiler for the probe the script runs. The dev shell
-        # is the one place the question cannot be asked, which is exactly why this
-        # copy exists.
-        # These two crates are also `MEMBERS` in `scripts/cli_workspace.py`;
-        # adding a CLI crate edits both places (Nix cannot read the module).
+        # The manifest and lock are generated by
+        # `scripts/generate-cli-workspace.sh` and committed under
+        # `nix/cli-workspace/`, so edit the root manifests and regenerate rather
+        # than editing them here.
+        #
+        # The same two crates are `MEMBERS` in `scripts/cli_workspace.py`: a new
+        # CLI crate edits both, because Nix cannot read the module.
         cliSource = pkgs.runCommand "plainly-cli-source" { } ''
           mkdir -p $out/crates
           cp ${./nix/cli-workspace/Cargo.toml} $out/Cargo.toml
@@ -284,7 +246,6 @@
         # Tools a Rust build of this workspace needs, with the reason each one is
         # here: `pkg-config` for the `-sys` crates, `clang` because `rusqlite`'s
         # `bundled` feature compiles SQLite, and `patchelf` for the fixup phase.
-        # `makeWrapper` is the GUI's alone — `wrapProgram` comes from it.
         rustTools = with pkgs; [
           pkg-config
           clang
@@ -303,29 +264,17 @@
           };
         };
 
-        # The command line on its own: one binary, no GTK, no WebKit, no dbus —
-        # in its *build* inputs as well as its runtime closure. A buildInput here
-        # would put the whole stack in `nix path-info -r` and hand a machine with
-        # no graphics libraries something to substitute or fail on, which is the
-        # opposite of what this package is for. The list is three tools long on
-        # purpose; adding one is a decision, not an accident.
+        # The command line on its own: one binary, and no GTK, WebKit or dbus in
+        # its build inputs as well as its runtime closure. A buildInput here would
+        # put the whole stack in `nix path-info -r` and hand a machine with no
+        # graphics libraries something to substitute or fail on. The list is three
+        # tools long on purpose; adding one is a decision, not an accident.
         #
-        # The build is split the way crane expects. `plainlyDeps` compiles the
-        # third-party crates against a dummified workspace (crane keeps only
-        # `Cargo.lock` and the manifests, so a `.rs` edit does not reach it), and
-        # `plainly` reuses that store output through `cargoArtifacts` and
-        # compiles only the workspace's own crates. `gui` below uses the same
-        # split over the real workspace.
-        #
-        # Two consequences of the move, both deliberate:
-        # - the old `cargoBuildFlags = [ "--package" "plainly-cli" ]` is gone: it
-        #   was a nixpkgs-only knob, and there is nothing to narrow here anyway —
-        #   the synthetic CLI workspace is `plainly-core` + `plainly-cli`, so all
-        #   of it is built, tested and installed either way.
-        # - the binaries no longer carry cargo-auditable's `.dep-v0` section
-        #   (nixpkgs' `buildRustPackage` adds it by default; crane has no
-        #   equivalent). Nothing in this repo reads it, and `default` — the join
-        #   of this package and `gui` — carries none of it either.
+        # `plainlyDeps` compiles the third-party crates against a dummified
+        # workspace (crane keeps only `Cargo.lock` and the manifests, so a `.rs`
+        # edit does not reach it), and `plainly` reuses that store output through
+        # `cargoArtifacts` and compiles only the workspace's own crates. `gui`
+        # below uses the same split over the real workspace.
 
         plainlyArgs = common // {
           pname = "plainly";
@@ -351,8 +300,8 @@
         # `buildDepsOnly` inherits every argument it is given, and a dependency
         # build has no binaries to wrap (it dies with "Cannot wrap
         # .../bin/plainly-panel"), so the wrapper and the rpath hook belong to
-        # `gui` alone — `guiArgs` carries neither, which also keeps the
-        # dependency build from running auto-patchelf over an artifact tarball.
+        # `gui` alone. Keeping them out of `guiArgs` also keeps the dependency
+        # build from running auto-patchelf over an artifact tarball.
 
         guiArgs = common // {
           pname = "plainly-desktop";
@@ -366,8 +315,8 @@
 
         gui = craneLib.buildPackage (guiArgs // {
           cargoArtifacts = guiDeps;
-          # `autoPatchelfHook` puts back the RUNPATH that nixpkgs' rustc used to
-          # give linked binaries and fenix's does not: it resolves each ELF's
+          # `autoPatchelfHook` puts back the RUNPATH that nixpkgs' rustc gives
+          # linked binaries and fenix's does not: it resolves each ELF's
           # DT_NEEDED against the build inputs and patches the installed copies.
           # The `.wrapped` files are the real ELFs; the `bin/` names are the
           # `wrapProgram` scripts and are left alone.
@@ -375,17 +324,16 @@
           # The check phase runs the workspace's tests, which include the
           # panel's, and a build sandbox has no display for GTK to initialize
           # against. `PLAINLY_TEST_NO_DISPLAY` is that test's own way of being
-          # told so: without it the test fails with the message naming the
-          # variable, because a skip that nobody announces is a test that
-          # checked nothing while looking green. The name says "test" on
-          # purpose — nothing in the application reads it — and it means the
-          # green check here does **not** cover that test: only a run with a
-          # display does. (Merged rather than assigned: `//` is shallow, so a
-          # bare `env` here would drop `common.env`'s `LIBCLANG_PATH`.)
+          # told so, because a skip nobody announces is a test that checked
+          # nothing while looking green. The name says "test" on purpose and
+          # nothing in the application reads it, so a green check here does
+          # **not** cover that test. Only a run with a display does. (Merged
+          # rather than assigned, because `//` is shallow and a bare `env` here
+          # would drop `common.env`'s `LIBCLANG_PATH`.)
           #
           # The check phase's test binaries are built by cargo, so
           # `autoPatchelfHook` never sees them (it only patches `$out`), and
-          # fenix's rustc does not give them the RUNPATH nixpkgs' rustc did.
+          # fenix's rustc does not give them the RUNPATH nixpkgs' rustc does.
           # Without the library path the panel's test binary dies with
           # "libgobject-2.0.so.0: cannot open shared object file" (exit 127).
           env = common.env // {
@@ -393,23 +341,23 @@
             LD_LIBRARY_PATH = guiLibPath;
           };
           # Only the two GUI packages are built here. The command line it would
-          # otherwise also produce is a *second* build of the same crate, so
-          # `default` takes `plainly` below instead: one artifact, and the two
-          # packages cannot drift apart. `symlinkJoin` is where they meet.
-          # `cargoBuildExtraArgs` narrows the build phase (and therefore what is
-          # installed) to the two GUI crates; the check phase still tests the
-          # whole workspace. It must stay on `gui` and not move into `guiArgs`:
-          # `buildDepsOnly` passes whatever it is given into its own build too.
+          # otherwise also produce is a second build of the same crate, so
+          # `default` takes `plainly` below instead, and the two packages cannot
+          # drift apart. `cargoBuildExtraArgs` narrows the build phase (and
+          # therefore what is installed) to the two GUI crates, while the check
+          # phase still tests the whole workspace. It must stay on `gui` and not
+          # move into `guiArgs`, because `buildDepsOnly` passes whatever it is
+          # given into its own build too.
           cargoBuildExtraArgs = "--package plainly-panel --package plainly-desktop";
           # The two GUI binaries are the ones that cannot start without their
-          # libraries on the search path, and a compositor's key binding spawns the
-          # panel with an environment of its own — no profile script, no
+          # libraries on the search path, and a compositor's key binding spawns
+          # the panel with an environment of its own: no profile script, no
           # `LD_LIBRARY_PATH`. Wrapping is what an installed panel has instead of
-          # the dev shell. `XDG_DATA_DIRS` is the same problem one layer up: GTK
-          # reads its schemas from there, and the icon theme from `$out/share`.
+          # the dev shell. `XDG_DATA_DIRS` is the same problem one layer up, where
+          # GTK reads its schemas, and the icon theme comes from `$out/share`.
           #
-          # Built with a list joined by newlines rather than an indented string:
-          # inside one of those, `for program in` ends the string at the `in` and a
+          # Built with a list joined by newlines rather than an indented string.
+          # Inside one of those, `for program in` ends the string at the `in`, a
           # trailing backslash is an escape, and a heredoc terminator right after
           # the closing quote reads as the start of another string.
           postFixup = lib.concatStringsSep "\n" [
@@ -428,24 +376,19 @@
         # The shell for working on the code, so the one that asks for the editor
         # tooling. Nothing else does, which is the point.
         #
-        # `cachix` is the client `just cache-push` drives (README, "Binary
-        # cache"). It is a publishing tool for whoever fills the cache, not
-        # something building or running plainly needs, so it goes to the shell
-        # that pushes rather than into `devTools`; `inspect` below stays lean.
+        # `cachix` is the client `just cache-push` drives. It is a publishing tool
+        # for whoever fills the cache, not something building or running plainly
+        # needs, so it goes to this shell rather than into `devTools`.
         devShells.default = mkPlainlyShell {
           name = "plainly-dev";
           editors = true;
           extraTools = [ pkgs.cachix ];
         };
 
-        # `sqlite3` is not needed to build or run plainly — `rusqlite`'s
-        # `bundled` feature compiles SQLite in — but it is the tool you reach for
-        # when inspecting the history store by hand. The attribute is `sqlite`
-        # (which ships the `sqlite3` binary).
-        #
-        # This is the shell you enter to look at the store rather than to write
-        # Rust, so it does not ask for the editor tools and stays lean. Anyone
-        # editing Rust wants `devShells.default`.
+        # `sqlite3` is not needed to build or run plainly, because `rusqlite`'s
+        # `bundled` feature compiles SQLite in, but it is the tool you reach for
+        # when inspecting the history store by hand. The attribute is `sqlite`,
+        # which ships the `sqlite3` binary.
         devShells.inspect = mkPlainlyShell {
           name = "plainly-inspect";
           extraTools = [ pkgs.sqlite ];
@@ -475,19 +418,16 @@
           };
         };
 
-        # `nix run .` runs the command line, and it runs the *joined* one: the
-        # GUI derivation builds only the panel and the window
-        # (`cargoBuildExtraArgs` above), so pointing an app at `${gui}/bin/plainly`
-        # names a file that is not there and turns `nix run` into "No such file
-        # or directory". The joined output is where the three binaries meet.
+        # `nix run .` runs the joined command line, because the GUI derivation
+        # builds only the panel and the window (`cargoBuildExtraArgs` above) and
+        # `${gui}/bin/plainly` is therefore not there. The joined output is where
+        # the three binaries meet.
         #
         # `desktop` and `panel` name the GUI binaries directly, so
         # `nix run .#desktop` and `nix run .#panel -- --clipboard` start the
-        # wrapped, release ones — the same shapes a desktop entry and a
-        # compositor key binding get, and not the dev shell's `target/debug`.
-        # `default` stays the command line on purpose: it is the one a machine
-        # without a display can run, and changing it would make `nix run .` open
-        # a window instead.
+        # wrapped release binaries an install gets, not the dev shell's
+        # `target/debug`. `default` stays the command line on purpose, because it
+        # is the one a machine without a display can run.
         apps = {
           default = {
             type = "app";
@@ -509,13 +449,10 @@
 
         formatter = pkgs.nixpkgs-fmt;
 
-        # Deliberately empty, and the packages above do not change the reason: with
-        # `packages` defined, `nix flake check` would build them — webkitgtk and
-        # the whole Tauri stack — and turn a check into a release build, which is
-        # what readest taught us to avoid. Packaging is verified by `nix build` /
-        # `nix profile install` and `scripts/check-flake-packages.sh` instead, which
-        # is also what CI would run if it ever built more than the two headless
-        # crates.
+        # Deliberately empty: with `packages` defined, `nix flake check` would
+        # build them, webkitgtk and the whole Tauri stack, and turn a check into a
+        # release build. Packaging is verified by `nix build` / `nix profile
+        # install` and `scripts/check-flake-packages.sh` instead.
         checks = { };
       });
 }

@@ -21,16 +21,13 @@ pub enum CommandError {
     /// The caller asked for something that is not a valid thing to ask.
     Usage(String),
     /// There is nothing to talk to: no key where one is needed, or no provider
-    /// configured. Distinct from a failure because the fix is different: this
-    /// one is answered by configuration, not by trying again.
+    /// configured. The fix is configuration rather than another attempt.
     NotConfigured(String),
     /// Plainly tried and could not.
     Failed(String),
-    /// Plainly refused the input on purpose — the clipboard is marked sensitive,
-    /// or its marker could not be read — so nothing was sent and nothing was
-    /// stored. Distinct from a failure because a script branching on the exit
-    /// code has to be able to tell "we chose not to" from "it went wrong"
-    /// (spec §10, §11).
+    /// Plainly refused the input on purpose, so nothing was sent and nothing was
+    /// stored (spec §10, §11). A script branching on the exit code has to tell
+    /// "we chose not to" from "it went wrong".
     Refused(String),
 }
 
@@ -49,11 +46,9 @@ impl CommandError {
 ///
 /// A configuration file that cannot be read as TOML is a *configuration*
 /// problem, so it takes `NOT_CONFIGURED`: a script asking "is this machine set
-/// up?" gets the same answer from a corrupt file as from a missing key. The
-/// remaining gap is `Io` and `ExternallyModified` — "the file could not be
-/// written" — which still land on `FAILURE`, because the five documented codes
-/// have no slot for local state that would not save. Recorded in the ticket
-/// rather than settled by inventing a sixth code here.
+/// up?" gets the same answer from a corrupt file as from a missing key. `Io` and
+/// `ExternallyModified` still land on `FAILURE`, because no documented code
+/// covers local state that would not save.
 impl From<plainly_core::ConfigError> for CommandError {
     fn from(error: plainly_core::ConfigError) -> Self {
         use plainly_core::ConfigError;
@@ -71,9 +66,9 @@ impl From<plainly_core::ConfigError> for CommandError {
 }
 
 /// The history store failing is local state rather than anything the provider
-/// did, and the five documented codes have no slot for "the file on disk will not
-/// work": it lands on the failure code, with the store's own message — which
-/// names the path wherever the path is known.
+/// did, and no documented code covers "the file on disk will not work": it lands
+/// on the failure code, with the store's own message, which names the path
+/// wherever the path is known.
 ///
 /// The exception is the store saying that what was asked for is not there: an id
 /// that names no Record, or a Tag with nothing in it. Those are mistakes in the
@@ -113,8 +108,6 @@ pub fn dispatch() -> u8 {
         // No subcommand is `explain`, so `echo … | plainly` is the shortest path
         // from a Passage to an Explanation and no one has to learn a verb first.
         None => explain::run(cli.explain),
-        // `explain`'s arguments are accepted on both sides of the verb; the
-        // subcommand's word wins, and the root's fills anything it left unsaid.
         Some(Command::Explain(args)) => explain::run(args.with_root(cli.explain)),
         Some(Command::History { command }) => history::run(command),
         Some(Command::Config { command }) => config::run(command),
@@ -131,10 +124,8 @@ pub fn dispatch() -> u8 {
 
 /// How an endpoint is held to the contract, in the words a person reads.
 ///
-/// One source for both surfaces that say it — `explain` while a run is in
-/// flight and `providers` when it is not — because the two tiers are what the
-/// user is being asked to tell apart, and two copies of the wording would
-/// eventually disagree.
+/// One source for both surfaces that say it, `explain` and `providers`, because
+/// the two tiers are what the user is being asked to tell apart.
 pub(crate) fn tier(schema: SchemaSupport) -> &'static str {
     match schema {
         SchemaSupport::Enforced => "enforced by the endpoint (response_format json_schema)",
@@ -149,9 +140,6 @@ pub(crate) const SHORT_HASH: usize = 8;
 
 /// The first [`SHORT_HASH`] characters of a prompt hash, taken by character
 /// rather than by byte so a hand-edited file cannot split one.
-///
-/// Shared by the two places that abbreviate a version for a one-line report, so
-/// they abbreviate it the same way.
 pub(crate) fn short_hash(hash: &str) -> String {
     hash.chars().take(SHORT_HASH).collect()
 }

@@ -1,9 +1,8 @@
 //! Shared scaffolding for the integration tests.
 //!
-//! Each integration test is compiled as its own crate, so anything here that one
-//! of them does not use looks dead to the compiler. The module is shared on
-//! purpose: the alternatives are copying the scaffolding into every test file or
-//! inventing a support crate for it.
+//! Each test is compiled as its own crate, so items one test does not use look
+//! dead and `#![allow(dead_code)]` covers them. The module is shared on purpose
+//! rather than copied into every test file.
 
 #![allow(dead_code)]
 
@@ -85,13 +84,11 @@ pub const ANSWER_WITH_GRAMMAR: &str = r#"{
   "translation": "直到审计人员离开，经理才承认账目被人做了手脚。"
 }"#;
 
-/// A request for `passage` at B2 in Chinese, from the default cloud profile.
 /// An Explanation whose Glosses exercise the rendered shape: an Example with
 /// surrounding whitespace, one of spaces only, and one of a newline only.
 ///
-/// The same fixture backs the document and the CSV tests: the
-/// Example rule has one owner (ADR-0005), so the inputs that pin it should not be
-/// copied into three test files.
+/// The document and CSV tests share it so the inputs that pin the Example rule
+/// (ADR-0005) are not copied into three test files.
 pub fn shaped_examples() -> Explanation {
     Explanation::parse(
         r#"{

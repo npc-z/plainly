@@ -1,14 +1,12 @@
 //! The window's API, as Tauri's calling convention spells it.
 //!
-//! Every command here is a line or two: find the [`Desktop`], call one method,
-//! hand the answer back. The decisions live in [`crate::app`], which is why this
-//! module can be read as the list of what the frontend may ask for — and why
-//! there is nothing in it that needs a display to test.
+//! The decisions live in [`crate::app`], which is why this module can be read as
+//! the list of what the frontend may ask for, and why there is nothing in it that
+//! needs a display to test.
 //!
 //! The state is a `Mutex` because Tauri runs each command on whichever thread of
 //! its runtime is free. It is never held across an await (nothing here is
-//! async), so the one thing a mutex could cost — a stalled window — cannot
-//! happen.
+//! async), so the one thing a mutex could cost, a stalled window, cannot happen.
 
 use std::sync::Mutex;
 
@@ -23,19 +21,18 @@ use crate::view::{DetailView, ExportOffer};
 
 /// The window's actions, behind one lock.
 ///
-/// The state is a `Result` because opening it can fail — a `history.db` that is
-/// not a SQLite file, a configuration directory that cannot be created — and a
-/// window that refused to start because of it would be a window that never said
-/// why. It opens instead, and every screen draws the reason until the file
-/// behind it is fixed.
+/// The state is a `Result` because opening it can fail (a `history.db` that is
+/// not a SQLite file, a configuration directory that cannot be created), and a
+/// window that refused to start because of it would never say why. It opens
+/// instead, and every screen draws the reason until the file behind it is fixed.
 pub struct Window(pub Mutex<Result<Desktop, String>>);
 
 impl Window {
     /// The window's state, or the reason there is none.
     ///
-    /// One helper rather than a lock in each command that touches the state: the
-    /// failure of opening the state has to reach every screen, and a command
-    /// that forgot to check would be a button that silently does nothing.
+    /// One helper rather than a lock in each command: the failure of opening the
+    /// state has to reach every screen, and a command that forgot to check would
+    /// be a button that silently does nothing.
     pub fn desktop(&self) -> Reply<Ready<'_>> {
         let guard = self
             .0
@@ -70,8 +67,8 @@ impl std::ops::Deref for Ready<'_> {
 /// One command's failure, in the shape the frontend receives.
 ///
 /// Tauri serialises an error as a rejected promise; a plain `String` keeps the
-/// frontend from having to know anything about this crate's error type, and the
-/// messages are already sentences meant for a person.
+/// frontend from having to know this crate's error type, and the messages are
+/// already sentences meant for a person.
 pub type Reply<T> = Result<T, String>;
 
 fn failed(error: WindowError) -> String {
@@ -105,8 +102,7 @@ pub fn window(state: State<'_, Window>) -> Reply<WindowState> {
 }
 
 /// Narrow the list, then hand back the list. A search with an empty query and
-/// no Tag is the whole history, which is what the search box holds when it is
-/// empty.
+/// no Tag is the whole history.
 #[tauri::command]
 pub fn search(state: State<'_, Window>, query: String, tag: Option<String>) -> Reply<HistoryView> {
     let desktop = state.desktop()?;
@@ -162,9 +158,8 @@ pub struct ClearReply {
 #[tauri::command]
 pub fn export(state: State<'_, Window>, format: String, id: Option<i64>) -> Reply<ExportOffer> {
     let format = format.parse::<ExportFormat>().map_err(|message| {
-        // The one sentence a command builds itself, and the interface is
-        // Chinese: the detail (what the domain expected) follows the colon like
-        // every other failure's.
+        // The one sentence a command builds itself: the interface is Chinese, so
+        // the detail follows the colon like every other failure's.
         format!("{}{message}", crate::strings::STRINGS.unknown_export)
     })?;
     let desktop = state.desktop()?;
@@ -220,10 +215,7 @@ pub fn clear_key(state: State<'_, Window>, provider: String) -> Reply<crate::app
 /// Open the directory the history and the exports live in.
 ///
 /// The directory is named in the answer either way: "the desktop would not open
-/// it" is an answer a person can act on, and the path is how they act on it. The
-/// two cases are told apart in the value rather than by reading the sentence —
-/// a success and a failure are not the same event, and the banner colours them
-/// differently.
+/// it" is an answer a person can act on, and the path is how they act on it.
 #[tauri::command]
 pub fn open_data_dir(state: State<'_, Window>) -> Reply<OpenReply> {
     let desktop = state.desktop()?;

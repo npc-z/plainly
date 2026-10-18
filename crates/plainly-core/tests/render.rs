@@ -25,13 +25,12 @@ fn note(body: &Body) -> &str {
 }
 
 /// The panel's copy for a Grammar section the model left out. It is interface
-/// text, which tickets/15 keeps with the rest of the strings, so the renderer is
-/// handed it rather than knowing it.
+/// text, so the renderer is handed it rather than knowing it.
 const NOT_NEEDED: &str = "本段不需要";
 
 /// The same for a Key Help with no Glosses. Its own sentence rather than the
 /// Grammar one: two empty sections saying the same thing would make one of them
-/// look like the other's mistake (tickets/15).
+/// look like the other's mistake.
 const NO_GLOSSES: &str = "本段没有需要解释的表达";
 
 /// The sections a surface read in place asks for: every section, with the two
@@ -124,8 +123,6 @@ The manager admitted that the figures had been changed dishonestly — but only 
 
 #[test]
 fn a_gloss_with_no_example_renders_two_lines() {
-    // A Record generated before Examples existed (ADR 0002) and a model that left
-    // the Example empty are the same picture: no third line, not an empty one.
     let explanation = Explanation::parse(
         r#"{
             "comprehensible": "c",
@@ -175,7 +172,6 @@ fn the_document_omits_a_grammar_section_there_is_none_of() {
     let document = render::markdown(support::PASSAGE, &common());
 
     assert!(!document.contains("### Grammar"), "{document}");
-    // The Translation is still last, and the document still ends in one newline.
     assert!(
         document
             .ends_with("### Translation\n委员会对此事进行了彻底调查，但那位经理已经躲了起来。\n"),
@@ -235,8 +231,6 @@ fn a_grammar_section_sits_above_the_translation() {
 
 #[test]
 fn the_passage_is_rendered_verbatim_even_when_it_is_not_clean_prose() {
-    // The Original is authoritative: oddities, trailing space and all. What the
-    // model may not do is correct it (spec §4).
     let passage = "  not until the auditors   had gone —  did he admit it.  \n";
     let document = render::markdown(passage, &common());
 
@@ -248,12 +242,6 @@ fn the_passage_is_rendered_verbatim_even_when_it_is_not_clean_prose() {
 
 #[test]
 fn an_empty_key_help_is_left_out_of_the_document_and_said_on_the_panel() {
-    // Zero Glosses is a legitimate answer — the contract has no lower bound, and
-    // "nothing in this Passage blocks comprehension" is a real thing for the
-    // model to say. A heading with nothing under it would read like a defect, so
-    // the document drops the section; the panel keeps it with a sentence, because
-    // a panel is read once, in place, where a gap cannot be told from a section
-    // that was never generated (tickets/15).
     let explanation = Explanation::parse(
         r#"{ "comprehensible": "c", "glosses": [], "grammar": null, "translation": "t" }"#,
     )
@@ -292,8 +280,6 @@ fn an_empty_key_help_is_left_out_of_the_document_and_said_on_the_panel() {
 
 #[test]
 fn the_panel_and_the_document_carry_the_same_bodies() {
-    // Two surfaces, one renderer: the panel differs in what it does with the two
-    // sections a model can leave empty, and in nothing else.
     let explanation = structural();
     let document = render::markdown(support::PASSAGE_WITH_GRAMMAR, &explanation);
     let sections = sections_with_notes(support::PASSAGE_WITH_GRAMMAR, &explanation);
@@ -325,8 +311,6 @@ fn the_panel_and_the_document_carry_the_same_bodies() {
 
 #[test]
 fn the_key_help_body_carries_settled_glosses() {
-    // The owner is a value, not a predicate: a surface receives the Example's
-    // presence and its text already decided (ADR-0005).
     let explanation = support::shaped_examples();
     let sections = sections_with_notes("Original text.", &explanation);
     let key_help = sections
@@ -344,9 +328,6 @@ fn the_key_help_body_carries_settled_glosses() {
 
 #[test]
 fn an_example_is_trimmed_and_a_blank_one_is_absent() {
-    // The rendered shape settles the Example's text as well as its presence
-    // (ADR-0005): surrounding whitespace is not part of the sentence, and an
-    // Example of only whitespace is no Example line at all.
     let explanation = support::shaped_examples();
 
     assert_eq!(

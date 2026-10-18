@@ -2,9 +2,9 @@
 //! and the model selection, and what the capability cache does and does not
 //! survive.
 //!
-//! The real binary, temporary XDG directories, and the loopback stub from
-//! ticket 03 — extended to answer a probe (`/v1/models`, and a capability of the
-//! test's choosing) as well as a Passage.
+//! The real binary, temporary XDG directories, and the loopback stub that answers
+//! a probe (`/v1/models`, and a capability of the test's choosing) as well as a
+//! Passage.
 
 mod support;
 
@@ -583,8 +583,8 @@ fn selecting_a_model_for_a_remote_provider_points_at_config_set() {
 
 /// The shape the llama.cpp router on this machine actually answers with: the
 /// state under `status.value` and the context length only in the model's launch
-/// argv. Discovery reads both, which is what makes "is it big enough" answerable
-/// before the model is loaded (tickets/06).
+/// argv. Discovery reads both, which makes "is it big enough" answerable before
+/// the model is loaded.
 #[test]
 fn discovery_reads_the_routers_own_model_shape() {
     let dir = TempDir::new("providers-discover-router");
@@ -705,8 +705,7 @@ fn the_listing_judges_a_context_against_the_configured_budget() {
 
 /// Where a context too small is raised is the runtime's own business, and for
 /// Ollama it is not a request flag at all: `num_ctx` lives in the model's
-/// Modelfile or in `OLLAMA_CONTEXT_LENGTH` (spec §7). That is the part of
-/// ticket 05's handoff a selection can act on.
+/// Modelfile or in `OLLAMA_CONTEXT_LENGTH` (spec §7).
 #[test]
 fn selecting_a_small_model_from_ollama_names_the_environment_not_a_flag() {
     let dir = TempDir::new("providers-use-ollama-context");
@@ -814,7 +813,7 @@ fn a_model_list_too_long_to_quote_is_cut_short() {
 
 /// A runtime that is there and refuses the keyless scan is not "nothing
 /// answered": the report names what it said and the key a name would have, so
-/// the fix it offers is one that can work (tickets/06).
+/// the fix it offers is one that can work.
 #[test]
 fn a_runtime_that_asks_for_a_key_is_reported_as_a_refusal_not_as_absence() {
     let dir = TempDir::new("providers-refused-scan");
@@ -857,7 +856,7 @@ fn a_runtime_that_asks_for_a_key_is_reported_as_a_refusal_not_as_absence() {
 
 /// A refusal that is not about a key does not offer one: a 404 means this is not
 /// a model server where the name points, and the endpoint's own words are the
-/// whole advice (tickets/06).
+/// whole advice.
 #[test]
 fn a_refusal_that_is_not_a_credential_rejection_does_not_name_a_key() {
     let dir = TempDir::new("providers-refused-404");

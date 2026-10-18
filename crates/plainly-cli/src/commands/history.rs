@@ -1,23 +1,12 @@
-//! `plainly history`: what Plainly has already explained, and how to tidy it up.
+//! `plainly history`: what Plainly has already explained, how to tidy it up, and
+//! how to export it.
 //!
-//! The listing *is* the product of `list`, so it goes to stdout — the same reason
-//! `config show` and `providers` print there. `show` prints the Explanation as the
-//! five sections `explain` prints, and the record's provenance to stderr, so a
-//! pipeline still sees only the product and a person still learns which model
-//! answered, at which Level, under which prompt.
-//!
-//! Everything that changes the history says what it did on stderr and prints
-//! nothing on stdout: a deletion is not a product, and a pipeline that asked for
-//! one should not have to filter a sentence out of its input. Deleting is final
-//! (spec §9), so `clear` asks twice — the command is the first act, `--yes` the
-//! second — while `delete` takes the id it was pointed at.
-//!
-//! `export` prints the whole history as one document in the shape the caller
-//! asked for — markdown to read, a raw CSV for a spreadsheet. Both are products,
-//! so both go to stdout and nothing else does.
+//! `show` prints the Explanation as the five sections `explain` prints, and the
+//! record's provenance to stderr. Everything that changes the history says what
+//! it did on stderr and prints nothing on stdout.
 //!
 //! Reading the history never touches the network and never needs a provider: the
-//! store is local, and a record is all there is.
+//! store is local.
 
 use plainly_core::{ExportFormat, Paths, Record, Store, export, render};
 
@@ -29,15 +18,8 @@ use crate::exit;
 /// short enough that one record stays one line.
 const SNIPPET: usize = 72;
 
-/// What every search says out loud, the way the search box's own line does in the
-/// main window (spec §9, §13).
-///
-/// A limit stated is a fact about v0; the same limit discovered is a bug report.
-/// The Translation is not indexed — it is not English, and FTS5 tokenizes per
-/// table — so a search that found nothing because the word was Chinese and a
-/// search that is broken have to be told apart by the person reading. A Gloss's
-/// Example is not indexed either: it is generated scaffolding, full of the
-/// commonest words in English, and it is not a search target.
+/// What every search says out loud, so a search that found nothing because the
+/// word was not indexed is not taken for a broken search (spec §9, §13).
 const NOT_SEARCHABLE: &str =
     "search covers the Passage, the Comprehensible English and the Glosses; \
      the Translation and the Examples are not searchable in v0";
@@ -137,12 +119,10 @@ fn clear(yes: bool) -> Result<u8, CommandError> {
     Ok(exit::SUCCESS)
 }
 
-/// The history in its own order — most recently seen first — as the one document
-/// the caller asked for.
+/// The history in its own order, as the one document the caller asked for.
 ///
-/// The order is the history's, not the export's: a dump that re-sorted itself
-/// would be a different history from the one `list` shows and the one the main
-/// window shows.
+/// The order is the history's: a dump that re-sorted itself would be a different
+/// history from the one `list` shows.
 fn write_export(format: ExportFormat) -> Result<u8, CommandError> {
     let store = open()?;
     let records = store.list()?;
@@ -169,13 +149,13 @@ fn print(records: &[Record]) {
     }
 }
 
-/// One listing row: the id `show` takes, then the provenance the spec asks every
-/// list to carry, then the tags, then enough of the Passage to recognise it.
+/// One listing row: the id `show` takes, the provenance, the tags, then enough of
+/// the Passage to recognise it.
 ///
 /// Fields are separated by two spaces so the row is readable and still cuttable,
-/// and the Passage is last so the columns before it keep their positions whatever
-/// the Passage contains. Tags are printed even though they are also a filter:
-/// a row that hid them would make `--tag` look like it matched nothing.
+/// and the Passage is last so the columns before it keep their positions. Tags
+/// are printed even though they are also a filter: a row that hid them would make
+/// `--tag` look like it matched nothing.
 fn row(record: &Record) -> String {
     let artifact = &record.artifact;
 
@@ -194,7 +174,6 @@ fn row(record: &Record) -> String {
     )
 }
 
-/// The Tags as the listing's own column, or nothing at all when there are none.
 fn tag_column(record: &Record) -> String {
     match tags_text(record, " ") {
         Some(text) => format!("  [{text}]"),
@@ -202,7 +181,6 @@ fn tag_column(record: &Record) -> String {
     }
 }
 
-/// The Tags as a phrase for a provenance line, or nothing when there are none.
 fn tag_phrase(record: &Record) -> String {
     match tags_text(record, ", ") {
         Some(text) => format!(", tagged {text}"),
@@ -210,8 +188,6 @@ fn tag_phrase(record: &Record) -> String {
     }
 }
 
-/// The Tags as one piece of text, or `None` when the Record carries none.
-///
 /// A Tag with a space in it is quoted, because the command line accepts such a
 /// Tag and its lines have to be able to say it: `["to read"]` is one Tag, while
 /// `[to read]` would read as two.
@@ -229,12 +205,12 @@ fn tags_text(record: &Record, separator: &str) -> Option<String> {
     })
 }
 
-/// What `show` says about a record: everything the row carries, plus its tags and
-/// the two other moments in its life.
+/// What `show` says about a record, including its tags and the two other moments
+/// in its life.
 ///
-/// The listing abbreviates the prompt hash because a row is one line; here the
-/// whole hash is printed, because this is the one place a person can read the
-/// version of the prompt that produced the Explanation.
+/// The whole prompt hash is printed here, unlike the listing: this is the one
+/// place a person can read the version of the prompt that produced the
+/// Explanation.
 fn provenance(record: &Record) -> String {
     let artifact = &record.artifact;
 

@@ -1,17 +1,14 @@
 //! Reading the session clipboard, as data, for `explain --clipboard`.
 //!
-//! The CLI keeps its distance from GTK and from the Wayland client libraries: it
-//! asks `wl-paste` what the clipboard holds and hands the answer to core as
-//! data, where the sensitive-content rule lives (spec §11). The panel reads the
-//! same clipboard through the data-control protocol directly (tickets/13);
-//! `wl-paste` is what a headless surface has instead, and it is the fallback the
-//! spec already names.
+//! The CLI keeps its distance from GTK and the Wayland client libraries: it asks
+//! `wl-paste` what the clipboard holds and hands the answer to core as data,
+//! where the sensitive-content rule lives (spec §11).
 //!
-//! Only the types something reads are read: `wl-paste` answers one type per run,
-//! so the Passage costs one round trip and the password hint costs another only
-//! when the owner published it. A value the owner will not give is handed over
-//! as "not read" rather than guessed at — what half a criterion means is core's
-//! call, not this module's.
+//! Only the types something reads are read. `wl-paste` answers one type per run,
+//! so the Passage costs one round trip and the password hint another only when
+//! the owner published it. A value the owner will not give is handed over as "not
+//! read" rather than guessed at, because what half a criterion means is core's
+//! call.
 
 use std::process::Command;
 
@@ -173,7 +170,6 @@ fn ask(args: &[&str], refused: fn(String) -> Error) -> Result<Vec<u8>, Error> {
     Ok(output.stdout)
 }
 
-/// Why `wl-paste` could not even be started.
 fn start_error(error: std::io::Error) -> Error {
     match error.kind() {
         std::io::ErrorKind::NotFound => Error::Missing,

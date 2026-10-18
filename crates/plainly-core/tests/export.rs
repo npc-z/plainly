@@ -73,9 +73,8 @@ fn one(artifact: &Artifact) -> Record {
 /// Split a CSV document into rows of fields, the way a spreadsheet would:
 /// quotes protect commas and line breaks, and a doubled quote is one quote.
 ///
-/// Small on purpose. The point is to read the product through the interface its
-/// consumer uses, not to reimplement a CSV library — and the escaping itself is
-/// pinned by a worked example elsewhere in this file.
+/// Small on purpose: the point is to read the product through the interface its
+/// consumer uses, not to reimplement a CSV library.
 fn rows(document: &str) -> Vec<Vec<String>> {
     let mut rows: Vec<Vec<String>> = Vec::new();
     let mut row: Vec<String> = Vec::new();
@@ -109,10 +108,6 @@ fn rows(document: &str) -> Vec<Vec<String>> {
     rows
 }
 
-// ---------------------------------------------------------------------------
-// Markdown: one document, one section per Record
-// ---------------------------------------------------------------------------
-
 #[test]
 fn the_markdown_export_gives_every_record_a_heading_and_the_five_sections() {
     let first = one(&support::artifact_at(BOTTLED, bottled(), 1_760_000_000));
@@ -145,9 +140,8 @@ fn the_markdown_export_gives_every_record_a_heading_and_the_five_sections() {
 
 #[test]
 fn a_markdown_export_shows_the_five_sections_in_order() {
-    // Content, not composition: the export is read by a person, so what has to
-    // hold is that every part of the Explanation is in the document under its
-    // heading, in the prototype's order.
+    // Content, not composition: the export is read by a person, so every part
+    // of the Explanation has to be in the document under its heading.
     let record = one(&support::artifact_at(support::PASSAGE, committee(), 1_760_000_000));
 
     let document = export::markdown(std::slice::from_ref(&record));
@@ -212,11 +206,6 @@ fn the_markdown_export_of_an_empty_history_is_empty() {
     assert_eq!(export::markdown(&[]), "");
 }
 
-// ---------------------------------------------------------------------------
-// Raw CSV: one row per Record, for a spreadsheet
-// ---------------------------------------------------------------------------
-
-/// A Record that found nothing to gloss.
 const NOTHING_TO_GLOSS: &str = "The cat sat on the mat.";
 const NOTHING_TO_GLOSS_ANSWER: &str = r#"{
   "comprehensible": "The cat sat on the mat.",
@@ -356,9 +345,6 @@ fn the_raw_export_of_an_empty_history_is_the_header_alone() {
 
 #[test]
 fn the_raw_export_draws_a_trimmed_example_and_none_for_whitespace() {
-    // A spreadsheet cell gets the same settled shape as the document (ADR-0005):
-    // surrounding whitespace is not part of the Example, and an Example of only
-    // whitespace is absent rather than a third blank line.
     let record = one(&support::artifact_at(
         "A passage.",
         support::shaped_examples(),
