@@ -89,6 +89,12 @@
         devTools = with pkgs; [
           pnpm
           nodejs_24
+          # `just` runs the `Justfile` at the repository root, which is where the
+          # common cargo, Nix and script invocations live. It is declared here so
+          # `nix develop` then `just check` works on a machine that does not
+          # install it globally; the recipes wrap commands that need this shell
+          # in `nix develop -c`, so they also work from a plain terminal.
+          just
           # `python3` is asked for by name in two places a contributor is told to
           # run inside this shell: `scripts/check-headless-cli.sh` reads cargo's
           # JSON with it, and `scripts/stub-provider.py` is the fake provider the
@@ -139,6 +145,16 @@
           openssl
         ];
 
+        # What `cargo run` needs and an installed binary gets from
+        # `autoPatchelfHook` instead: `target/debug/plainly-desktop` links these
+        # three directly, fenix's rustc gives it no RUNPATH, and `libraries`
+        # does not carry them, so without them it dies in the loader with
+        # "cannot open shared object file". Shell-only on purpose: `libraries`
+        # also feeds `packageInputs`, and adding them there would invalidate the
+        # GUI package's dependency derivation (a full Rust dependency rebuild)
+        # while changing nothing an installed binary needs.
+        shellLibraries = libraries ++ (with pkgs; [ gdk-pixbuf cairo dbus ]);
+
         mkPlainlyShell =
           { name
           , editors ? false
@@ -152,7 +168,7 @@
               ++ lib.optionals editors [ rustAnalyzer ]
               ++ extraTools
               ++ [ shellComponents ];
-            buildInputs = libraries;
+            buildInputs = shellLibraries;
 
             env = {
               # readest sets `x11` here; plainly must not. layer-shell does not
@@ -447,6 +463,14 @@
         # (`cargoBuildExtraArgs` above), so pointing an app at `${gui}/bin/plainly`
         # names a file that is not there and turns `nix run` into "No such file
         # or directory". The joined output is where the three binaries meet.
+        #
+        # `desktop` and `panel` name the GUI binaries directly, so
+        # `nix run .#desktop` and `nix run .#panel -- --clipboard` start the
+        # wrapped, release ones — the same shapes a desktop entry and a
+        # compositor key binding get, and not the dev shell's `target/debug`.
+        # `default` stays the command line on purpose: it is the one a machine
+        # without a display can run, and changing it would make `nix run .` open
+        # a window instead.
         apps = {
           default = {
             type = "app";
@@ -455,6 +479,14 @@
           plainly = {
             type = "app";
             program = "${plainly}/bin/plainly";
+          };
+          desktop = {
+            type = "app";
+            program = "${gui}/bin/plainly-desktop";
+          };
+          panel = {
+            type = "app";
+            program = "${gui}/bin/plainly-panel";
           };
         };
 
