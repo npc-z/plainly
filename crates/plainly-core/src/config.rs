@@ -13,6 +13,12 @@
 //!   remembers the bytes it read; if the file on disk has changed by the time
 //!   `save` runs, the save is refused rather than silently clobbering the
 //!   other writer's work.
+//! - **Writes are strict, reads are tolerant.** [`ConfigFile::set`] refuses a
+//!   numeric value outside the range its key declares, while [`Config::parse`]
+//!   keeps taking any `u32`. A hand-edited file must always
+//!   open: a panel that cannot appear, or cannot close, is worse than one
+//!   holding the wrong number. The panel clamps and the settings screen shows
+//!   the file as written; the strictness lives on the way in.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -27,6 +33,21 @@ use toml_edit::{DocumentMut, Item, Table, Value};
 /// The configuration document a fresh install gets: every key, with its
 /// default, and the comments that explain it.
 pub const DEFAULT_CONFIG: &str = include_str!("default_config.toml");
+
+// The legal numeric ranges, written as `(min, max)` inclusive. They used to
+// live in the settings screen (which refuses outside them) and in the panel
+// (which clamps and falls back). They live here now because the file is the one
+// place all three surfaces agree on, and a write is where "which values are
+// legal" has to have an owner.
+
+/// The seconds an auto-dismiss duration may take.
+pub const AUTO_HIDE_RANGE: (u32, u32) = (5, 300);
+
+/// The panel widths a write accepts, in pixels.
+pub const PANEL_WIDTH_RANGE: (u32, u32) = (320, 900);
+
+/// The panel heights a write accepts, in pixels.
+pub const PANEL_HEIGHT_RANGE: (u32, u32) = (240, 1200);
 
 /// The learner's reading level on the A1–C1 scale. It sets the vocabulary and
 /// how much syntax the Explanation may keep.
@@ -339,6 +360,16 @@ pub enum ConfigError {
     UnknownKey { key: String },
     #[error("{key}: {message}")]
     Value { key: String, message: String },
+    /// A number outside the range its key accepts. The four facts are carried
+    /// separately so a surface can render its own sentence around them; the CLI
+    /// prints this one, which names the range so the user need not look it up.
+    #[error("{key}: expected a value in {min}..={max}, got {value}")]
+    OutOfRange {
+        key: String,
+        value: u32,
+        min: u32,
+        max: u32,
+    },
     #[error(
         "{path} changed on disk since it was read; refusing to overwrite it. \
          Re-run the command so the change is picked up."
@@ -481,6 +512,9 @@ impl ConfigFile {
 struct KeySpec {
     path: Vec<String>,
     kind: Kind,
+    /// The inclusive bounds a numeric key accepts. Checked after the zero rules,
+    /// which have their own, more useful messages.
+    range: Option<(u32, u32)>,
 }
 
 #[derive(Clone, Copy)]
@@ -503,24 +537,28 @@ impl KeySpec {
             key: key.to_string(),
         };
 
-        let kind = match key {
+        // The dotted key decides both the value's type and, for a numeric key,
+        // the inclusive bounds it accepts. Read together here so the two facts
+        // cannot disagree about which keys have a range.
+        let (kind, range) = match key {
             "app.provider"
             | "app.native_language"
             | "app.ui_language"
             | "app.panel_display"
-            | "prompts.appendix" => Kind::Str,
-            "app.level" => Kind::Level,
-            "app.export_format" => Kind::ExportFormat,
-            "app.panel_corner" => Kind::PanelCorner,
-            "app.panel_autohide_seconds" => Kind::Seconds,
-            "app.panel_width" | "app.panel_height" => Kind::Pixels,
+            | "prompts.appendix" => (Kind::Str, None),
+            "app.level" => (Kind::Level, None),
+            "app.export_format" => (Kind::ExportFormat, None),
+            "app.panel_corner" => (Kind::PanelCorner, None),
+            "app.panel_autohide_seconds" => (Kind::Seconds, Some(AUTO_HIDE_RANGE)),
+            "app.panel_width" => (Kind::Pixels, Some(PANEL_WIDTH_RANGE)),
+            "app.panel_height" => (Kind::Pixels, Some(PANEL_HEIGHT_RANGE)),
             "app.show_original"
             | "app.show_comprehensible"
             | "app.show_glosses"
             | "app.show_grammar"
             | "app.show_translation"
             | "app.panel_autohide"
-            | "app.copy_auto_popup" => Kind::Bool,
+            | "app.copy_auto_popup" => (Kind::Bool, None),
             other => {
                 if let Some((name, field)) = other
                     .strip_prefix("providers.")
@@ -530,8 +568,8 @@ impl KeySpec {
                         return Err(unknown());
                     }
                     match field {
-                        "endpoint" | "model" => Kind::Str,
-                        "thinking" => Kind::Thinking,
+                        "endpoint" | "model" => (Kind::Str, None),
+                        "thinking" => (Kind::Thinking, None),
                         _ => return Err(unknown()),
                     }
                 } else if let Some(level) = other.strip_prefix("prompts.level_descriptors.") {
@@ -546,7 +584,7 @@ impl KeySpec {
                             key: key.to_string(),
                             message,
                         })?;
-                    Kind::Str
+                    (Kind::Str, None)
                 } else {
                     return Err(unknown());
                 }
@@ -558,6 +596,7 @@ impl KeySpec {
             // lives at `[providers.deepseek]` under `endpoint`.
             path: key.split('.').map(str::to_string).collect(),
             kind,
+            range,
         })
     }
 
@@ -586,6 +625,7 @@ impl KeySpec {
                             .to_string(),
                     ));
                 }
+                self.check_range(key, seconds)?;
                 Value::from(seconds as i64)
             }
             Kind::Pixels => {
@@ -593,13 +633,14 @@ impl KeySpec {
                     invalid(format!("expected a whole number of pixels; got {raw:?}"))
                 })?;
                 if pixels == 0 {
-                    // The bound is the panel's, not this crate's: how *large* a
-                    // panel may be is the panel's business (and the settings
-                    // screen's), while a zero is nobody's.
+                    // Zero comes first, before the range: it is wrong for a
+                    // reason the range cannot express — the panel would be a
+                    // surface with nothing in it.
                     return Err(invalid(
                         "a size of 0 is not a size: the panel would be invisible".to_string(),
                     ));
                 }
+                self.check_range(key, pixels)?;
                 Value::from(pixels as i64)
             }
             Kind::Level => Value::from(raw.parse::<Level>().map_err(invalid)?.as_str()),
@@ -608,6 +649,26 @@ impl KeySpec {
             }
             Kind::PanelCorner => Value::from(raw.parse::<PanelCorner>().map_err(invalid)?.as_str()),
             Kind::Thinking => Value::from(raw.parse::<Thinking>().map_err(invalid)?.as_str()),
+        })
+    }
+
+    /// Reject a numeric value outside the range its key declares.
+    ///
+    /// The range travels with the error as facts rather than being folded into
+    /// a string here: `Display` renders the CLI's sentence around them, and a
+    /// surface with its own words can do the same.
+    fn check_range(&self, key: &str, value: u32) -> Result<(), ConfigError> {
+        let Some((min, max)) = self.range else {
+            return Ok(());
+        };
+        if (min..=max).contains(&value) {
+            return Ok(());
+        }
+        Err(ConfigError::OutOfRange {
+            key: key.to_string(),
+            value,
+            min,
+            max,
         })
     }
 }

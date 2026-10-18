@@ -13,7 +13,7 @@ use serde::Serialize;
 
 use plainly_core::export;
 use plainly_core::render;
-use plainly_core::{Config, ProviderSetup, Record, Timestamp};
+use plainly_core::{Config, Record, Timestamp, local_of};
 
 /// How much of the Passage a list row shows: enough to recognise a paragraph,
 /// and the same width the CLI's listing uses, so the two surfaces read alike.
@@ -75,7 +75,7 @@ impl RecordView {
             tags: record.tags.clone(),
             last_seen: record.last_seen.unix_seconds(),
             last_seen_utc: record.last_seen.to_rfc3339(),
-            local: is_local(&artifact.provider, config),
+            local: local_of(&artifact.provider, config),
         }
     }
 }
@@ -158,7 +158,7 @@ impl DetailView {
             generated_at: artifact.generated_at.to_rfc3339(),
             last_seen: record.last_seen.to_rfc3339(),
             last_seen_unix: record.last_seen.unix_seconds(),
-            local: is_local(&artifact.provider, config),
+            local: local_of(&artifact.provider, config),
             tags: record.tags.clone(),
             markdown: render::markdown(&artifact.passage, explanation),
         }
@@ -194,21 +194,6 @@ pub fn export_text(format: plainly_core::ExportFormat, records: &[Record]) -> St
         plainly_core::ExportFormat::Markdown => export::markdown(records),
         plainly_core::ExportFormat::Raw => export::raw_csv(records),
     }
-}
-
-/// Whether this Explanation came from a model on this machine.
-///
-/// The endpoint decides it, exactly as it does for the panel's warning
-/// (spec §12): the Record stores the provider name, and the name plus the
-/// configuration resolves to the endpoint that was used. A `ollama` pointed at
-/// another host is therefore not local, and a name Plainly ships no preset for
-/// pointed at `127.0.0.1` is. A name that does not resolve at all is *not*
-/// local: claiming a model is on your machine when nothing can say where it is
-/// would put the warning where it does not belong.
-pub fn is_local(provider: &str, config: &Config) -> bool {
-    ProviderSetup::endpoint_of(provider, config)
-        .map(|endpoint| plainly_core::setup::is_loopback(&endpoint))
-        .unwrap_or(false)
 }
 
 /// The Passage on one line, cut to [`SNIPPET`] characters.

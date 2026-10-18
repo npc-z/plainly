@@ -14,12 +14,15 @@
 
 mod support;
 
+use std::ffi::OsString;
+use std::os::unix::ffi::OsStringExt;
+
 use plainly_core::{ExportFormat, Level, PanelCorner, Prompt, Secrets, Thinking, Timestamp};
 use plainly_desktop::WindowError;
 use plainly_desktop::app::{Clock, Desktop, Screen, SettingsPatch};
 use plainly_desktop::settings::availability;
 
-use support::{TempDir, artifact, desktop_with_wayland};
+use support::{BrokenKeyring, TempDir, artifact, desktop_with_wayland};
 
 /// A clock that does not move, so that "today" is the same today in every run.
 struct FixedClock(i64);
@@ -46,6 +49,22 @@ fn window(dir: &TempDir, records: &[(i64, &str)]) -> Desktop {
 /// The pairs are `(provider, key)`, and the variable name is derived the way the
 /// application derives it, so a test cannot pass by spelling one wrong.
 fn window_with_env(dir: &TempDir, records: &[(i64, &str)], keys: &[(&str, &str)]) -> Desktop {
+    window_with_secrets(
+        dir,
+        records,
+        Secrets::with_stores(
+            plainly_core::EnvSecrets::from_pairs(
+                keys.iter()
+                    .map(|(provider, key)| (plainly_core::env_var_name(provider), *key)),
+            ),
+            None,
+        ),
+    )
+}
+
+/// The same, with every secret tier supplied rather than built from strings:
+/// what a test needs to hand over a store that will not answer.
+fn window_with_secrets(dir: &TempDir, records: &[(i64, &str)], secrets: Secrets) -> Desktop {
     let paths = dir.paths();
     let mut store = plainly_core::Store::open(paths.history_file()).expect("the store opens");
     for (seconds, passage) in records {
@@ -68,14 +87,29 @@ fn window_with_env(dir: &TempDir, records: &[(i64, &str)], keys: &[(&str, &str)]
 
     Desktop::open_at(paths, desktop_with_wayland(), Box::new(FixedClock(NOW)))
         .expect("the window opens")
-        .with_secrets(Secrets::with_stores(
-            plainly_core::EnvSecrets::from_pairs(
-                keys.iter()
-                    .map(|(provider, key)| (plainly_core::env_var_name(provider), *key)),
-            ),
-            None,
-        ))
+        .with_secrets(secrets)
 }
+
+/// The same, with a configuration file written before the window opens.
+///
+/// Some states can only be reached through the file: an endpoint that names this
+/// machine makes `deepseek` an Optional provider, and the window must read that
+/// rather than the preset's name.
+fn window_with_config(
+    dir: &TempDir,
+    records: &[(i64, &str)],
+    config: &str,
+    secrets: Secrets,
+) -> Desktop {
+    std::fs::create_dir_all(dir.paths().config_dir()).expect("the config directory is creatable");
+    std::fs::write(dir.paths().config_file(), config).expect("the config is writable");
+    window_with_secrets(dir, records, secrets)
+}
+
+/// A configuration that points the configured provider at this machine: the
+/// endpoint decides the key requirement, so `deepseek` is Optional here even
+/// though its shipped preset demands a key.
+const LOOPBACK_CONFIG: &str = "[app]\nprovider = \"deepseek\"\n\n[providers.deepseek]\nendpoint = \"http://127.0.0.1:11434/v1\"\nmodel = \"deepseek-flash\"\n";
 
 #[test]
 fn the_history_lists_records_newest_first_with_everything_a_row_shows() {
@@ -645,6 +679,192 @@ fn a_session_only_key_says_it_does_not_survive_the_window() {
 }
 
 #[test]
+fn an_unreadable_keyring_on_a_required_provider_is_the_first_run() {
+    let dir = TempDir::new("window-broken-keyring");
+    // No key anywhere, and the keyring will not answer: this is not "nobody set
+    // a key", and the screen must not say it is.
+    let desktop = window_with_secrets(
+        &dir,
+        &[],
+        Secrets::with_stores(
+            plainly_core::EnvSecrets::empty(),
+            Some(Box::new(BrokenKeyring)),
+        ),
+    );
+
+    let state = desktop.state().expect("the window state reads");
+    assert_eq!(
+        state.screen,
+        Screen::Settings,
+        "a required provider whose store is broken cannot be used"
+    );
+    assert!(state.settings.provider.first_run);
+    let key = state
+        .settings
+        .provider
+        .current
+        .expect("deepseek resolves without a readable key")
+        .key;
+    assert_eq!(key.source, "unknown");
+    assert!(key.text.contains("无法确认"), "{}", key.text);
+    assert!(
+        key.text.contains("no session bus"),
+        "the reason the store gave travels: {}",
+        key.text
+    );
+    assert!(
+        !key.text.contains(plainly_desktop::strings::KEY_MISSING),
+        "a broken store is not a missing key: {}",
+        key.text
+    );
+}
+
+#[test]
+fn an_unreadable_keyring_on_an_optional_provider_stays_usable() {
+    let dir = TempDir::new("window-broken-keyring-optional");
+    // The endpoint override makes deepseek an Optional provider: it may
+    // authenticate nothing, so a store that will not answer must not block it.
+    let desktop = window_with_config(
+        &dir,
+        &[],
+        LOOPBACK_CONFIG,
+        Secrets::with_stores(
+            plainly_core::EnvSecrets::empty(),
+            Some(Box::new(BrokenKeyring)),
+        ),
+    );
+
+    let state = desktop.state().expect("the window state reads");
+    assert_eq!(
+        state.screen,
+        Screen::History,
+        "an optional provider with no readable key still runs"
+    );
+    assert!(!state.settings.provider.first_run);
+    let current = state
+        .settings
+        .provider
+        .current
+        .expect("the overridden provider resolves");
+    assert!(current.local, "the endpoint names this machine");
+    assert_eq!(current.key.source, "unknown");
+    assert!(
+        current.key.text.contains("no session bus"),
+        "the reason the store gave travels: {}",
+        current.key.text
+    );
+}
+
+#[test]
+fn a_non_utf8_environment_key_is_not_usable_and_is_not_shown_as_set() {
+    let dir = TempDir::new("window-env-not-utf8");
+    let desktop = window_with_secrets(
+        &dir,
+        &[],
+        Secrets::with_stores(
+            plainly_core::EnvSecrets::from_pairs([(
+                plainly_core::env_var_name("deepseek"),
+                OsString::from_vec(b"sk-\xff".to_vec()),
+            )]),
+            None,
+        ),
+    );
+
+    let state = desktop.state().expect("the window state reads");
+    assert_eq!(
+        state.screen,
+        Screen::Settings,
+        "a key the run cannot read is not a usable key"
+    );
+    assert!(state.settings.provider.first_run);
+    let key = state
+        .settings
+        .provider
+        .current
+        .expect("deepseek resolves without a readable key")
+        .key;
+    assert_eq!(key.source, "unknown");
+    assert!(
+        key.text.contains("UTF-8"),
+        "the reason the environment gave travels: {}",
+        key.text
+    );
+    assert!(
+        !key.text.contains("已设置"),
+        "an unreadable export is not shown as a key that is there: {}",
+        key.text
+    );
+}
+
+#[test]
+fn a_non_utf8_environment_key_on_an_optional_provider_stays_usable() {
+    let dir = TempDir::new("window-env-not-utf8-optional");
+    let desktop = window_with_config(
+        &dir,
+        &[],
+        LOOPBACK_CONFIG,
+        Secrets::with_stores(
+            plainly_core::EnvSecrets::from_pairs([(
+                plainly_core::env_var_name("deepseek"),
+                OsString::from_vec(b"sk-\xff".to_vec()),
+            )]),
+            None,
+        ),
+    );
+
+    let state = desktop.state().expect("the window state reads");
+    assert_eq!(state.screen, Screen::History);
+    assert!(!state.settings.provider.first_run);
+    let key = state
+        .settings
+        .provider
+        .current
+        .expect("the overridden provider resolves")
+        .key;
+    assert_eq!(key.source, "unknown");
+    assert!(
+        key.text.contains("UTF-8"),
+        "the reason the environment gave travels: {}",
+        key.text
+    );
+}
+
+#[test]
+fn the_local_marker_comes_from_the_endpoint_in_the_options_history_and_detail() {
+    let dir = TempDir::new("window-local");
+    let desktop = window_with_config(
+        &dir,
+        &[(NOW, "The report stops short of apportioning blame.")],
+        LOOPBACK_CONFIG,
+        Secrets::with_stores(plainly_core::EnvSecrets::empty(), None),
+    );
+
+    // The Record was written by deepseek, and deepseek now points at this
+    // machine: the row and the detail say so from the configuration, not from
+    // the provider's name.
+    let row = &desktop.history().expect("the history reads").records[0];
+    assert!(row.local, "the recorded endpoint is this machine");
+    assert!(
+        desktop.show(row.id).expect("the detail reads").local,
+        "the detail reads the same endpoint"
+    );
+
+    let settings = desktop.settings().expect("the settings read");
+    let option = |name: &str| {
+        settings
+            .provider
+            .options
+            .iter()
+            .find(|option| option.name == name)
+            .expect("every preset is an option")
+            .local
+    };
+    assert!(option("deepseek"), "the overridden preset is this machine");
+    assert!(option("ollama"), "a shipped local preset is too");
+    assert!(!option("openai"), "a hosted preset is not");
+}
+
+#[test]
 fn an_update_writes_the_configuration_file_and_leaves_the_rest_of_it_alone() {
     let dir = TempDir::new("window-update");
     let desktop = window(&dir, &[]);
@@ -730,6 +950,78 @@ fn a_panel_size_outside_the_range_is_refused_rather_than_written() {
     assert!(
         !dir.paths().config_file().exists(),
         "a refused setting writes nothing at all"
+    );
+}
+
+#[test]
+fn a_refused_number_keeps_the_screens_own_sentence() {
+    let dir = TempDir::new("window-range-copy");
+    let desktop = window(&dir, &[]);
+
+    let seconds = desktop
+        .update(&SettingsPatch {
+            panel_autohide_seconds: Some(301),
+            ..SettingsPatch::default()
+        })
+        .expect_err("301 is outside the range")
+        .to_string();
+    assert_eq!(
+        seconds,
+        "自动消失时长要在 5 到 300 秒之间（关掉用开关，不要用 0）"
+    );
+
+    let width = desktop
+        .update(&SettingsPatch {
+            panel_width: Some(901),
+            ..SettingsPatch::default()
+        })
+        .expect_err("901 is outside the range")
+        .to_string();
+    assert_eq!(width, "面板宽度要在 320 到 900 px 之间");
+
+    let height = desktop
+        .update(&SettingsPatch {
+            panel_height: Some(1201),
+            ..SettingsPatch::default()
+        })
+        .expect_err("1201 is outside the range")
+        .to_string();
+    assert_eq!(height, "面板高度上限要在 240 到 1200 px 之间");
+
+    // Zero is refused by core's own rule before the range, and the screen has
+    // always worded it as the range it falls outside of.
+    let zero = desktop
+        .update(&SettingsPatch {
+            panel_width: Some(0),
+            ..SettingsPatch::default()
+        })
+        .expect_err("0 is not a size")
+        .to_string();
+    assert_eq!(zero, "面板宽度要在 320 到 900 px 之间");
+}
+
+#[test]
+fn a_refused_write_leaves_no_half_applied_setting_in_the_window() {
+    let dir = TempDir::new("window-half-write");
+    let desktop = window(&dir, &[]);
+
+    // The level is written before the width, so the refusal happens with the
+    // level already in the in-memory document. A patch is one action: none of
+    // it is written, and none of it may show.
+    let refused = desktop.update(&SettingsPatch {
+        level: Some(Level::A2),
+        panel_width: Some(2000),
+        ..SettingsPatch::default()
+    });
+    assert!(refused.is_err(), "the width refuses the whole patch");
+    assert!(
+        !dir.paths().config_file().exists(),
+        "a refused setting writes nothing at all"
+    );
+    assert_eq!(
+        desktop.settings().expect("the settings read").levels.level,
+        "B2",
+        "the handle was re-read, so the failed level is not a setting"
     );
 }
 

@@ -28,9 +28,9 @@ use crate::chat::ChatCompletions;
 use crate::config::{Config, ConfigError, ConfigFile, Level};
 use crate::explain::{self, Downgrade, RunFailure};
 use crate::paths::{PathError, Paths};
-use crate::presets::KeyRequirement;
 use crate::probe::{Cache, Endpoint, Resolution};
 use crate::prompt::Prompt;
+use crate::readiness::{Judgement, classify};
 use crate::secrets::{SecretError, Secrets, env_var_name};
 use crate::setup::{ProviderSetup, SetupError};
 use crate::store::{Lookup, LookupKey, Record, Store, StoreError};
@@ -575,23 +575,31 @@ pub enum CredentialState {
 /// "no key" in one place and as an error in another. The wording stays with the
 /// surfaces: this returns the facts (provider, variable, store error), not the
 /// sentence.
+///
+/// The judgement itself is `crate::readiness::classify`'s, and the blocking rule
+/// is `crate::readiness::KeyPresence::blocks`', both shared with
+/// [`crate::readiness::Readiness`]: this function only projects them into the run
+/// path's state and errors, so the run path and the display path cannot give two
+/// rules about a missing or unreadable key.
 pub fn resolve_credential(
     setup: &ProviderSetup,
     secrets: &Secrets,
 ) -> Result<CredentialState, CredentialError> {
-    match secrets.resolve(&setup.name) {
-        Ok(Some(resolved)) => Ok(CredentialState::Key(resolved.secret)),
-        Ok(None) if setup.key == KeyRequirement::Required => Err(CredentialError::Missing {
+    let judgement = classify(secrets.resolve(&setup.name));
+
+    // A found key never blocks, so the tuple's first element is ignored for it;
+    // the other two states read the one blocking rule to decide error vs state.
+    match (judgement.blocks(setup.key), judgement) {
+        (_, Judgement::Found(key)) => Ok(CredentialState::Key(key.secret)),
+        (true, Judgement::Missing) => Err(CredentialError::Missing {
             provider: setup.name.clone(),
             variable: env_var_name(&setup.name),
         }),
-        Ok(None) => Ok(CredentialState::NoKey),
-        Err(source) if setup.key == KeyRequirement::Optional => {
-            Ok(CredentialState::Unreadable(source))
-        }
-        Err(source) => Err(CredentialError::Unreadable {
+        (false, Judgement::Missing) => Ok(CredentialState::NoKey),
+        (true, Judgement::Unreadable(source)) => Err(CredentialError::Unreadable {
             provider: setup.name.clone(),
             source,
         }),
+        (false, Judgement::Unreadable(source)) => Ok(CredentialState::Unreadable(source)),
     }
 }

@@ -47,7 +47,8 @@ panel_display = "current"
 # a note and not a window: a short Passage still gets a short panel, and what
 # this caps is the long one, which then scrolls its body. Both are held inside
 # the screen whatever they say, and the settings screen refuses anything outside
-# 320..900 wide and 240..1200 tall.
+# 320..900 wide and 240..1200 tall. `plainly config set` refuses that same range
+# too, so only a hand edit gets a value outside it into the file.
 panel_width = 470
 panel_height = 470
 

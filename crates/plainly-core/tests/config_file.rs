@@ -213,6 +213,124 @@ fn a_zero_size_is_refused() {
     }
 }
 
+/// The legal ranges live in core now, so the settings screen, the panel and the
+/// CLI cannot each keep their own copy of the same three numbers (spec §4).
+#[test]
+fn the_legal_ranges_are_exported_from_core() {
+    use plainly_core::config::{AUTO_HIDE_RANGE, PANEL_HEIGHT_RANGE, PANEL_WIDTH_RANGE};
+
+    assert_eq!(AUTO_HIDE_RANGE, (5, 300));
+    assert_eq!(PANEL_WIDTH_RANGE, (320, 900));
+    assert_eq!(PANEL_HEIGHT_RANGE, (240, 1200));
+}
+
+/// The write side is strict: the settings screen's range is now the file's
+/// range, so `config set` cannot write a number that screen would refuse. The
+/// boundary values themselves are legal.
+#[test]
+fn a_numeric_value_outside_the_range_is_refused_with_the_range_as_facts() {
+    let dir = TempDir::new("config-range");
+    let mut file = ConfigFile::open(dir.join("config.toml")).expect("a missing file opens");
+
+    for (key, value) in [
+        ("app.panel_autohide_seconds", "5"),
+        ("app.panel_autohide_seconds", "300"),
+        ("app.panel_width", "320"),
+        ("app.panel_width", "900"),
+        ("app.panel_height", "240"),
+        ("app.panel_height", "1200"),
+    ] {
+        file.set(key, value)
+            .unwrap_or_else(|error| panic!("{key} = {value} is a legal value: {error}"));
+    }
+
+    for (key, value, min, max) in [
+        ("app.panel_autohide_seconds", "4", 5, 300),
+        ("app.panel_autohide_seconds", "301", 5, 300),
+        ("app.panel_width", "319", 320, 900),
+        ("app.panel_width", "901", 320, 900),
+        ("app.panel_height", "239", 240, 1200),
+        ("app.panel_height", "1201", 240, 1200),
+    ] {
+        let error = file
+            .set(key, value)
+            .expect_err("a value outside the range is refused");
+        let message = error.to_string();
+
+        match error {
+            ConfigError::OutOfRange {
+                key: reported_key,
+                value: reported_value,
+                min: reported_min,
+                max: reported_max,
+            } => {
+                assert_eq!(reported_key, key);
+                assert_eq!(reported_value, value.parse::<u32>().unwrap());
+                assert_eq!(reported_min, min);
+                assert_eq!(reported_max, max);
+            }
+            other => panic!("{key} = {value} should be out of range, got {other}"),
+        }
+
+        // The sentence the CLI prints has to name the range, or the user has to
+        // go looking for it.
+        assert!(message.contains(&value.to_string()), "{message}");
+        assert!(message.contains(&min.to_string()), "{message}");
+        assert!(message.contains(&max.to_string()), "{message}");
+    }
+}
+
+/// Zero keeps its own dedicated messages: the range check comes after them, so
+/// `0` still says why zero is special rather than quoting a range that starts at
+/// a number the user may not have thought about.
+#[test]
+fn a_zero_is_refused_by_its_own_rule_before_the_range_is_considered() {
+    let dir = TempDir::new("config-zero-first");
+    let mut file = ConfigFile::open(dir.join("config.toml")).expect("a missing file opens");
+
+    for (key, expected) in [
+        (
+            "app.panel_autohide_seconds",
+            "not how auto-dismiss is turned off",
+        ),
+        ("app.panel_width", "invisible"),
+        ("app.panel_height", "invisible"),
+    ] {
+        let error = file.set(key, "0").expect_err("zero is refused");
+        assert!(
+            matches!(error, ConfigError::Value { .. }),
+            "{key} = 0 should keep its own message, got {error:?}"
+        );
+        assert!(error.to_string().contains(expected), "{key}: {error}");
+    }
+}
+
+/// The read side stays tolerant: a hand-edited file with an out-of-range number
+/// still opens, because the panel must always be able to appear and close. The
+/// panel clamps and the settings screen shows the file as written; the strictness
+/// is on the way in, not on the way out (spec §4).
+#[test]
+fn a_hand_edited_out_of_range_file_still_opens() {
+    let dir = TempDir::new("config-range-read");
+    let path = dir.join("config.toml");
+    fs::write(
+        &path,
+        "[app]\npanel_width = 2000\npanel_height = 0\npanel_autohide_seconds = 4294967295\n",
+    )
+    .expect("the file is writable");
+
+    let file = ConfigFile::open(&path).expect("an out-of-range file still opens");
+    let config = file.config().expect("it still parses");
+
+    assert_eq!(config.app.panel_width, 2000);
+    assert_eq!(config.app.panel_height, 0);
+    assert_eq!(config.app.panel_autohide_seconds, u32::MAX);
+
+    // The same tolerance stated at the parse seam itself.
+    let parsed = Config::parse("[app]\npanel_width = 4294967295\n").expect("parse is permissive");
+    assert_eq!(parsed.app.panel_width, u32::MAX);
+}
+
 #[test]
 fn a_refused_value_leaves_the_document_untouched() {
     let dir = TempDir::new("config-untouched");

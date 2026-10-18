@@ -60,6 +60,7 @@ impl From<plainly_core::ConfigError> for CommandError {
         match error {
             ConfigError::UnknownKey { .. }
             | ConfigError::Value { .. }
+            | ConfigError::OutOfRange { .. }
             | ConfigError::Invalid { .. } => CommandError::Usage(error.to_string()),
             ConfigError::Parse { .. } => CommandError::NotConfigured(error.to_string()),
             ConfigError::Io { .. } | ConfigError::ExternallyModified { .. } => {

@@ -103,7 +103,7 @@ sqlite3 "$XDG_DATA_HOME/dev.plainly.app/history.db" 'select count(*) from record
 | 1.19 | ⤢ | 点 ⤢ 打开主窗口（或把已开的那个带到前面）；主窗口没开时落在历史页 |
 | 1.20 | chip | 本地 provider 显示「本地」，云端显示「云端」；模型名与实际一致 |
 | 1.21 | **高度跟着内容，到上限为止** | 一段短原文：面板正好容下五节加底部那句本地模型说明，最后一行不会被面板边缘切掉；换成很长的一段：正文最多到 `app.panel_height`（含标题栏与底部说明），其余在面板内滚动，标题栏与底部说明始终可见。面板只有一行高就是这条没做到——layer surface 的高度取自窗口的**最小**尺寸（gtk-layer-shell 这么要），所以得由 `Surface::state_body_height` 说出来；没有 XSettings 守护进程的会话还会先丢掉那把尺子（见 `measuring_screen`） |
-| 1.22 | 宽高按配置 | `plainly config set app.panel_width 700` 与 `app.panel_height 300` 之后再触发：面板确实变宽、变矮，长内容在面板内滚动，标题栏与底部说明仍可见；把宽度设成 2000（超出 320..900）面板按 900 收住。设置界面「行为」里的两个数字框写的是同样的两个键 |
+| 1.22 | 宽高按配置 | `plainly config set app.panel_width 700` 与 `app.panel_height 300` 之后再触发：面板确实变宽、变矮，长内容在面板内滚动，标题栏与底部说明仍可见；手工把配置文件里的 `panel_width` 改成 2000（超出 320..900）面板按 900 收住——`plainly config set app.panel_width 2000` 现在会被拒绝（exit 2），不会写进文件。设置界面「行为」里的两个数字框写的是同样的两个键 |
 
 ### 未入库与重复 Passage（ADR-0003 统一后的两处面板行为）
 

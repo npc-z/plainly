@@ -11,7 +11,8 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use plainly_core::{
-    ARTIFACT_VERSION, Artifact, Explanation, Gloss, Level, PathInputs, Paths, Thinking, Timestamp,
+    ARTIFACT_VERSION, Artifact, Explanation, Gloss, Level, PathInputs, Paths, SecretError,
+    SecretStore, Thinking, Timestamp,
 };
 use plainly_desktop::app::Environment;
 
@@ -65,6 +66,27 @@ pub fn desktop_with_wayland() -> Environment {
             ("eDP-1".to_string(), "Built-in display".to_string()),
             ("DP-2".to_string(), "External".to_string()),
         ],
+    }
+}
+
+/// A keyring that cannot answer: no session bus, or a locked collection.
+///
+/// Readiness tells this apart from "nothing is stored", and so does the settings
+/// screen — the two facts send a person to different places. A desktop test
+/// needs a store that fails without a real keyring to fail.
+pub struct BrokenKeyring;
+
+impl SecretStore for BrokenKeyring {
+    fn get(&self, _provider: &str) -> Result<Option<String>, SecretError> {
+        Err(SecretError::Unavailable("no session bus".to_string()))
+    }
+
+    fn set(&self, _provider: &str, _secret: &str) -> Result<(), SecretError> {
+        Err(SecretError::Unavailable("no session bus".to_string()))
+    }
+
+    fn delete(&self, _provider: &str) -> Result<(), SecretError> {
+        Err(SecretError::Unavailable("no session bus".to_string()))
     }
 }
 

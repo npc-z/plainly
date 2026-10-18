@@ -24,9 +24,10 @@ use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 
+use plainly_core::config::{AUTO_HIDE_RANGE, PANEL_HEIGHT_RANGE, PANEL_WIDTH_RANGE};
 use plainly_core::{
-    Cleared, Config, ConfigFile, Desktop as Session, ExportFormat, Level, PanelCorner, Paths,
-    Prompt, Secrets, Stored, Thinking, Timestamp,
+    Cleared, Config, ConfigError, ConfigFile, Desktop as Session, ExportFormat, Level, PanelCorner,
+    Paths, Prompt, Secrets, Stored, Thinking, Timestamp,
 };
 
 use crate::error::WindowError;
@@ -446,31 +447,36 @@ impl Desktop {
         {
             let mut config = self.config.lock().expect("the config lock is not poisoned");
             let current = config.config()?;
+            let path = self.paths.config_file();
 
+            // A patch is several writes: apply them to a copy and adopt it only
+            // after the file is written, so a refusal anywhere leaves this
+            // handle — and every screen reading it — exactly as it was.
+            let mut candidate = config.clone();
             for (key, value) in patch.keys(&current)? {
-                config.set(&key, &value)?;
+                if let Err(error) = candidate.set(&key, &value) {
+                    return Err(write_refusal(&key, error));
+                }
             }
 
-            if let Err(error) = config.save() {
-                // The document in hand holds edits that are not in the file —
-                // somebody else's write got there first, which is the one thing
-                // this handle refuses to overwrite. It is dropped and re-read
-                // rather than kept: a handle that remembers bytes the file does
-                // not hold can never save again, and every later screen would be
-                // showing settings that were never written.
-                if let Ok(fresh) = ConfigFile::open(self.paths.config_file()) {
-                    *config = fresh;
-                }
+            if let Err(error) = candidate.save() {
+                // The save lost a race: somebody else's write got there first,
+                // which is the one thing this handle refuses to overwrite. The
+                // handle is re-read rather than kept, because one remembering
+                // bytes the file does not hold can never save again.
+                reread(&mut config, &path);
                 return Err(match error {
                     // Core words this one for a command line ("re-run the
                     // command"), and the window is not one. The fact is the same
                     // and the sentence is the interface's.
-                    plainly_core::ConfigError::ExternallyModified { .. } => WindowError::Value {
+                    ConfigError::ExternallyModified { .. } => WindowError::Value {
                         message: crate::strings::settings_changed_on_disk().to_string(),
                     },
                     other => other.into(),
                 });
             }
+
+            *config = candidate;
         }
 
         self.settings()
@@ -580,42 +586,12 @@ impl SettingsPatch {
             put("app.panel_autohide", autohide.to_string());
         }
         if let Some(seconds) = self.panel_autohide_seconds {
-            if !(crate::settings::AUTO_HIDE_RANGE.0..=crate::settings::AUTO_HIDE_RANGE.1)
-                .contains(&seconds)
-            {
-                return Err(WindowError::Value {
-                    message: crate::strings::auto_hide_out_of_range(
-                        crate::settings::AUTO_HIDE_RANGE.0,
-                        crate::settings::AUTO_HIDE_RANGE.1,
-                    ),
-                });
-            }
             put("app.panel_autohide_seconds", seconds.to_string());
         }
         if let Some(width) = self.panel_width {
-            let (low, high) = crate::settings::PANEL_WIDTH_RANGE;
-            if !(low..=high).contains(&width) {
-                return Err(WindowError::Value {
-                    message: crate::strings::panel_size_out_of_range(
-                        crate::strings::SETTINGS.panel_width,
-                        low,
-                        high,
-                    ),
-                });
-            }
             put("app.panel_width", width.to_string());
         }
         if let Some(height) = self.panel_height {
-            let (low, high) = crate::settings::PANEL_HEIGHT_RANGE;
-            if !(low..=high).contains(&height) {
-                return Err(WindowError::Value {
-                    message: crate::strings::panel_size_out_of_range(
-                        crate::strings::SETTINGS.panel_height,
-                        low,
-                        high,
-                    ),
-                });
-            }
             put("app.panel_height", height.to_string());
         }
         if let Some(copy) = self.copy_auto_popup {
@@ -637,6 +613,76 @@ impl SettingsPatch {
         }
 
         Ok(pairs)
+    }
+}
+
+/// Put the in-memory document back in step with the file after a save failed.
+///
+/// The file is what every screen reads, and a handle holding bytes the file does
+/// not hold could never save again; re-reading is what lets the next edit start
+/// from what is actually there.
+fn reread(config: &mut ConfigFile, path: &Path) {
+    if let Ok(fresh) = ConfigFile::open(path) {
+        *config = fresh;
+    }
+}
+
+/// Which sentence the screen has for a refused numeric setting.
+///
+/// The key match in [`write_refusal`] yields this beside the range to fall back
+/// on, so the value's key is classified once rather than twice.
+#[derive(Clone, Copy)]
+enum Refusal {
+    AutoHide,
+    PanelWidth,
+    PanelHeight,
+}
+
+impl Refusal {
+    /// The sentence this screen has always shown for this setting's range.
+    fn message(self, min: u32, max: u32) -> String {
+        match self {
+            Refusal::AutoHide => crate::strings::auto_hide_out_of_range(min, max),
+            Refusal::PanelWidth => crate::strings::panel_size_out_of_range(
+                crate::strings::SETTINGS.panel_width,
+                min,
+                max,
+            ),
+            Refusal::PanelHeight => crate::strings::panel_size_out_of_range(
+                crate::strings::SETTINGS.panel_height,
+                min,
+                max,
+            ),
+        }
+    }
+}
+
+/// How the screen words a write core refused.
+///
+/// Which values are legal belongs to core's key definitions now, so the screen
+/// no longer compares before writing; it translates the facts back into the
+/// sentence it has always shown. One key match yields both facts this screen
+/// needs — the range to fall back on and the sentence that names it — and the
+/// error's own range wins when it carries one. Zero keeps its own core rule and is
+/// refused before the range, so it arrives as `ConfigError::Value`; the fallback
+/// range is what keeps that refusal worded as the range it falls outside of,
+/// exactly as this screen always said it.
+fn write_refusal(key: &str, error: ConfigError) -> WindowError {
+    let (fallback, refusal) = match key {
+        "app.panel_autohide_seconds" => (AUTO_HIDE_RANGE, Refusal::AutoHide),
+        "app.panel_width" => (PANEL_WIDTH_RANGE, Refusal::PanelWidth),
+        "app.panel_height" => (PANEL_HEIGHT_RANGE, Refusal::PanelHeight),
+        _ => return error.into(),
+    };
+
+    let (min, max) = match &error {
+        ConfigError::OutOfRange { min, max, .. } => (*min, *max),
+        ConfigError::Value { .. } => fallback,
+        _ => return error.into(),
+    };
+
+    WindowError::Value {
+        message: refusal.message(min, max),
     }
 }
 

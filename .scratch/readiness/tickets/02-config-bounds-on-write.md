@@ -6,15 +6,18 @@
 
 **Spec:** [spec.md](../spec.md) §Implementation Decisions §4、§5
 
-**Status:** ready-for-agent
+**Status:** done (2026-10-18)
 
-- [ ] 三个范围常量从 core 的 `config` 公共导出，值与 spec 一致；默认值不变。
-- [ ] `set` 接受边界值（300 / 320 / 900 / 1200 等），拒绝边界外（4 / 301 / 319 / 901 / 239 / 1201 等）并返回 `OutOfRange`，四个事实字段正确。
-- [ ] 0 的两条现有专用消息逐字保留；错误优先级符合 spec（先 0 规则，再范围）。
-- [ ] `Config::parse` 仍接受越界值（用手改文件路径的测试钉住）。
-- [ ] `plainly config set <key> <越界值>` 退出码 2，且配置文件不被创建/不被修改；边界值退出码 0。
-- [ ] core 测试补范围矩阵与 `OutOfRange`；CLI 二进制测试补越界写入一条与边界值一条；既有 zero 测试与 `providers` 测试不改。
-- [ ] `docs/manual-checks.md` 的跨表面条目改为「手工把文件改成 2000 → 面板按 900 收住；`config set 2000` 现在 exit 2」；`default_config.toml` 注释补一句 CLI 同样拒绝。
-- [ ] `cargo test -p plainly-core`、`cargo test -p plainly-cli`、两个 crate 的 clippy 通过；desktop / panel 未动但仍通过。
+- [x] 三个范围常量从 core 的 `config` 公共导出，值与 spec 一致；默认值不变。
+- [x] `set` 接受边界值（300 / 320 / 900 / 1200 等），拒绝边界外（4 / 301 / 319 / 901 / 239 / 1201 等）并返回 `OutOfRange`，四个事实字段正确。
+- [x] 0 的两条现有专用消息逐字保留；错误优先级符合 spec（先 0 规则，再范围）。
+- [x] `Config::parse` 仍接受越界值（用手改文件路径的测试钉住）。
+- [x] `plainly config set <key> <越界值>` 退出码 2，且配置文件不被创建/不被修改；边界值退出码 0。
+- [x] core 测试补范围矩阵与 `OutOfRange`；CLI 二进制测试补越界写入一条与边界值一条；既有 zero 测试与 `providers` 测试不改。
+- [x] `docs/manual-checks.md` 的跨表面条目改为「手工把文件改成 2000 → 面板按 900 收住；`config set 2000` 现在 exit 2」；`default_config.toml` 注释补一句 CLI 同样拒绝。
+- [x] `cargo test -p plainly-core`、`cargo test -p plainly-cli`、两个 crate 的 clippy 通过；desktop / panel 未动但仍通过。
 
 **Comments**
+
+- 实现：`a323c58`；core `config` 三个范围常量 + `OutOfRange` + `set` 写侧校验，CLI 映射 `Usage`（exit 2）；读侧仍接受手改的越界值。
+- 测试：core `config_file` 边界矩阵与 `OutOfRange` 事实、CLI 二进制越界/边界用例；`docs/manual-checks.md` 与 `default_config.toml` 同步更新。最终 workspace 606 passed 含这些用例。

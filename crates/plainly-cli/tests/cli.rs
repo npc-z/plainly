@@ -129,6 +129,55 @@ fn config_set_refuses_a_zero_duration() {
     assert!(stderr(&output).contains("app.panel_autohide"));
 }
 
+/// The write side is strict, so the CLI cannot put a number in the file that
+/// the settings screen would refuse. The refusal happens before the save, so
+/// neither a new file nor an existing one is touched (spec §4).
+#[test]
+fn config_set_refuses_an_out_of_range_value_without_writing_anything() {
+    let dir = TempDir::new("config-set-out-of-range");
+
+    let output = dir.plainly(&["config", "set", "app.panel_width", "5000"]);
+
+    assert_eq!(code(&output), USAGE);
+    assert_eq!(stdout(&output), "");
+    let message = stderr(&output);
+    assert!(message.contains("app.panel_width"), "{message}");
+    assert!(message.contains("320"), "{message}");
+    assert!(message.contains("900"), "{message}");
+    assert!(
+        !dir.config_file().exists(),
+        "a refusal must not create the file"
+    );
+
+    // An existing file is left byte-for-byte as it was.
+    dir.write_config("[app]\npanel_width = 470\n");
+    let path = dir.config_file();
+    let before = std::fs::read(&path).expect("the file exists");
+
+    let output = dir.plainly(&["config", "set", "app.panel_autohide_seconds", "301"]);
+
+    assert_eq!(code(&output), USAGE);
+    assert_eq!(
+        std::fs::read(&path).expect("the file is still there"),
+        before,
+        "a refusal must not modify the file"
+    );
+}
+
+/// The boundaries themselves stay legal.
+#[test]
+fn config_set_accepts_a_boundary_value() {
+    let dir = TempDir::new("config-set-boundary");
+
+    let output = dir.plainly(&["config", "set", "app.panel_width", "900"]);
+
+    assert_eq!(code(&output), SUCCESS);
+    assert_eq!(stdout(&output), "", "confirmations belong on stderr");
+
+    let shown = stdout(&dir.plainly(&["config", "show"]));
+    assert!(shown.contains("panel_width = 900"), "{shown}");
+}
+
 #[test]
 fn a_key_without_a_keyring_is_not_reported_as_saved() {
     let dir = TempDir::new("key-no-keyring");

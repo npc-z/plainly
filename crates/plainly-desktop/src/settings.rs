@@ -23,30 +23,17 @@
 
 use serde::Serialize;
 
+// The numeric ranges are core's: a write refuses a value outside them wherever
+// it comes from, and this screen only draws their ends. Reading stays tolerant —
+// a hand-edited file still opens and is shown as written (spec §4).
+use plainly_core::config::{AUTO_HIDE_RANGE, PANEL_HEIGHT_RANGE, PANEL_WIDTH_RANGE};
 use plainly_core::presets::{self, KeyRequirement};
 use plainly_core::{
-    App, Config, Desktop, ExportFormat, Level, PanelCorner, Prompts, ProviderSetup, Secrets,
+    App, Config, Desktop, ExportFormat, KeyPresence, KeySource, Level, PanelCorner, Prompts,
+    Readiness, Secrets, local_of,
 };
 
 use crate::strings;
-use crate::view::is_local;
-
-/// How many seconds of auto-dismiss the number input accepts. The range is here
-/// rather than in the frontend so that a hand-typed value and a rejected value
-/// agree about what "reasonable" means.
-pub const AUTO_HIDE_RANGE: (u32, u32) = (5, 300);
-
-/// The panel sizes the number inputs accept, in pixels.
-///
-/// The panel keeps its own copy of these numbers (`plainly-panel`'s
-/// `PANEL_WIDTH_RANGE`) rather than importing them: the two are separate
-/// processes that happen to read one file, and the file is the contract. What the
-/// panel does with a value outside them and what this screen does are different
-/// answers to the same question — the screen refuses it, the panel clamps it,
-/// because a panel of the wrong size is still a panel somebody can read and
-/// close, while a *value* the screen would not write must not be written.
-pub const PANEL_WIDTH_RANGE: (u32, u32) = (320, 900);
-pub const PANEL_HEIGHT_RANGE: (u32, u32) = (240, 1200);
 
 /// The whole settings screen.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -314,54 +301,47 @@ impl ProvidersView {
 }
 
 impl KeyView {
-    /// The key as it stands for one provider.
-    fn of(name: &str, required: bool, secrets: &Secrets) -> Self {
-        let variable = plainly_core::env_var_name(name);
+    /// The key as core's readiness reports it, in this screen's words.
+    ///
+    /// Whether a key was found (and from which tier), whether there is none, or
+    /// whether a store could not answer is decided once in core; this only picks
+    /// the sentence. `needed` is the same readiness answer the history screen
+    /// opens on, read backwards: a provider whose required key is missing or
+    /// unreadable is the one thing that blocks a run.
+    fn of(readiness: &Readiness) -> Self {
+        let variable = plainly_core::env_var_name(&readiness.name);
+        let needed = !readiness.usable();
 
-        if secrets.environment_provides(name) {
-            return Self {
-                source: "environment".to_string(),
-                text: strings::key_in_environment(&variable),
-                variable,
-                needed: false,
-            };
-        }
-
-        // A keyring that will not answer is not the same as a key that is not
-        // there, and neither is "this provider needs no key". The three are told
-        // apart because they send the user to different places.
-        match secrets.resolve(name) {
-            Ok(Some(resolved)) => Self {
-                source: match resolved.source {
-                    plainly_core::KeySource::Environment => "environment",
-                    plainly_core::KeySource::Keyring => "keyring",
-                    plainly_core::KeySource::Session => "session",
+        match &readiness.key {
+            KeyPresence::Found(source) => Self {
+                source: match source {
+                    KeySource::Environment => "environment",
+                    KeySource::Keyring => "keyring",
+                    KeySource::Session => "session",
                 }
                 .to_string(),
-                text: match resolved.source {
-                    plainly_core::KeySource::Keyring => strings::KEY_IN_KEYRING.to_string(),
-                    plainly_core::KeySource::Environment => strings::key_in_environment(&variable),
-                    plainly_core::KeySource::Session => strings::KEY_IN_SESSION.to_string(),
+                text: match source {
+                    KeySource::Environment => strings::key_in_environment(&variable),
+                    KeySource::Keyring => strings::KEY_IN_KEYRING.to_string(),
+                    KeySource::Session => strings::KEY_IN_SESSION.to_string(),
                 },
                 variable,
-                needed: false,
+                needed,
             },
-            Ok(None) => Self {
+            KeyPresence::Missing => Self {
                 source: "unset".to_string(),
-                text: match required {
-                    true => strings::KEY_MISSING.to_string(),
-                    false => strings::KEY_OPTIONAL.to_string(),
+                text: match readiness.requirement {
+                    KeyRequirement::Required => strings::KEY_MISSING.to_string(),
+                    KeyRequirement::Optional => strings::KEY_OPTIONAL.to_string(),
                 },
                 variable,
-                // An endpoint that may authenticate nothing is not blocked on a
-                // key: its own 401 is a better answer than a lock with no door.
-                needed: required,
+                needed,
             },
-            Err(error) => Self {
+            KeyPresence::Unreadable(error) => Self {
                 source: "unknown".to_string(),
                 text: strings::key_unknown(&error.to_string()),
                 variable,
-                needed: required,
+                needed,
             },
         }
     }
@@ -412,27 +392,28 @@ fn level_option(level: Level, prompt: &plainly_core::Prompt) -> LevelOption {
 
 fn providers(config: &Config, secrets: &Secrets) -> ProvidersView {
     let configured = config.app.provider.clone();
+    let readiness = Readiness::of(&configured, config, secrets);
 
     let options = presets::PRESETS
         .iter()
         .map(|preset| ProviderOption {
             name: preset.name.to_string(),
             label: preset.label.to_string(),
-            local: is_local(preset.name, config),
+            local: local_of(preset.name, config),
         })
         .collect();
 
     // The configured name may be one nobody ships, in which case it is still the
     // one in effect: resolution reports the problem and the screen shows it.
-    let (current, current_problem) = match ProviderSetup::resolve(&configured, config) {
+    let (current, current_problem) = match &readiness.resolution {
         Ok(setup) => (
             Some(CurrentProvider {
                 name: setup.name.clone(),
                 label: setup.label.clone(),
                 endpoint: setup.endpoint.clone(),
                 model: setup.model.clone(),
-                local: setup.is_local(),
-                key: KeyView::of(&setup.name, setup.key == KeyRequirement::Required, secrets),
+                local: readiness.local,
+                key: KeyView::of(&readiness),
                 thinking: setup.thinking.as_str().to_string(),
                 thinking_supported: setup.thinking_switch
                     == plainly_core::presets::ThinkingSwitch::Canonical,

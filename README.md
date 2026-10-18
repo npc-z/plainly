@@ -132,11 +132,17 @@ Three things are structurally true and worth knowing before the prose below:
   answer, or generate it and remember it. The CLI and the panel are adapters over
   that module. The *run policy* — store failure, credential states, the turn
   itself — lives in core and is covered by the same CI tests as the CLI's. The
-  panel's own adapter decisions (deduplicating a repeat within one trigger,
-  showing a run notice once, placing the not-stored warning) stay under its unit
-  tests and the manual checklist (ADR-0003). Where a Passage comes from, how a
-  long input is split, which copies repeat, and how progress and failures are
-  worded stay with each surface.
+  question just before a run gets the same treatment: whether a provider can be
+  used now — its key requirement, its credential state and where that key came
+  from, and whether its endpoint is on this machine — is one core value,
+  `Readiness`. The desktop settings screen and the panel's ⟳ read that value;
+  the CLI's credential adapter and the run path share the classifier behind it.
+  Core's tests cover the shared judgement; each surface's tests pin its own
+  edges. The panel's own adapter decisions (deduplicating a repeat within one
+  trigger, showing a run notice once, placing the not-stored warning) stay under
+  its unit tests and the manual checklist (ADR-0003). Where a Passage comes from,
+  how a long input is split, which copies repeat, and how progress and failures
+  are worded stay with each surface.
 
 Honest limits, from the spec's "必须传达到实现阶段的诚实记录":
 

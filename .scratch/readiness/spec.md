@@ -117,7 +117,7 @@ core 新增一个 `readiness` module，用一个值回答一个 provider 的可�
 
 - **resolution**：`ProviderSetup::resolve(name, config)` 的结果原样保留。解析失败（未知名字 / 没有 endpoint / 本地 preset 没选 model）是 `usable() == false` 的原因，`local` 仍可能为真。
 - **requirement**：解析成功时取 `setup.key`（与运行路径完全一致，endpoint 被指到别处时 preset 的 `Required` 不适用）；解析失败时按同一 endpoint 过滤规则取 preset 的 requirement，没有 preset 或 endpoint 已指到别处时为 `Optional`。
-- **key**：一次 `Secrets::resolve(name)`（环境变量 → keyring → 本次会话内存；某一层失败即停止，沿用现有语义），映射为 `Found(KeySource)` / `Missing` / `Unreadable(SecretError)`。
+- **key**：`resolution` 成功时一次 `Secrets::resolve(name)`（环境变量 → keyring → 本次会话内存；某一层失败即停止，沿用现有语义），映射为 `Found(KeySource)` / `Missing` / `Unreadable(SecretError)`；`resolution` 失败时不询问 secret stores（没有可显示 key 的 provider，不能把画设置页变成一次 keyring 往返），`key` 记为 `Missing`。
 - **可用性矩阵**（`resolution` 成功时）：
 
   | requirement | key 找到 | 没有 key | 存储读不到 |
@@ -162,13 +162,14 @@ core 新增一个 `readiness` module，用一个值回答一个 provider 的可�
 
 ### 5. 测试 seam
 
-- **不新增第三条 seam**（沿用主 spec 的两条缝）。`Readiness` 的 interface 落在第一条缝（core 公共 API）上：它是 CLI、桌面、面板共同调用的最高点。
+- **不新增第三条 seam**（沿用主 spec 的两条缝）。`Readiness` 的 interface 落在第一条缝（core 公共 API）上：桌面设置页与面板 ⟳ 直接调用它，CLI 的凭据适配器与运行路径共用它背后的分类器。
 - 新增 core 集成测试 `readiness`（矩阵与等价性）；`config_file` 补范围的界内/界外；CLI 二进制测试（seam B）补越界写入；desktop 与 panel 的纯决策测试各自补齐，不新增 GTK 测试、不引入新的 mock 层。
 - 已有的 `Runner` 凭据测试原样保留——它们同时是「重构没有改变运行路径」的证据。
 
 ### 6. 迁移与删除
 
 - `readiness` module 新建；`runner` 的凭据判定改为共享分类器；`lib.rs` 导出新类型。
+- `setup` 重构为一次查源的 `Sources`（`shipped` 与 endpoint 过滤后的 preset），并新增 `requirement_of` 供解析失败时取 requirement；`endpoint_of` / `resolve` 的结果与错误不变。理由：失败路径必须复用同一 endpoint 过滤。
 - desktop `settings` / `view` 删除对 `Secrets` 与 `endpoint_of` 的直接调用；`KeyView` 改为从 `Readiness` 构造。
 - panel `provider` 删除 `usable` / `preset_requirement` / `is_loopback` 调用；`prefs` 改为引用 core 常量。
 - `config` 新增范围常量、`OutOfRange` 与 `set` 校验；CLI 错误映射加一条；desktop `app` 删除范围比较并加错误映射；desktop `settings` 的常量移出（改为引用 core）。
@@ -176,7 +177,7 @@ core 新增一个 `readiness` module，用一个值回答一个 provider 的可�
 
 ### 7. 验收判据
 
-- grep 可验：`desktop/settings` 不再出现 `secrets.resolve` / `environment_provides`；`desktop/view` 不再出现 `endpoint_of`；`panel/provider` 不再出现 `preset_requirement` / `is_loopback` / `secrets.resolve`；`panel/prefs` 不再有自己的范围字面量；`desktop/app` 不再有范围比较；范围数字只出现在 core 的 `config`；凭据判定 match 只出现在 `readiness` 的分类器与 `resolve_credential` 的投影。
+- grep 可验：`desktop/settings` 不再出现 `secrets.resolve` / `environment_provides`；`desktop/view` 不再出现 `endpoint_of`；`panel/provider` 不再出现 `preset_requirement` / `is_loopback` / `secrets.resolve`；`panel/prefs` 不再有自己的范围字面量；`desktop/app` 不再有范围比较；范围数字只出现在 core 的 `config`；凭据判定只在 `readiness` 的分类器与 `resolve_credential` 的投影中做（**已记录的例外**：CLI `providers discover` 的 `candidate_key` 仍直接匹配 `secrets.resolve` 的结果——§3 冻结该输出，本规格不改它）。
 - `cargo test -p plainly-core`、`cargo test -p plainly-cli`、`cargo clippy`（两个 crate）通过；`nix build` checkPhase 通过（含 desktop / panel 测试）。
 - 四处边缘行为变化由测试钉住（见 Testing Decisions）；除此之外任何输出/文案/退出码差异都视为 bug。
 

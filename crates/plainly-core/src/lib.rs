@@ -22,6 +22,7 @@ pub mod presets;
 pub mod probe;
 pub mod prompt;
 pub mod provider;
+pub mod readiness;
 pub mod render;
 pub mod retry;
 pub mod runner;
@@ -53,6 +54,7 @@ pub use probe::{
 };
 pub use prompt::{FACTORY_PROMPT, PROMPT_LABEL, Prompt, factory_descriptor};
 pub use provider::{ExplainRequest, Provider, ProviderError, ProviderErrorKind};
+pub use readiness::{KeyPresence, Readiness, local_of};
 pub use render::{Body, Section, SectionKind};
 pub use retry::{Failure, FailureKind, Stopped};
 pub use runner::{

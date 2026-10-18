@@ -3,9 +3,11 @@
 `plainly_core::readiness::Readiness` answers one question about one provider: does it resolve from
 the configuration, does it need a key, is a key there (and where from) or is the store unable to
 answer, and is its endpoint on this machine. `Readiness::of(name, &Config, &Secrets)` composes the
-existing `ProviderSetup::resolve`, `Secrets::resolve` and `is_loopback`; `usable()` is derived from
-those facts. The desktop settings screen, the panel's ⟳ choice and the CLI's credential adapter read
-it instead of re-deriving it. Wording, exit codes and UI states stay with each surface (ADR-0003).
+existing `ProviderSetup::resolve`, `Secrets::resolve` (asked only when the setup resolves) and
+`is_loopback`; `usable()` is derived from
+those facts. The desktop settings screen and the panel's ⟳ choice read it; the CLI's credential
+adapter and the run path share the classifier behind it, instead of each re-deriving the rule.
+Wording, exit codes and UI states stay with each surface (ADR-0003).
 
 ## Why
 
@@ -38,7 +40,8 @@ it instead of re-deriving it. Wording, exit codes and UI states stay with each s
 - **The value carries no secret.** Readiness reports that a key was found and from which tier
   (`Environment`, `Keyring`, `Session`), never the key itself. The run path keeps
   `resolve_credential`, which does return the secret; both are projections of one crate-internal
-  classifier over `(KeyRequirement, Result<Option<ResolvedKey>, SecretError>)`, so they cannot drift.
+  classifier over `Result<Option<ResolvedKey>, SecretError>`, with the one blocking rule applied to
+  the requirement, so they cannot drift.
 - **Surfaces keep their language.** The desktop maps the facts to its `KeyView` states and Chinese
   sentences, the panel to its note and ⟳ choice, the CLI to its exit codes (ADR-0003).
 - **The panel's cloud alternative is still panel policy.** Readiness decides whether one provider is

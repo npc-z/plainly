@@ -27,8 +27,8 @@
 //! and a duration, two independent keys**. A duration of `0` is deliberately not
 //! a second spelling of "never" (spec §12) — "off" already has a switch, and two
 //! spellings of one state eventually disagree about which one is in effect. A
-//! duration outside the range the settings screen accepts is therefore *refused
-//! here too*, by falling back to the default rather than by dismissing the panel
+//! duration outside the range core accepts on write is therefore *refused here
+//! too*, by falling back to the default rather than by dismissing the panel
 //! instantly or keeping it up for a week: a hand-edited file must not produce a
 //! surface that cannot be reached.
 //!
@@ -39,6 +39,11 @@
 //! file.
 
 use plainly_core::render::SectionKind;
+// The legal domain of these three keys is core's, because the write side (`config
+// set`, the settings screen) and this read side have to agree on it. Reading is
+// still tolerant — a hand-edited file is clamped or defaulted below — but the
+// numbers themselves are not repeated here (spec §4).
+use plainly_core::config::{AUTO_HIDE_RANGE, PANEL_HEIGHT_RANGE, PANEL_WIDTH_RANGE};
 use plainly_core::{Config, ConfigFile, PanelCorner, Paths, Secrets};
 
 use crate::position::Display;
@@ -48,25 +53,6 @@ use crate::worker::Recall;
 /// How long the panel stays when auto-dismiss is on and the file names no usable
 /// duration — the settings screen's own default (spec §12).
 pub const DEFAULT_AUTOHIDE_SECONDS: u32 = 20;
-
-/// The bounds a duration read from the file has to be inside.
-///
-/// The same range the settings screen refuses outside of
-/// (spec §13). It is repeated as a literal rather than imported because the two
-/// crates are separate processes that happen to read one file, and a shared
-/// constant would make one of them the other's dependency for a number that is
-/// part of the file's contract.
-pub const AUTOHIDE_RANGE: (u32, u32) = (5, 300);
-
-/// The bounds a panel size read from the file has to be inside.
-///
-/// The same ranges the settings screen refuses outside of, repeated as literals
-/// for the same reason as [`AUTOHIDE_RANGE`]: the file is the contract between two
-/// separate processes, and neither crate is the other's place to keep a number.
-/// A width narrower than the first is a column of one word per line; a height
-/// shorter than the second is a title bar with no room under it.
-pub const PANEL_WIDTH_RANGE: (u32, u32) = (320, 900);
-pub const PANEL_HEIGHT_RANGE: (u32, u32) = (240, 1200);
 
 /// What a trigger reads out of the configuration.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -220,14 +206,14 @@ fn autohide(enabled: bool, seconds: u32) -> Option<u32> {
     }
 
     Some(
-        match (AUTOHIDE_RANGE.0..=AUTOHIDE_RANGE.1).contains(&seconds) {
+        match (AUTO_HIDE_RANGE.0..=AUTO_HIDE_RANGE.1).contains(&seconds) {
             true => seconds,
             false => DEFAULT_AUTOHIDE_SECONDS,
         },
     )
 }
 
-/// A size read from the file, held inside the range the settings screen writes.
+/// A size read from the file, held inside the range core accepts on write.
 ///
 /// Clamped to the nearest bound rather than replaced by the default, which is what
 /// [`autohide`] does with a duration and deliberately not what happens here: a
@@ -282,8 +268,8 @@ mod tests {
         assert_eq!(prefs.panel_height, 540);
     }
 
-    /// A hand-edited size is clamped to the range the settings screen accepts,
-    /// not replaced by the default: a panel of the wrong size is still a panel
+    /// A hand-edited size is clamped to the range core accepts on write, not
+    /// replaced by the default: a panel of the wrong size is still a panel
     /// somebody can read and close, so the nearest bound is the friendly answer.
     #[test]
     fn a_size_outside_the_range_is_clamped_to_the_nearest_bound() {

@@ -6,14 +6,17 @@
 
 **Spec:** [spec.md](../spec.md) §Implementation Decisions §3（panel）、§4
 
-**Status:** ready-for-agent
+**Status:** done (2026-10-18)
 
-- [ ] `ProviderChoice` 的 `local` 走 `local_of(config.app.provider, config)`；`provider` 里不再出现 `is_loopback`。
-- [ ] `cloud_alternative` = shipped presets 中第一个「`!local_of(name, config)` 且 `Readiness::of(name, config, secrets).usable()`」的名字；`usable` 与 `preset_requirement` 删除；候选的 `local` 由 `local_of` 派生，不硬编码。
-- [ ] 边缘：`deepseek` 被指到 loopback → 不是云候选（openai 可用则选 openai）；被指到别的远程服务且没有 key → 仍是云候选。
-- [ ] 没有云端候选时不新增文案/提示；`local_note`、`regenerate_recall`、hosted provider 上 ⟳ 的语义不变。
-- [ ] `prefs` 的宽/高/时长范围改为引用 core 常量；`size()` 夹取与 `autohide()` 回退到 20 秒的行为与文案不变。
-- [ ] panel 测试补齐：坏 keyring → 无云候选（不 panic、不新增提示）；preset 指回环；preset 指远程无 key；既有 provider / prefs / note / ⟳ 测试保持。
-- [ ] `cargo test -p plainly-panel` 与 clippy 通过。
+- [x] `ProviderChoice` 的 `local` 走 `local_of(config.app.provider, config)`；`provider` 里不再出现 `is_loopback`。
+- [x] `cloud_alternative` = shipped presets 中第一个「`!local_of(name, config)` 且 `Readiness::of(name, config, secrets).usable()`」的名字；`usable` 与 `preset_requirement` 删除；候选的 `local` 由 `local_of` 派生，不硬编码。
+- [x] 边缘：`deepseek` 被指到 loopback → 不是云候选（openai 可用则选 openai）；被指到别的远程服务且没有 key → 仍是云候选。
+- [x] 没有云端候选时不新增文案/提示；`local_note`、`regenerate_recall`、hosted provider 上 ⟳ 的语义不变。
+- [x] `prefs` 的宽/高/时长范围改为引用 core 常量；`size()` 夹取与 `autohide()` 回退到 20 秒的行为与文案不变。
+- [x] panel 测试补齐：坏 keyring → 无云候选（不 panic、不新增提示）；preset 指回环；preset 指远程无 key；既有 provider / prefs / note / ⟳ 测试保持。
+- [x] `cargo test -p plainly-panel` 与 clippy 通过。
 
 **Comments**
+
+- 实现：`697dec5`，合入 `0765329`；panel 云候选与本机性改走 `Readiness` + `local_of`，`preset_requirement` / `usable` / `is_loopback` 删除，prefs 常量改引 core。
+- 测试：panel 71 passed（含 broken keyring、preset 指回环、preset 指远程无 key；边缘用例在旧代码上是红的）。

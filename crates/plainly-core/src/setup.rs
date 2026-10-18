@@ -80,23 +80,10 @@ impl ProviderSetup {
         let Sources {
             profile,
             shipped,
-            configured_endpoint,
             endpoint,
+            endpoint_matched,
         } = sources(name, config)?;
 
-        // A preset describes one *service's* call surface, not a name. Point the
-        // name at a different authority and what the preset knew no longer
-        // applies: a `json_object` request to LM Studio is a 400, and the
-        // canonical thinking field is a 400 on anything strict. The spec's probe
-        // cache is invalidated by an endpoint change for the same reason
-        // (spec §7). What is left here is the shape to *start* from when the
-        // endpoint cannot be probed at all (`crate::probe` takes over the moment
-        // it can be): ask for a schema, send nothing that might be rejected,
-        // demand no key — which is also what a provider we ship no preset for
-        // gets.
-        let preset = shipped.filter(|preset| {
-            configured_endpoint.is_none_or(|endpoint| same_service(endpoint, preset.endpoint))
-        });
         // Part of the Lookup Key, so an unset model is refused rather than
         // defaulted to something no one chose. The *shipped* preset names it,
         // not the endpoint-filtered one: a model id is a default the user can
@@ -116,7 +103,7 @@ impl ProviderSetup {
         // vendor's service. After an endpoint override, an error that says
         // "DeepSeek answered HTTP 400" would blame a company the user never
         // talked to; the configured name is the honest thing to print.
-        let label = preset.map(|preset| preset.label).unwrap_or(name);
+        let label = endpoint_matched.map(|preset| preset.label).unwrap_or(name);
 
         Ok(Self {
             name: name.to_string(),
@@ -133,10 +120,10 @@ impl ProviderSetup {
             surface: shipped
                 .map(|preset| preset.surface)
                 .unwrap_or(Surface::OpenAi),
-            schema: preset
+            schema: endpoint_matched
                 .map(|preset| preset.schema)
                 .unwrap_or(SchemaSupport::Enforced),
-            thinking_switch: preset
+            thinking_switch: endpoint_matched
                 .map(|preset| preset.thinking)
                 .unwrap_or(ThinkingSwitch::Unsupported),
             // A provider we ship no preset for could be anything: a hosted
@@ -144,7 +131,7 @@ impl ProviderSetup {
             // nothing. Demanding a key we cannot know is needed would lock the
             // second out; a key that exists is sent either way, so the first
             // fails with the endpoint's own complaint.
-            key: preset
+            key: endpoint_matched
                 .map(|preset| preset.key)
                 .unwrap_or(KeyRequirement::Optional),
         })
@@ -231,13 +218,11 @@ struct Sources<'a> {
     profile: Option<&'a ProviderProfile>,
     /// The shipped preset for this name, if there is one.
     shipped: Option<&'static Preset>,
-    /// The endpoint as the user wrote it, before the preset fills in for it.
-    /// What remains interesting about it after `endpoint` is resolved is whether
-    /// it was configured at all: a preset describes one service's call surface,
-    /// and pointing the name somewhere else withdraws what it knew.
-    configured_endpoint: Option<&'a str>,
     /// The endpoint a request would go to, without its trailing slash.
     endpoint: String,
+    /// The shipped preset after the endpoint filter: present only while the name
+    /// still points at the service the preset describes.
+    endpoint_matched: Option<&'static Preset>,
 }
 
 /// Resolve a name into the sources it comes from.
@@ -260,12 +245,41 @@ fn sources<'a>(name: &str, config: &'a Config) -> Result<Sources<'a>, SetupError
         .trim_end_matches('/')
         .to_string();
 
+    // A preset describes one *service's* call surface, not a name. Point the
+    // name at a different authority and what the preset knew no longer applies:
+    // a `json_object` request to LM Studio is a 400, and the canonical thinking
+    // field is a 400 on anything strict. The spec's probe cache is invalidated
+    // by an endpoint change for the same reason (spec §7). What is left is the
+    // shape to *start* from when the endpoint cannot be probed at all
+    // (`crate::probe` takes over the moment it can be): ask for a schema, send
+    // nothing that might be rejected, demand no key — which is also what a
+    // provider we ship no preset for gets.
+    let endpoint_matched = shipped.filter(|preset| {
+        configured_endpoint.is_none_or(|endpoint| same_service(endpoint, preset.endpoint))
+    });
+
     Ok(Sources {
         profile,
         shipped,
-        configured_endpoint,
         endpoint,
+        endpoint_matched,
     })
+}
+
+/// The key requirement a name would have, without resolving a whole setup.
+///
+/// Readiness asks this when [`ProviderSetup::resolve`] fails — a local preset
+/// whose model is not chosen yet — and it applies the same endpoint filter
+/// `resolve` applies: a preset describes the service it names, so an endpoint
+/// pointed elsewhere never inherits its demand for a key. A name with no preset
+/// demands no key, the same answer `resolve` gives a provider we ship nothing
+/// for.
+pub(crate) fn requirement_of(name: &str, config: &Config) -> KeyRequirement {
+    sources(name, config)
+        .ok()
+        .and_then(|sources| sources.endpoint_matched)
+        .map(|preset| preset.key)
+        .unwrap_or(KeyRequirement::Optional)
 }
 
 /// Whether two endpoints name the same service: same scheme-less authority
@@ -292,4 +306,50 @@ fn authority(endpoint: &str) -> &str {
         .map(|(_, rest)| rest)
         .unwrap_or(endpoint);
     after_scheme.split('/').next().unwrap_or(after_scheme)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The fallback requirement applies the same endpoint filter as `resolve`.
+    ///
+    /// Every fixture whose resolution currently fails answers Optional either
+    /// way, so without this test the filter on the failure path could be dropped
+    /// without any other test noticing.
+    #[test]
+    fn requirement_of_applies_the_endpoint_filter_on_the_failure_path() {
+        let default = Config::default();
+        assert_eq!(
+            requirement_of("deepseek", &default),
+            KeyRequirement::Required,
+            "the preset still names its default endpoint"
+        );
+
+        let elsewhere =
+            Config::parse("[providers.deepseek]\nendpoint = \"https://api.example.invalid/v1\"\n")
+                .expect("the fixture is valid TOML");
+        assert_eq!(
+            requirement_of("deepseek", &elsewhere),
+            KeyRequirement::Optional,
+            "a preset pointed at another host demands no key of that host"
+        );
+
+        assert_eq!(
+            requirement_of("no-such-provider", &default),
+            KeyRequirement::Optional,
+            "a name we ship nothing for demands no key"
+        );
+
+        let no_model = ProviderSetup::resolve("llamacpp", &default);
+        assert!(
+            matches!(&no_model, Err(SetupError::NoModel { .. })),
+            "the fixture exercises the failure path, got {no_model:?}"
+        );
+        assert_eq!(
+            requirement_of("llamacpp", &default),
+            KeyRequirement::Optional,
+            "a local preset whose model is unchosen is optional"
+        );
+    }
 }
