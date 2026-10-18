@@ -8,12 +8,23 @@
 
 **Spec:** [spec.md](../spec.md) §Implementation Decisions §4、§6、§7；三处行为变化见 Further Notes
 
-**Status:** ready-for-agent
+**Status:** done (2026-10-18)
 
-- [ ] CLI explain 不再直接打开配置、store、缓存、secret store，也不再自带本地 `now()`；这些由 `Runner` 承担。
-- [ ] `--regenerate`、`--factory-prompt`、`--format`、文件 / stdin / 剪贴板来源、批次进度、去重提示与 stdout 形状保持不变。
-- [ ] 退出码 0 / 1 / 2 / 3 / 4 的既有含义不变；`RunnerError` 的映射符合 spec §2。
-- [ ] store 写失败：artifact 仍在 stdout、stderr 说明未入库、后续块继续、结尾 exit 1；新增一条真实二进制的测试覆盖它。
-- [ ] 运行级凭据 notice 只在 stderr 出现一次；stdout 仍然只有产物。
-- [ ] `cargo test -p plainly-cli` 全绿；现有断言除新增用例外不改。
-- [ ] `cargo clippy -p plainly-cli --all-targets` 通过；`scripts/check-headless-cli.sh` 仍通过。
+- [x] CLI explain 不再直接打开配置、store、缓存、secret store，也不再自带本地 `now()`；这些由 `Runner` 承担。
+- [x] `--regenerate`、`--factory-prompt`、`--format`、文件 / stdin / 剪贴板来源、批次进度、去重提示与 stdout 形状保持不变。
+- [x] 退出码 0 / 1 / 2 / 3 / 4 的既有含义不变；`RunnerError` 的映射符合 spec §2。
+- [x] store 写失败：artifact 仍在 stdout、stderr 说明未入库、后续块继续、结尾 exit 1；新增一条真实二进制的测试覆盖它。
+- [x] 运行级凭据 notice 只在 stderr 出现一次；stdout 仍然只有产物。
+- [x] `cargo test -p plainly-cli` 全绿；现有断言除新增用例外不改。
+- [x] `cargo clippy -p plainly-cli --all-targets` 通过；`scripts/check-headless-cli.sh` 仍通过。
+
+## Comments
+
+实现：`cb2a955`（runner: expose the lookup key and level）+ `4253a80`（cli: explain through the runner）。
+
+备忘：
+
+- `rusqlite` 只在 CLI 的 dev-dependencies 里，用来在测试里先建 schema、再装拒绝写入的 trigger；二进制与 headless 检查的依赖图不变（`scripts/check-headless-cli.sh` 仍是 `none`）。
+- 新未入库路径的措辞：单块为 `plainly: chunk 1/1 was not stored: <reason>`，批次每块一行，结尾 `N of M chunks were not stored; what was produced is on stdout`，退出码 1。`tests/batch.rs::a_chunk_that_cannot_be_stored_is_printed_and_the_batch_carries_on` 用真实二进制钉住。
+- `with_pause`（`#[doc(hidden)]`）让 CLI 用 `explain::run` 同一个退避 seam 打印「asking again in Ns」，不把措辞塞进 core。
+- 05 删掉了 `commands/mod.rs` 里残留的本地 `now()`，`providers` 的探针路径改走 `Timestamp::now()`（见 05 的 Comments）。

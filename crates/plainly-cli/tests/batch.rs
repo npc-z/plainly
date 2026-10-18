@@ -10,6 +10,8 @@ mod support;
 
 use serde_json::Value;
 
+use std::path::Path;
+
 use support::TempDir;
 use support::provider::{FakeProvider, Reply};
 use support::{code, custom_provider, stderr, stdout};
@@ -46,6 +48,25 @@ fn write(dir: &TempDir, name: &str, body: &str) -> String {
     let file = dir.join(name);
     std::fs::write(&file, body).expect("the fixture file is writable");
     file.to_str().expect("the path is UTF-8").to_string()
+}
+
+/// Make the history refuse every write at the storage layer.
+///
+/// A directory turned read-only after open would not do it: SQLite in WAL mode
+/// writes through the `-wal` file descriptor it already holds. A trigger is the
+/// same failure at the same seam — the store opens, the write reaches SQLite and
+/// is refused — and it needs no test hook in the application.
+fn refuse_writes(history: &Path) {
+    // Create the real schema first; a trigger cannot be installed on a table
+    // that is not there yet.
+    plainly_core::Store::open(history).expect("the history opens");
+
+    let conn = rusqlite::Connection::open(history).expect("the history reopens");
+    conn.execute_batch(
+        "CREATE TRIGGER refuse_write BEFORE INSERT ON records \
+         BEGIN SELECT RAISE(ABORT, 'the history refused the write'); END;",
+    )
+    .expect("the refusing trigger is installable");
 }
 
 /// The chunk the `n`th explaining request carried.
@@ -363,4 +384,63 @@ fn a_repeated_passage_whose_first_try_failed_is_not_asked_twice() {
         "{message}"
     );
     assert!(message.contains("2 of 3 chunks failed"), "{message}");
+}
+
+/// A history that refuses the write is not a failed batch: the answer was paid
+/// for, so it is printed, the next chunk is still asked, and the exit code says
+/// something was not stored (ADR 0003).
+#[test]
+fn a_chunk_that_cannot_be_stored_is_printed_and_the_batch_carries_on() {
+    let dir = TempDir::new("batch-not-stored");
+    let server = FakeProvider::start((0..2).map(|_| Reply::content(ANSWER)));
+    dir.write_config(&custom_provider(&server.base_url()));
+
+    refuse_writes(&dir.join("data/dev.plainly.app/history.db"));
+
+    let paragraphs: Vec<String> = (0..2).map(|n| paragraph(&format!("p{n}w"), 150)).collect();
+    let file = write(&dir, "long.md", &file_body(&paragraphs));
+
+    let output = dir.plainly_with(
+        &["explain", &file, "--format", "json"],
+        "",
+        &[("PLAINLY_STUB_API_KEY", "test-key")],
+    );
+
+    assert_eq!(code(&output), FAILURE, "{}", stderr(&output));
+
+    // The answers are still the product: both of them, in the input's order.
+    let document: Value = serde_json::from_str(&stdout(&output)).expect("stdout is one document");
+    let artifacts = document.as_array().expect("a batch is an array");
+    assert_eq!(
+        artifacts.len(),
+        2,
+        "an answer the history refused is not thrown away"
+    );
+    assert_eq!(artifacts[0]["passage"], paragraphs[0]);
+    assert_eq!(artifacts[1]["passage"], paragraphs[1]);
+
+    let message = stderr(&output);
+    assert!(
+        message.contains("chunk 1/2 was not stored"),
+        "the first chunk says it was not stored: {message}"
+    );
+    assert!(
+        message.contains("chunk 2/2 was not stored"),
+        "the second chunk says it was not stored: {message}"
+    );
+    assert!(
+        message.contains("the history refused the write"),
+        "the store's own reason is kept: {message}"
+    );
+    assert!(
+        message.contains("2 of 2 chunks were not stored"),
+        "the run ends non-zero over what was not stored: {message}"
+    );
+
+    assert_eq!(
+        server.chat_requests().len(),
+        2,
+        "the second chunk was still asked: {:?}",
+        server.requests()
+    );
 }

@@ -1409,6 +1409,7 @@
            "clap",
            "object",
            "plainly-core",
+           "rusqlite",
            "serde_json",
           ]
 
@@ -2512,7 +2513,7 @@
         };
         guiCargoDeps = pkgs.rustPlatform.fetchCargoVendor {
           src = wholeSource;
-          hash = "sha256-t0C7eHS6hC1jOFHbQE0XRl8uWqE+C4medbpDH1Xw854=";
+          hash = "sha256-GVGZzaz68c2U37UMvpiehysU5U9xZYfT0Ms5gy4MJYc=";
         };
 
         # nixpkgs' `fetchCargoVendor` lays the vendored crates out under

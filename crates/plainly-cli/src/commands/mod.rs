@@ -5,12 +5,11 @@ mod explain;
 mod history;
 mod providers;
 
-use std::time::{SystemTime, UNIX_EPOCH};
-
 use clap::Parser;
 
 use plainly_core::{
-    Cache, KeyRequirement, Paths, ProviderSetup, SchemaSupport, Secrets, Store, Timestamp,
+    Cache, CredentialError, CredentialState, Paths, ProviderSetup, SchemaSupport, Secrets,
+    Store, resolve_credential,
 };
 
 use crate::cli::{Cli, Command};
@@ -171,45 +170,42 @@ pub(crate) fn history_store(paths: &Paths) -> Result<Store, CommandError> {
     Ok(Store::open(paths.history_file())?)
 }
 
-/// The current instant, for stamping an Artifact or a probe conclusion.
-pub(crate) fn now() -> Result<Timestamp, CommandError> {
-    let seconds = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|error| CommandError::Failed(format!("the system clock is before 1970: {error}")))?
-        .as_secs();
-
-    i64::try_from(seconds)
-        .ok()
-        .and_then(Timestamp::from_unix_seconds)
-        .ok_or_else(|| {
-            CommandError::Failed(
-                "the system clock is outside the range Plainly can stamp".to_string(),
-            )
-        })
+/// How a credential failure becomes an exit code and a sentence.
+///
+/// One mapping for every CLI caller, so the no-key instruction and the broken
+/// store failure cannot drift between `explain` and `providers`. Core owns the
+/// three states; this owns the wording (ADR 0003).
+pub(crate) fn credential_error(error: CredentialError) -> CommandError {
+    match error {
+        CredentialError::Missing { provider, variable } => CommandError::NotConfigured(format!(
+            "no API key for {provider}: export {variable}, or store one with \
+             `plainly providers key set {provider}`"
+        )),
+        CredentialError::Unreadable { .. } => CommandError::Failed(error.to_string()),
+    }
 }
 
 /// The key to send, if there is one.
 ///
-/// A tier that fails to answer is normally an error rather than a skip, because
-/// quietly using a different credential is worse than saying so ([`Secrets`]).
-/// An endpoint that may authenticate nothing is the exception: a local runtime
-/// is exactly what a headless box points at, there is no key to protect, and the
-/// endpoint still gets to answer 401 if it wanted one. A provider that needs a
-/// key keeps the failure, because there the fix is the keyring.
+/// The policy is core's ([`resolve_credential`]): a provider that may
+/// authenticate nothing continues without a key when the store cannot answer,
+/// and a provider that needs one keeps the failure. This adapts that answer to
+/// the CLI's sentences and exit codes.
 pub(crate) fn resolve_key(
     setup: &ProviderSetup,
     secrets: &Secrets,
 ) -> Result<Option<String>, CommandError> {
-    match secrets.resolve(&setup.name) {
-        Ok(key) => Ok(key.map(|key| key.secret)),
-        Err(error) if setup.key == KeyRequirement::Optional => {
+    match resolve_credential(setup, secrets) {
+        Ok(CredentialState::Key(key)) => Ok(Some(key)),
+        Ok(CredentialState::NoKey) => Ok(None),
+        Ok(CredentialState::Unreadable(source)) => {
             eprintln!(
-                "plainly: {error}; sending no key, since {} may not need one",
+                "plainly: {source}; sending no key, since {} may not need one",
                 setup.label
             );
             Ok(None)
         }
-        Err(error) => Err(CommandError::Failed(error.to_string())),
+        Err(error) => Err(credential_error(error)),
     }
 }
 
@@ -221,5 +217,60 @@ impl std::fmt::Display for CommandError {
             | CommandError::Failed(message)
             | CommandError::Refused(message) => f.write_str(message),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use plainly_core::{Config, EnvSecrets, SecretError, SecretStore};
+
+    /// A keyring that is present but cannot answer: a headless box with a
+    /// session bus and no Secret Service behind it.
+    struct BrokenKeyring;
+
+    impl SecretStore for BrokenKeyring {
+        fn get(&self, _provider: &str) -> Result<Option<String>, SecretError> {
+            Err(SecretError::Backend("no secret service".to_string()))
+        }
+
+        fn set(&self, _provider: &str, _secret: &str) -> Result<(), SecretError> {
+            Err(SecretError::Backend("no secret service".to_string()))
+        }
+
+        fn delete(&self, _provider: &str) -> Result<(), SecretError> {
+            Err(SecretError::Backend("no secret service".to_string()))
+        }
+    }
+
+    fn broken_keyring() -> Secrets {
+        Secrets::with_stores(EnvSecrets::empty(), Some(Box::new(BrokenKeyring)))
+    }
+
+    fn setup(name: &str, config: &str) -> ProviderSetup {
+        let config = Config::parse(config).expect("the fixture is valid TOML");
+        ProviderSetup::resolve(name, &config).expect("the fixture provider resolves")
+    }
+
+    /// The whole point of `KeyRequirement::Optional`: a local runtime is what a
+    /// headless box points at, and a keyring that cannot answer must not be the
+    /// thing that stops it.
+    #[test]
+    fn a_provider_that_may_authenticate_nothing_survives_a_broken_keyring() {
+        let setup = setup("ollama", "[providers.ollama]\nmodel = \"qwen3.5:4b\"\n");
+
+        assert_eq!(resolve_key(&setup, &broken_keyring()).unwrap(), None);
+    }
+
+    /// A provider that needs a key keeps the failure: there the keyring is the
+    /// thing to fix, and sending an unauthenticated request would hide that.
+    #[test]
+    fn a_provider_that_needs_a_key_still_reports_the_keyring() {
+        let setup = setup("deepseek", "");
+
+        let error = resolve_key(&setup, &broken_keyring()).unwrap_err();
+
+        assert!(matches!(error, CommandError::Failed(_)), "got {error:?}");
+        assert!(error.to_string().contains("no secret service"), "{error}");
     }
 }

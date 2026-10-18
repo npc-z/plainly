@@ -7,11 +7,12 @@
 //! it did not, how far through a batch it is) goes to stderr, and the exit code
 //! says which kind of outcome it was.
 //!
-//! The run itself is [`plainly_core::explain::run`]: probing the endpoint's
-//! capability, the retry policy, and the one downgrade-and-ask-again cycle when
-//! the endpoint rejects the shape. What is left here is where the Passage comes
-//! from, how a long input is cut into Passages ([`plainly_core::split`]), what a
-//! person is told, and which exit code that is.
+//! The run itself is [`plainly_core::Runner`]: it opens the configuration, the
+//! provider, the credential, the history store, the capability cache and the
+//! prompt, and decides one Passage's turn (recall, or generate and remember).
+//! What is left here is where the Passage comes from, how a long input is cut
+//! into Passages ([`plainly_core::split`]), which of them repeat, what a person
+//! is told, and which exit code that is.
 
 use std::collections::HashMap;
 use std::io::{IsTerminal, Read};
@@ -19,14 +20,14 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use plainly_core::{
-    Artifact, ChatCompletions, ConfigFile, Downgrade, Endpoint, ExplainRequest, Failure,
-    FailureKind, KeyRequirement, Level, Lookup, LookupKey, PASSWORD_HINT, Paths, Prompt,
-    ProviderSetup, Reading, Record, Resolution, Secrets, Stopped, Thinking, ThinkingSwitch,
-    env_var_name, explain, render, split,
+    Artifact, Downgrade, Failure, FailureKind, Level, LookupKey, PASSWORD_HINT, Prompt,
+    PromptChoice, ProviderSetup, Reading, Recall, Record, Resolution, RunNotice, Runner,
+    RunnerError, Stopped, Thinking, ThinkingSwitch, Timestamp, TurnFailure, TurnNotice, render,
+    split,
 };
 
 use crate::cli::{ExplainArgs, OutputFormat};
-use crate::commands::{CommandError, cache, history_store, now, resolve_key, short_hash, tier};
+use crate::commands::{CommandError, credential_error, short_hash, tier};
 use crate::exit;
 
 /// What to say when there is nothing to explain. One wording, used both when a
@@ -47,55 +48,48 @@ pub fn run(args: ExplainArgs) -> Result<u8, CommandError> {
     // Everything that can be read without a pipe is read now. A named file
     // because a path that is not there is a usage error, and the clipboard
     // because what it holds decides whether this run happens at all: a refusal
-    // has to leave no trace, so it is taken before configuration, the history
-    // store or the network are touched (spec §11). Stdin is deliberately left
-    // for later: a missing key should be reported without draining a pipe that
-    // may be a large file, or one that never ends.
+    // has to leave no trace, so it is taken before the run is opened (spec §11).
+    // Stdin is deliberately left for later: a missing key should be reported
+    // without draining a pipe that may be a large file, or one that never ends.
     let from_source = match &source {
         Source::File(path) => Some(read_file(path)?),
         Source::Clipboard => Some(read_clipboard()?),
         Source::Stdin => None,
     };
 
-    let paths = Paths::discover().map_err(|error| CommandError::Failed(error.to_string()))?;
-    let config = ConfigFile::open(paths.config_file())?.config()?;
+    // The instant is the surface's to produce — core never reads the clock —
+    // and it is produced before the run opens so the store can be stamped with
+    // the moment the person asked, not the moment a pipe ended.
+    let now = Timestamp::now().map_err(|error| CommandError::Failed(error.to_string()))?;
 
-    let setup = ProviderSetup::resolve(&config.app.provider, &config)
-        .map_err(|error| CommandError::NotConfigured(error.to_string()))?;
+    // `--factory-prompt` is a choice about this run only; the configuration is
+    // left alone.
+    let choice = if args.factory_prompt {
+        PromptChoice::Factory
+    } else {
+        PromptChoice::Configured
+    };
 
-    let key = resolve_key(&setup, &Secrets::from_process_env())?;
-    if key.is_none() && setup.key == KeyRequirement::Required {
-        return Err(CommandError::NotConfigured(format!(
-            "no API key for {}: export {}, or store one with \
-             `plainly providers key set {}`",
-            setup.name,
-            env_var_name(&setup.name),
-            setup.name,
-        )));
-    }
+    // Opening is what resolves the configured provider's credential, so a
+    // missing key is still reported without draining stdin. A retry's wait is
+    // reported through the same seam the run uses for its transport: the
+    // policy is core's, the wording is this surface's.
+    let mut runner = Runner::open(choice, now)
+        .map_err(runner_error)?
+        .with_pause(Box::new(pause));
 
-    // The history store is opened before stdin is read for the same reason the
-    // key is checked here: a store that cannot be opened is local state to fix,
-    // and saying so must not need a pipe to end first.
-    let mut store = history_store(&paths)?;
+    // Run-level notices are facts about this machine, not about a chunk: they
+    // are said once, before the batch begins.
+    let mut noticed = 0;
+    report_notices(&runner, &mut noticed);
 
     let passage = match from_source {
         Some(passage) => passage,
         None => read_stdin()?,
     };
 
-    // The effective prompt: the factory text plus the user's appendix and
-    // descriptor overrides (spec §5). `--factory-prompt` leaves those out for
-    // this run only, which is what makes the retry the message below offers a
-    // single step rather than a trip into the configuration file.
-    let prompt = if args.factory_prompt {
-        Prompt::factory()
-    } else {
-        Prompt::from_config(&config.prompts)
-    };
-
     // One Explanation is one Passage (spec §4), so a long input is cut into
-    // Passages here and every chunk below is a whole run of its own: its own
+    // Passages here and every chunk below is a whole turn of its own: its own
     // Lookup Key, its own Record, its own line of progress. The panel's
     // five-chunk limit is deliberately not consulted — the CLI is the long
     // input's proper home (spec §6).
@@ -103,8 +97,6 @@ pub fn run(args: ExplainArgs) -> Result<u8, CommandError> {
     let batch = chunks.len() > 1;
     let total = chunks.len();
     let format = args.format.unwrap_or_default();
-
-    let now = now()?;
 
     // Every distinct question is looked up before anything is sent, which is what
     // makes the request count below honest rather than a count of chunks: a chunk
@@ -118,30 +110,30 @@ pub fn run(args: ExplainArgs) -> Result<u8, CommandError> {
     let mut turns = Vec::with_capacity(total);
     let mut first_seen: HashMap<LookupKey, usize> = HashMap::new();
     for chunk in &chunks {
-        // Core builds the request, so this surface and the panel cannot disagree
-        // about the fields the Lookup Key is made of.
-        let request = explain::request(chunk, &config, &setup, &prompt);
-        let key = Lookup::from(&request).key();
+        // The runner builds the key, so this surface and the panel cannot
+        // disagree about the fields it is made of.
+        let key = runner.lookup(chunk);
 
         if let Some(&earlier) = first_seen.get(&key) {
-            turns.push(Turn {
-                request,
-                key,
+            turns.push(PlannedTurn {
                 stored: None,
                 repeat_of: Some(earlier),
             });
             continue;
         }
 
+        // `cached` is the same recall a `Reuse` turn would take, so the plan
+        // and the turn cannot disagree about whether this chunk is a hit. A
+        // store that cannot be read is not a miss: it aborts the run through the
+        // existing store-error mapping, as it did before the plan existed, and
+        // nothing is sent.
         let stored = if args.regenerate {
             None
         } else {
-            store.recall(&key, now)?
+            runner.cached(chunk)?
         };
-        first_seen.insert(key.clone(), turns.len());
-        turns.push(Turn {
-            request,
-            key,
+        first_seen.insert(key, turns.len());
+        turns.push(PlannedTurn {
             stored,
             repeat_of: None,
         });
@@ -159,6 +151,7 @@ pub fn run(args: ExplainArgs) -> Result<u8, CommandError> {
     }
 
     if to_generate > 0 {
+        let setup = runner.setup();
         eprintln!(
             "plainly: explaining with {} ({}, thinking {}){}",
             setup.label,
@@ -177,23 +170,13 @@ pub fn run(args: ExplainArgs) -> Result<u8, CommandError> {
         );
     }
 
-    // The transport for a capability-resolved setup. The key is the surface's
-    // business and lives here; everything the run decides is the same for the
-    // panel, which is why none of it is in this file.
-    let transport = |setup: &ProviderSetup| -> Box<dyn Endpoint> {
-        Box::new(ChatCompletions::new(
-            setup.clone(),
-            key.clone().unwrap_or_default(),
-        ))
-    };
-    let capabilities = cache(&paths);
-
     // The chunks run serially, in the order they were written, so the products
     // come out in that order too (spec §10). One chunk's failure is recorded and
     // the next one is still asked: a batch is not all-or-nothing. A chunk that
     // produced nothing leaves its slot `None` rather than shifting the rest.
     let mut results: Vec<Option<Artifact>> = vec![None; total];
     let mut failed = 0;
+    let mut not_stored = 0;
     for (index, turn) in turns.iter().enumerate() {
         let position = index + 1;
 
@@ -236,50 +219,69 @@ pub fn run(args: ExplainArgs) -> Result<u8, CommandError> {
             continue;
         }
 
-        match explain::run(
-            &setup,
-            &turn.request,
-            &transport,
-            &capabilities,
-            now,
-            &pause,
-        ) {
-            Ok(run) => {
-                report(&setup, &run.resolution, None, run.downgrade.as_ref());
-                // Stored before it is printed, and the printed Artifact is the
-                // *stored* one: a regeneration keeps the original `created_at`, so
-                // printing the fresh one would contradict what `history show` says
-                // about the same record. Storing first is also what stops a run whose
-                // answer never reached the store from being paid for again.
-                match store.remember(&turn.key, &run.artifact) {
-                    Ok(record) => {
-                        if batch {
-                            eprintln!("plainly: chunk {position}/{total} done");
-                        }
-                        results[index] = Some(record.artifact);
-                    }
-                    Err(error) => {
-                        // The store is the run's own state rather than one chunk's,
-                        // so the batch stops here instead of paying for answers it
-                        // cannot keep. The answers already paid for are shown first
-                        // (spec §10) — this one included, or a lost write would
-                        // throw away everything the run had produced.
-                        eprintln!("plainly: chunk {position}/{total} was not stored: {error}");
-                        results[index] = Some(run.artifact.clone());
-                        print_all(&collected(&results), format, batch)?;
-                        return Err(CommandError::Failed(error.to_string()));
-                    }
+        // `--regenerate` was planned as a miss above, and it is a miss here too:
+        // the same flag has to mean the same thing to the plan and the turn.
+        let recall = if args.regenerate {
+            Recall::Bypass { provider: None }
+        } else {
+            Recall::Reuse
+        };
+        let outcome = runner.explain(&chunks[index], recall);
+        // A turn may add a run-level notice (a `Bypass` provider's credential
+        // store could not answer); say it once, and only if it is new.
+        report_notices(&runner, &mut noticed);
+
+        match outcome {
+            Ok(turn) => {
+                if let Some(resolution) = &turn.resolution {
+                    report(runner.setup(), resolution, None, turn.downgrade.as_ref());
                 }
+
+                // A write the history refused is not a failed turn: the answer
+                // was paid for and is printed, the batch goes on, and the exit
+                // code carries the fact that it was not stored (ADR 0003).
+                let reason = turn.notices.iter().find_map(|notice| match notice {
+                    TurnNotice::NotStored { reason } => Some(reason.clone()),
+                });
+                if let Some(reason) = reason {
+                    eprintln!("plainly: chunk {position}/{total} was not stored: {reason}");
+                    not_stored += 1;
+                } else if batch {
+                    eprintln!("plainly: chunk {position}/{total} done");
+                }
+                results[index] = Some(turn.artifact);
             }
-            Err(failure) => {
+            Err(TurnFailure::Run(failure)) => {
                 report(
-                    &setup,
+                    runner.setup(),
                     &failure.resolution,
                     failure.reprobe.as_ref(),
                     failure.downgrade.as_ref(),
                 );
-                report_contract_failure(&prompt, config.app.level, failure.failure.kind);
+                report_contract_failure(runner.prompt(), runner.level(), failure.failure.kind);
                 let reason = describe(&failure.failure);
+                if !batch {
+                    return Err(CommandError::Failed(reason));
+                }
+                eprintln!("plainly: chunk {position}/{total} failed: {reason}");
+                failed += 1;
+            }
+            // A `Bypass` turn's provider that could not be used. The CLI never
+            // names one today, but a failed chunk is the right mapping: it costs
+            // its own chunk and nothing else.
+            Err(TurnFailure::Unavailable { provider, error }) => {
+                let reason = format!("cannot use {provider}: {error}");
+                if !batch {
+                    return Err(CommandError::Failed(reason));
+                }
+                eprintln!("plainly: chunk {position}/{total} failed: {reason}");
+                failed += 1;
+            }
+            // The history could not answer the recall this turn needed. The
+            // provider was never asked, so nothing was paid for; a failed chunk
+            // is the right mapping, like any other turn failure.
+            Err(TurnFailure::Store(error)) => {
+                let reason = error.to_string();
                 if !batch {
                     return Err(CommandError::Failed(reason));
                 }
@@ -293,13 +295,19 @@ pub fn run(args: ExplainArgs) -> Result<u8, CommandError> {
     // parts already paid for are kept (spec §10).
     print_all(&collected(&results), format, batch)?;
 
-    if failed > 0 {
-        return Err(CommandError::Failed(format!(
+    match (failed, not_stored) {
+        (0, 0) => Ok(exit::SUCCESS),
+        (failed, 0) => Err(CommandError::Failed(format!(
             "{failed} of {total} chunks failed; what succeeded is on stdout"
-        )));
+        ))),
+        (0, not_stored) => Err(CommandError::Failed(format!(
+            "{not_stored} of {total} chunks were not stored; what was produced is on stdout"
+        ))),
+        (failed, not_stored) => Err(CommandError::Failed(format!(
+            "{failed} of {total} chunks failed and {not_stored} were not stored; \
+             what succeeded is on stdout"
+        ))),
     }
-
-    Ok(exit::SUCCESS)
 }
 
 /// The Artifacts a run produced, in input order. A chunk that failed has none,
@@ -327,16 +335,56 @@ fn print_all(
     print(artifact, format)
 }
 
-/// One chunk's turn: the request it would send, the Lookup Key that identifies
-/// the question, the stored answer when there already is one, and — when the
+/// One planned chunk: the stored answer when there already is one, and — when the
 /// batch says the same thing twice — the earlier turn this one repeats.
-struct Turn {
-    request: ExplainRequest,
-    key: LookupKey,
+///
+/// `PlannedTurn` rather than `Turn`: the plan is a surface-side row, and
+/// [`plainly_core::Turn`] is the value the runner returns for a turn that ran.
+struct PlannedTurn {
     stored: Option<Record>,
     /// The index of the earlier turn with the same Lookup Key. `None` for the
     /// first occurrence, and for every chunk of a run that has no repeats.
     repeat_of: Option<usize>,
+}
+
+/// How a run that could not be opened is reported, in the codes scripts branch
+/// on.
+///
+/// The mapping is the one the ticket states: configuration is the existing
+/// mapping (a parse failure is "not configured", a bad value is a usage error),
+/// a store that will not open is local state and a failure, a provider that does
+/// not resolve is "not configured", and the credential's three states keep the
+/// distinction that sends the user to the right place: no key means "set one"
+/// (exit 3), a store that cannot answer means something is broken (exit 1).
+fn runner_error(error: RunnerError) -> CommandError {
+    match error {
+        RunnerError::Config(error) => CommandError::from(error),
+        RunnerError::Store(error) => CommandError::from(error),
+        RunnerError::Setup(error) => CommandError::NotConfigured(error.to_string()),
+        RunnerError::Paths(error) => CommandError::Failed(error.to_string()),
+        // The one sentence the CLI has always printed for a missing key, and
+        // the failure for a store that cannot answer. Core states the fact; the
+        // instruction to set a key is this surface's (ADR 0003).
+        RunnerError::Credential(error) => credential_error(error),
+    }
+}
+
+/// Say the run-level notices this surface has not said yet.
+///
+/// They are facts about the machine (a credential store that could not answer),
+/// not about a chunk, so each is said once — after opening, and again after a
+/// turn only if a `Bypass` provider added one. The count is how "once" is kept
+/// without the runner having to remember what a surface printed.
+fn report_notices(runner: &Runner, printed: &mut usize) {
+    for notice in &runner.notices()[*printed..] {
+        match notice {
+            RunNotice::KeyringUnavailable { provider, reason } => eprintln!(
+                "plainly: cannot read the credential store for {provider}: {reason}; \
+                 continuing without a key, since {provider} may not need one"
+            ),
+        }
+    }
+    *printed = runner.notices().len();
 }
 
 /// `request` or `requests`, so a count of one does not read as a bug.
@@ -648,7 +696,6 @@ fn source(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use plainly_core::{Config, EnvSecrets, SecretError, SecretStore};
 
     /// A bare invocation at a terminal must not wait for input that is not
     /// coming. This is the decision, taken before any read.
@@ -694,54 +741,5 @@ mod tests {
 
         assert!(matches!(error, CommandError::Usage(_)), "got {error:?}");
         assert!(error.to_string().contains("not both"), "{error}");
-    }
-
-    /// A keyring that is present but cannot answer: a headless box with a
-    /// session bus and no Secret Service behind it.
-    struct BrokenKeyring;
-
-    impl SecretStore for BrokenKeyring {
-        fn get(&self, _provider: &str) -> Result<Option<String>, SecretError> {
-            Err(SecretError::Backend("no secret service".to_string()))
-        }
-
-        fn set(&self, _provider: &str, _secret: &str) -> Result<(), SecretError> {
-            Err(SecretError::Backend("no secret service".to_string()))
-        }
-
-        fn delete(&self, _provider: &str) -> Result<(), SecretError> {
-            Err(SecretError::Backend("no secret service".to_string()))
-        }
-    }
-
-    fn broken_keyring() -> Secrets {
-        Secrets::with_stores(EnvSecrets::empty(), Some(Box::new(BrokenKeyring)))
-    }
-
-    fn setup(name: &str, config: &str) -> ProviderSetup {
-        let config = Config::parse(config).expect("the fixture is valid TOML");
-        ProviderSetup::resolve(name, &config).expect("the fixture provider resolves")
-    }
-
-    /// The whole point of `KeyRequirement::Optional`: a local runtime is what a
-    /// headless box points at, and a keyring that cannot answer must not be the
-    /// thing that stops it.
-    #[test]
-    fn a_provider_that_may_authenticate_nothing_survives_a_broken_keyring() {
-        let setup = setup("ollama", "[providers.ollama]\nmodel = \"qwen3.5:4b\"\n");
-
-        assert_eq!(resolve_key(&setup, &broken_keyring()).unwrap(), None);
-    }
-
-    /// A provider that needs a key keeps the failure: there the keyring is the
-    /// thing to fix, and sending an unauthenticated request would hide that.
-    #[test]
-    fn a_provider_that_needs_a_key_still_reports_the_keyring() {
-        let setup = setup("deepseek", "");
-
-        let error = resolve_key(&setup, &broken_keyring()).unwrap_err();
-
-        assert!(matches!(error, CommandError::Failed(_)), "got {error:?}");
-        assert!(error.to_string().contains("no secret service"), "{error}");
     }
 }

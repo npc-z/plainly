@@ -16,14 +16,14 @@ use std::io::Read;
 
 use plainly_core::setup::{is_loopback, same_service};
 use plainly_core::{
-    Capability, ChatCompletions, Cleared, Config, ConfigFile, EndpointModel, KeyRequirement,
-    LocalRuntime, ModelLister, ModelReader, Origin, Paths, ProviderError, ProviderErrorKind,
-    ProviderSetup, Secrets, Stored, Surface, Thinking, ThinkingSwitch, context_fits, discover,
+    Capability, ChatCompletions, Cleared, Config, ConfigFile, EndpointModel, LocalRuntime,
+    ModelLister, ModelReader, Origin, Paths, ProviderError, ProviderErrorKind, ProviderSetup,
+    Secrets, Stored, Surface, Thinking, ThinkingSwitch, Timestamp, context_fits, discover,
     env_var_name, min_context_length, presets, probe,
 };
 
 use crate::cli::{KeyCommand, ProviderCommand};
-use crate::commands::{CommandError, cache, now, resolve_key, tier};
+use crate::commands::{CommandError, cache, resolve_key, tier};
 use crate::exit;
 
 pub fn run(command: Option<ProviderCommand>) -> Result<u8, CommandError> {
@@ -120,20 +120,16 @@ fn probe_one(name: Option<String>) -> Result<u8, CommandError> {
         None => configured(&config)?,
     };
 
+    // `resolve_key` fails for a required provider with no key; the same policy
+    // the explain path uses, with the same sentence (ADR 0003).
     let key = resolve_key(&setup, &Secrets::from_process_env())?;
-    if key.is_none() && setup.key == KeyRequirement::Required {
-        return Err(CommandError::NotConfigured(format!(
-            "no API key for {}: export {}, or store one with \
-             `plainly providers key set {}`",
-            setup.name,
-            env_var_name(&setup.name),
-            setup.name,
-        )));
-    }
 
     eprintln!("plainly: probing {} at {}", setup.label, setup.endpoint);
     let client = ChatCompletions::new(setup.clone(), key.unwrap_or_default());
-    let found = probe::reprobe(&client, &setup, &cache(&paths), now()?);
+    // The clock is a value the surface produces; `Timestamp::now` is the one
+    // conversion core offers for it.
+    let now = Timestamp::now().map_err(|error| CommandError::Failed(error.to_string()))?;
+    let found = probe::reprobe(&client, &setup, &cache(&paths), now);
     let active = setup.with_capability(found.capability.schema, found.capability.thinking);
 
     match found.origin {

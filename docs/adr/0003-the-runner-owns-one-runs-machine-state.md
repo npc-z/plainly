@@ -39,8 +39,13 @@ the panel. The divergence is what makes this a decision rather than a tidy-up.
 - **The clock stays a value.** Surfaces produce the instant with `Timestamp::now()` and pass it to
   `Runner::open`; core never calls the system clock, as everywhere else.
 - **A surface's explain path must not open the configuration, store, cache or secret stores itself.**
-  A review grep for `Paths::discover`, `ConfigFile::open`, `Store::open`, `Cache::new`,
-  `Secrets::from_process_env` or a local `now()` outside `runner.rs` is the maintenance check.
+  The maintenance check is a grep of the explain path — the CLI's
+  `crates/plainly-cli/src/commands/explain.rs` and the panel's
+  `crates/plainly-panel/src/worker.rs` — for `Paths::discover`, `ConfigFile::open`,
+  `Store::open`, `Cache::new`, `Secrets::from_process_env` or a local `now()`.
+  The panel's `prefs.rs` reads the configuration once per trigger for its own
+  settings (corner, timer, switches, provider); that is not an explain path and
+  is deliberately outside this check.
 - **`explain::run` stays public and unchanged beneath the Runner.** Probe → retry → downgrade keeps
   its interface and its 863-line test seam; the new tests sit at the Runner's interface, and the CLI's
   binary stays the end-to-end seam.

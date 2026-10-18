@@ -35,10 +35,10 @@ pub const ARTIFACT_VERSION: u32 = 2;
 /// can always be written down and read back. Every instant a clock could
 /// plausibly read is well inside the range.
 ///
-/// There is no `now()` here: the explain path takes the instant as a value, so
-/// reading the system clock belongs to the caller that can do something about a
-/// clock outside the range (the CLI), rather than being settled by a silent
-/// default in the domain.
+/// The clock is read in exactly one place, [`Timestamp::now`], and still handed
+/// on as a value: the explain path takes the instant as an argument, so a test
+/// can choose it and a surface can report a clock outside the range rather than
+/// the domain settling it with a silent default.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Timestamp(i64);
 
@@ -75,6 +75,25 @@ impl Timestamp {
             second_of_day % 60,
         );
         format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z")
+    }
+
+    /// The current instant, from the system clock.
+    ///
+    /// The crate's single conversion from the system clock to a `Timestamp`:
+    /// every other path takes an instant as a value, and a surface that has to
+    /// say something about a clock it cannot trust calls this one helper. The
+    /// reasons it can fail travel with the error rather than becoming a silent
+    /// default — a clock before 1970, or one outside the range this type can
+    /// store, is something a person can act on and a test should be able to see.
+    pub fn now() -> Result<Self, ClockError> {
+        let seconds = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_secs();
+
+        i64::try_from(seconds)
+            .ok()
+            .and_then(Self::from_unix_seconds)
+            .ok_or(ClockError::OutOfRange)
     }
 
     /// Read the form [`Timestamp::to_rfc3339`] writes: `YYYY-MM-DDTHH:MM:SSZ`,
@@ -122,6 +141,19 @@ impl Timestamp {
         // than as a panic on somebody's history.
         Self::from_unix_seconds(seconds)
     }
+}
+
+/// Why the system clock could not be turned into a [`Timestamp`].
+///
+/// The two reasons are kept apart because they are different facts about the
+/// machine: a clock before the epoch is a wrong clock, while an instant past
+/// `9999-12-31` is a storable range that a clock cannot plausibly have reached.
+#[derive(Debug, thiserror::Error)]
+pub enum ClockError {
+    #[error("the system clock is before 1970: {0}")]
+    BeforeEpoch(#[from] std::time::SystemTimeError),
+    #[error("the system clock is outside the range Plainly can stamp")]
+    OutOfRange,
 }
 
 impl Serialize for Timestamp {

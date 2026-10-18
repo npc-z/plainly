@@ -12,8 +12,10 @@
 //! the facts it needs as arguments, so the module has no other dependency than
 //! core's own names for things.
 
+use plainly_core::{RunNotice, TurnNotice};
 use plainly_core::render::SectionKind;
 use plainly_core::split::TooManyChunks;
+use plainly_core::{CredentialError, RunnerError};
 
 /// What the panel calls itself.
 pub const TITLE: &str = "Plainly";
@@ -140,6 +142,91 @@ pub fn too_long(too_many: &TooManyChunks) -> String {
     )
 }
 
+/// The panel's sentence for a run that could not open at all.
+///
+/// A credential failure is worded here rather than in core (ADR 0003): core
+/// states the fact — which provider, which variable, or the store's reason — and
+/// the panel says it in Chinese. Every other variant keeps the reason core
+/// already words, because that reason names the file or the parse error a person
+/// has to act on.
+/// Only the credential states get interface wording. The other `RunnerError`
+/// variants carry core diagnostics (a path, a SQLite message, a setup problem)
+/// and are shown as-is: they are not sentences a person acts on in Chinese, and
+/// inventing one here would hide the diagnostic that names the fix.
+pub fn runner_error(error: &RunnerError) -> String {
+    match error {
+        RunnerError::Credential(CredentialError::Missing { provider, .. }) => missing_key(provider),
+        RunnerError::Credential(CredentialError::Unreadable { provider, source }) => {
+            credential_unreadable(provider, &source.to_string())
+        }
+        _ => error.to_string(),
+    }
+}
+
+/// A required provider's key is not set anywhere. Said as "set one" rather than
+/// copying a command: the person is looking at the panel, and a CLI invocation
+/// here would be the wrong surface's wording (ADR 0003).
+pub fn missing_key(provider: &str) -> String {
+    format!("{provider} 需要 API key，但还没有设置：先设置一个，再重新触发。")
+}
+
+/// The credential store would not answer for a provider that needs a key. Not
+/// "no key": the person may well have set one, and sending them to set another
+/// is the wrong fix.
+pub fn credential_unreadable(provider: &str, reason: &str) -> String {
+    format!("读不到 {provider} 的凭据存储：{reason}；这次没法运行。")
+}
+
+/// The history could not be read, so no stored answer could be found and the
+/// chunk fails rather than paying for a generation the store could not rule out.
+pub fn history_unreadable(reason: impl std::fmt::Display) -> String {
+    format!("读不到历史记录：{reason}")
+}
+
+/// The panel's sentence for one run-level core notice.
+///
+/// Core hands over the fact, not the wording (ADR 0003). The run-level half is
+/// about the credential store; the turn-level half is [`turn_notice`], a
+/// different fact that sends a person somewhere else.
+pub fn run_notice(notice: &RunNotice) -> String {
+    match notice {
+        RunNotice::KeyringUnavailable { provider, reason } => credential_notice(provider, reason),
+    }
+}
+
+/// The panel's sentence for one turn-level core notice.
+pub fn turn_notice(notice: &TurnNotice) -> String {
+    match notice {
+        TurnNotice::NotStored { reason } => not_stored(reason),
+    }
+}
+
+/// A run-level fact shown once in the status line: a provider's credential store
+/// could not answer, so this run continues without a key.
+///
+/// "读不到" rather than "没有": the person may well have set a key, and telling
+/// them to set one they already set sends them to the wrong place.
+pub fn credential_notice(provider: &str, reason: &str) -> String {
+    format!("读不到 {provider} 的凭据存储：{reason}；这次运行不带 key 继续。")
+}
+
+/// The warning under a Passage whose Explanation was produced but not saved.
+///
+/// The answer stays on screen because it has already been paid for. No claim is
+/// made about the next trigger: a failed fresh turn will ask again, but a failed
+/// regeneration leaves the older Record in place, so the next key press reuses
+/// that old answer instead.
+pub fn not_stored(reason: &str) -> String {
+    format!("这个答案没有存进历史：{reason}。")
+}
+
+/// A `Bypass` turn named a provider that could not be used, and the chunk failed
+/// because of it. The provider is named because it is the one ⟳ moved to, and
+/// the reason says whether its setup or its credential was the problem.
+pub fn provider_unavailable(provider: &str, reason: impl std::fmt::Display) -> String {
+    format!("{provider} 这次用不了：{reason}")
+}
+
 /// Under the content when a model on this machine is answering and there is a
 /// cloud provider ⟳ can move to (spec §12). One fixed line rather than a
 /// per-Passage note: the fact is about the provider, not about the paragraph, and
@@ -222,6 +309,21 @@ mod tests {
             provenance("deepseek", "deepseek-chat", false),
             "deepseek · deepseek-chat · 云端"
         );
+    }
+
+    /// The two notices say different things because they send a person to
+    /// different places: one is "the store cannot answer", the other is "the
+    /// answer is not in the history". Neither may be mistaken for "no key".
+    #[test]
+    fn the_notice_sentences_name_the_store_and_the_unsaved_answer() {
+        let credential = credential_notice("ollama", "the keyring is locked");
+        assert!(credential.contains("ollama"), "{credential}");
+        assert!(credential.contains("凭据"), "{credential}");
+        assert!(credential.contains("读不到"), "{credential}");
+
+        let unsaved = not_stored("disk full");
+        assert!(unsaved.contains("没有存进历史"), "{unsaved}");
+        assert!(unsaved.contains("disk full"), "{unsaved}");
     }
 
     /// The two empty sections are different facts, and a person who sees both in

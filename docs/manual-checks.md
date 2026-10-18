@@ -105,6 +105,31 @@ sqlite3 "$XDG_DATA_HOME/dev.plainly.app/history.db" 'select count(*) from record
 | 1.21 | **高度跟着内容，到上限为止** | 一段短原文：面板正好容下五节加底部那句本地模型说明，最后一行不会被面板边缘切掉；换成很长的一段：正文最多到 `app.panel_height`（含标题栏与底部说明），其余在面板内滚动，标题栏与底部说明始终可见。面板只有一行高就是这条没做到——layer surface 的高度取自窗口的**最小**尺寸（gtk-layer-shell 这么要），所以得由 `Surface::state_body_height` 说出来；没有 XSettings 守护进程的会话还会先丢掉那把尺子（见 `measuring_screen`） |
 | 1.22 | 宽高按配置 | `plainly config set app.panel_width 700` 与 `app.panel_height 300` 之后再触发：面板确实变宽、变矮，长内容在面板内滚动，标题栏与底部说明仍可见；把宽度设成 2000（超出 320..900）面板按 900 收住。设置界面「行为」里的两个数字框写的是同样的两个键 |
 
+### 未入库与重复 Passage（ADR-0003 统一后的两处面板行为）
+
+这两项用 §3 的假 provider：先按 §3 起好 stub、让 provider 指过去，并跑一次 §3.1 让历史库里有记录。
+它们验的是 CLI 与面板现在共用的那一条运行路径——两边都由 `plainly_core::Runner` 决定一个 turn。
+
+| # | 检查 | 期望 |
+| --- | --- | --- |
+| 1.23 | 历史库拒绝写入：答案仍在面板上 | 先按下面的命令装一个拒绝写入的 trigger，再用 `wl-copy` 放一段**历史里没有**的英文并触发面板：正文照常出答案（可复制），正文下方多一条「这个答案没有存进历史：…。」；`select count(*) from records;` **没有增加**；✕ 能关。验完把 trigger 删掉 |
+| 1.24 | 同一次触发里的重复 Passage 只问一次 | 用 `wl-copy` 放**同一段、历史里没有**的英文两遍（空行隔开）再触发：两个位置显示同一份答案，stub 的 `scripts/stub-provider.requests.log` 只长 **1** 行。没有可用云端 provider 时再按 ⟳ 重来一次：日志同样只长 **1** 行（⟳ 只绕过缓存，不会为重复的那段再付一次） |
+
+拒绝写入的 trigger（`sqlite3` 不在默认 shell 里，所以用 `nix shell` 取一份；先跑过 §3.1，库和表才在）：
+
+```sh
+history_db="$XDG_DATA_HOME/dev.plainly.app/history.db"
+nix shell nixpkgs#sqlite -c sqlite3 "$history_db" \
+  "CREATE TRIGGER refuse_write BEFORE INSERT ON records \
+   BEGIN SELECT RAISE(ABORT, 'the history refused the write'); END;"
+# …按 1.23 / 3.10 触发…
+nix shell nixpkgs#sqlite -c sqlite3 "$history_db" 'select count(*) from records;'
+nix shell nixpkgs#sqlite -c sqlite3 "$history_db" 'DROP TRIGGER refuse_write;'
+```
+
+用 trigger 而不是把目录设成只读：SQLite 在 WAL 模式下会沿已经打开的 `-wal` 文件描述符继续写，
+只读目录拦不住它；trigger 让同一次真实写入在 SQLite 层被拒绝，正是测试里用的那个失败（`crates/plainly-cli/tests/batch.rs`、`crates/plainly-core/tests/runner.rs`）。
+
 ## 2. 键绑与常驻
 
 | # | 检查 | 期望 |
@@ -157,6 +182,7 @@ plainly config set providers.llamacpp.model stub-model
 | 3.7 | 主窗口的 ⤢ 交接 | 面板里点 ⤢：只有一个窗口，第二次启动把它带到前面（单实例）；窗口已经开着且停在设置页时它**不会**切回历史——这是已知缺口，见 §5 |
 | 3.8 | 关键帮助是 bullet + 引文块 | 上面那条 stdout 里每条 Gloss 是 `- \`expression\`` + 缩进一行释义 + **空行 + `  > 例句`**；条目之间空行（松列表）。`glow` 那条命令下例句会画成内缩的引用块，**不再**和释义挤成一段。stub 的例句是 `The reporter went to ground until the trial was over.` |
 | 3.9 | raw 导出无 markdown 记号 | `plainly history export raw`：`glosses` 单元格里每条三行——表达 / 缩进释义 / 缩进例句，**没有箭头、没有 `_`、没有 `>`**（电子表格单元格不是文档）；仍是一个单元格、仍按 CSV 规则转义 |
+| 3.10 | 历史库拒绝写入：CLI 仍出答案、exit 1 | 先按 §1 的命令装好 `refuse_write` trigger。`echo "A sentence the history has never seen." \| plainly`：stdout 仍是完整的 markdown 产物；stderr 有 `plainly: chunk 1/1 was not stored: the history refused the write` 和结尾的 `1 of 1 chunks were not stored`；`echo $?` 是 **1**；库里没有这条。验完 `DROP TRIGGER`。这一条与面板的 1.23 是同一条运行路径的两个适配层 |
 
 ## 4. 降级与不支持
 
@@ -223,6 +249,15 @@ DISPLAY=:0 env -u WAYLAND_DISPLAY sh -c 'echo "The manager had already gone to g
 - **看门狗的病态路径没有反向复现**：正常路径「从不触发」是清单 1.10（本机验过）；「渲染真的
   失败时 5 秒自退」是 1.11，本机造不出来（假 `WAYLAND_DISPLAY` 在连接前就退出，走不到绘制阶段），
   判定本身由 `crates/plainly-panel/src/watchdog.rs` 的单元测试覆盖。
+- **面板的运行级凭据 notice 没有手测步骤**（ADR-0003 三处统一的第二处）：它要的是「keyring 在、
+  但读不到」——坏掉或锁住的 session bus / 没有 Secret Service。本清单的准备段用
+  `PLAINLY_DISABLE_KEYRING=1` 恰好是「不去碰 keyring」，造不出这个状态；硬造它只会验到 keyring
+  库自己的行为。这条改由 core 测试钉住：
+  `an_optional_key_that_is_unreadable_opens_with_one_notice_and_explains_without_a_key`（notice
+  恰好一次、turn 不带 key 继续）与 `a_required_key_that_is_unreadable_is_not_a_missing_key`；
+  面板侧只是把 core 的 notice 列表逐条读一遍（`crates/plainly-panel/src/worker.rs` 的
+  `report_new_notices`），文案由 `crates/plainly-panel/src/strings.rs` 的单元测试覆盖。这里不写
+  一条按不出来的手测项。
 - **键绑 spawn 现在有解了**：装出来的面板（`nix build .` → `result/bin`）自带库路径，不再需要
   §0 早期那版说的包装脚本。剩下要人做的是把 `result/bin` 放进 `PATH`，然后按 §2.1 按一次键。
 

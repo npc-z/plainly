@@ -112,7 +112,7 @@ where they are checked — `docs/manual-checks.md` is.
 
 ## What to believe
 
-Two things are structurally true and worth knowing before the prose below:
+Three things are structurally true and worth knowing before the prose below:
 
 - **The history is a cache.** The same Passage with the same Level, source and
   Native Language, prompt version and Provider Profile (provider, model and
@@ -120,13 +120,36 @@ Two things are structurally true and worth knowing before the prose below:
   record. Changing the prompt appendix changes the prompt version —
   deliberately, so a stored Explanation is never silently reattributed to new
   rules. The same Passage can therefore appear twice with different prompt
-  versions, and that is a feature rather than a duplicate.
+  versions, and that is a feature rather than a duplicate. Within one trigger, a
+  Passage that appears twice is one Lookup Key, so the second copy reuses the
+  first turn's answer instead of paying for it again.
 - **An Explanation is the model's response, not a dictionary.** What the app
   guarantees is the *shape* — the sections, the metadata, the Lookup Key — never
   the correctness of the paraphrase or the gloss.
+- **One Passage's run has one owner.** `plainly_core::Runner` opens the
+  configuration, the provider and its credential, the prompt, the history store,
+  the capability cache and the instant, and decides the turn: reuse the stored
+  answer, or generate it and remember it. The CLI and the panel are adapters over
+  that module. The *run policy* — store failure, credential states, the turn
+  itself — lives in core and is covered by the same CI tests as the CLI's. The
+  panel's own adapter decisions (deduplicating a repeat within one trigger,
+  showing a run notice once, placing the not-stored warning) stay under its unit
+  tests and the manual checklist (ADR-0003). Where a Passage comes from, how a
+  long input is split, which copies repeat, and how progress and failures are
+  worded stay with each surface.
 
 Honest limits, from the spec's "必须传达到实现阶段的诚实记录":
 
+- **A history that refuses a write does not cost the answer.** The Explanation
+  already paid for still goes to stdout on the CLI and stays on the panel; both
+  say it was not saved, and the CLI ends with exit code 1 so a script can tell.
+  A failed fresh answer asks again on the next run; a failed regeneration leaves
+  the older Record in place, so the next run reuses that one until it is
+  regenerated again.
+- **A credential store that cannot answer is not "no key".** Both surfaces say
+  so — the CLI on stderr, the panel once in its status line. A provider that may
+  authenticate nothing (a local runtime) continues without a key; one that
+  requires a key fails rather than pretending none was set.
 - **The level is a hint, not a contract.** Measured on 4 Passages × 1 model, B2
   and C1 came out indistinguishable (average word length 4.32 vs 4.29; similarity
   to the original 0.463 vs 0.462). The measurement was taken under the v6 prompt,

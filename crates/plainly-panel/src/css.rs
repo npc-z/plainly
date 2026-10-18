@@ -21,6 +21,13 @@ pub const CSS: &str = "
     opacity: 0.8;
     padding: 6px 10px;
 }
+/* A warning about the answer rather than part of it: the not-stored line under a
+   Passage. Italic and dimmer than the body, so it reads as a note on what is
+   above it instead of more Explanation. */
+.plainly-warning {
+    font-style: italic;
+    opacity: 0.8;
+}
 /* The one-sentence states carry no padding of their own: the body they sit in
    has the panel's margin, and a second inset inside it would put a refusal at a
    different distance from the edge than the Explanation it replaces. */

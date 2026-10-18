@@ -18,8 +18,10 @@
 //! the title bar know whether there is anything to copy, and it is the whole
 //! reason the panel's states are not strings.
 
-use plainly_core::Artifact;
+use std::collections::HashMap;
+
 use plainly_core::split::TooManyChunks;
+use plainly_core::{Artifact, RunNotice};
 
 use crate::document;
 use crate::prefs::Prefs;
@@ -41,6 +43,10 @@ pub enum Outcome {
     Explained {
         artifact: Box<Artifact>,
         provenance: Provenance,
+        /// Warnings about this chunk that are not failures: the Explanation is
+        /// on screen and can be copied, but something about it must be said
+        /// (today: that the history could not keep it, ADR 0003).
+        warnings: Vec<String>,
     },
     Failed(String),
 }
@@ -294,14 +300,21 @@ pub fn apply(trigger: &mut Trigger, event: crate::worker::Event) {
                 Ran::Explained {
                     artifact,
                     provenance,
+                    warnings,
                 } => Outcome::Explained {
                     artifact,
                     provenance,
+                    warnings,
                 },
                 Ran::Failed(reason) => Outcome::Failed(reason),
             };
             trigger.commit(index, outcome);
         }
+        // A run-level notice is shown once in the status line, not accumulated
+        // into the stack: it is a fact about the machine rather than about any
+        // one Passage, and repeating it per chunk is the noise this ticket
+        // removes.
+        Event::Notice(_) => {}
         Event::Failed(reason) => trigger.fail(&reason),
     }
 }
@@ -407,6 +420,7 @@ mod tests {
             Outcome::Explained {
                 artifact: Box::new(artifact),
                 provenance,
+                warnings: Vec::new(),
             },
         );
 
@@ -476,6 +490,7 @@ mod tests {
             Outcome::Explained {
                 artifact: Box::new(artifact),
                 provenance,
+                warnings: Vec::new(),
             },
         );
 
@@ -496,6 +511,7 @@ mod tests {
             Outcome::Explained {
                 artifact: Box::new(artifact),
                 provenance,
+                warnings: Vec::new(),
             },
         );
 
@@ -517,6 +533,7 @@ mod tests {
             Outcome::Explained {
                 artifact: Box::new(artifact),
                 provenance,
+                warnings: Vec::new(),
             },
         );
 
@@ -524,6 +541,45 @@ mod tests {
 
         assert!(!text.contains("boom"), "{text}");
         assert!(text.contains("### 原文\ntwo"), "{text}");
+    }
+
+    /// A chunk can carry a warning without stopping being an answer: the
+    /// Explanation is still shown and still copied, and the warning travels with
+    /// it so the panel can draw it under the body. This is the store-write
+    /// failure case of ADR 0003 — losing the answer would be the one outcome the
+    /// decision refuses.
+    #[test]
+    fn an_explained_passage_carries_its_warning_and_is_still_copied() {
+        let (artifact, provenance) = artifact("one", "deepseek", false);
+        let mut trigger = Trigger::stack(vec!["one".into()], Recall::Reuse, Prefs::default());
+        let warning = strings::not_stored("disk full");
+
+        apply(
+            &mut trigger,
+            crate::worker::Event::Chunk {
+                index: 0,
+                outcome: crate::worker::Outcome::Explained {
+                    artifact: Box::new(artifact),
+                    provenance,
+                    warnings: vec![warning.clone()],
+                },
+            },
+        );
+
+        assert!(trigger.showing.has_explanation());
+        assert!(
+            trigger
+                .copy_text()
+                .expect("the answer is copyable")
+                .contains("### 原文\none")
+        );
+
+        match &trigger.showing.slots().next().expect("one slot").outcome {
+            Some(Outcome::Explained { warnings, .. }) => {
+                assert_eq!(warnings, &[warning]);
+            }
+            other => panic!("expected an answered chunk, got {other:?}"),
+        }
     }
 
     /// The two triggers carry what they mean, and a bypass can name the provider
@@ -595,6 +651,7 @@ mod tests {
             Outcome::Explained {
                 artifact: Box::new(artifact),
                 provenance,
+                warnings: Vec::new(),
             },
         );
 
@@ -626,6 +683,7 @@ mod tests {
             Outcome::Explained {
                 artifact: Box::new(artifact),
                 provenance,
+                warnings: Vec::new(),
             },
         );
 
@@ -659,5 +717,82 @@ mod tests {
         assert!(!kinds.contains(&plainly_core::render::SectionKind::Translation));
         assert!(kinds.contains(&plainly_core::render::SectionKind::Original));
         assert!(kinds.contains(&plainly_core::render::SectionKind::ComprehensibleEnglish));
+    }
+}
+
+/// The earlier turn each Passage repeats, by Lookup Key.
+///
+/// `None` is the first occurrence, which asks; `Some(earlier)` is a later
+/// occurrence that shows that turn's answer without asking again. The whole key
+/// matters and only part of it is the Passage, but the rest — Level, prompt
+/// version, provider, model, thinking — is fixed for one run, so two equal
+/// Passages in one trigger are one question. The panel plans with the configured
+/// key even for a `Bypass` turn whose provider is the cloud alternative: that
+/// override is constant for the trigger, so the equivalence classes are the
+/// same; a per-chunk provider override would need the actual key here.
+pub(crate) fn first_occurrences<K: Clone + Eq + std::hash::Hash>(
+    keys: &[K],
+) -> Vec<Option<usize>> {
+    let mut first: HashMap<K, usize> = HashMap::new();
+    keys.iter()
+        .enumerate()
+        .map(|(index, key)| first.insert(key.clone(), index))
+        .collect()
+}
+
+/// The run-level notices the panel has not reported yet.
+///
+/// A pure slice of the runner's list rather than a copy: the panel's status line
+/// is the run's own words, in the order the run produced them.
+pub(crate) fn unreported(notices: &[RunNotice], shown: usize) -> &[RunNotice] {
+    &notices[shown.min(notices.len())..]
+}
+
+#[cfg(test)]
+mod planning_tests {
+    use super::{first_occurrences, unreported};
+    use plainly_core::RunNotice;
+
+    /// The panel does not pay twice for one question in a trigger: a repeated
+    /// Lookup Key is planned as a repeat of the turn before it, so it shows that
+    /// answer instead of asking again.
+    #[test]
+    fn a_repeated_key_is_planned_after_the_turn_it_repeats() {
+        assert_eq!(
+            first_occurrences(&["a", "b", "a", "c", "b"]),
+            vec![None, None, Some(0), None, Some(1)]
+        );
+    }
+
+    #[test]
+    fn distinct_keys_are_each_asked() {
+        assert_eq!(first_occurrences(&["a", "b", "c"]), vec![None, None, None]);
+    }
+
+    /// A run-level notice is shown once: after the opening reports the credential
+    /// store, a later `Bypass` turn that adds one adds exactly that one.
+    #[test]
+    fn a_run_notice_is_reported_once_and_only_the_new_one_later() {
+        let first = RunNotice::KeyringUnavailable {
+            provider: "ollama".to_string(),
+            reason: "the keyring is locked".to_string(),
+        };
+        let later = RunNotice::KeyringUnavailable {
+            provider: "deepseek".to_string(),
+            reason: "the keyring is locked".to_string(),
+        };
+        let mut shown = 0;
+        let mut notices = vec![first];
+        assert_eq!(unreported(&notices, shown).len(), 1);
+        shown = notices.len();
+        assert!(unreported(&notices, shown).is_empty(), "not said twice");
+
+        notices.push(later);
+        let new = unreported(&notices, shown);
+        assert_eq!(new.len(), 1, "the later provider's notice is new");
+        assert!(matches!(
+            &new[0],
+            RunNotice::KeyringUnavailable { provider, .. } if provider == "deepseek"
+        ));
     }
 }

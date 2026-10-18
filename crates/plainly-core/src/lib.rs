@@ -24,12 +24,13 @@ pub mod prompt;
 pub mod provider;
 pub mod render;
 pub mod retry;
+pub mod runner;
 pub mod secrets;
 pub mod setup;
 pub mod split;
 pub mod store;
 
-pub use artifact::{ARTIFACT_VERSION, Artifact, Timestamp};
+pub use artifact::{ARTIFACT_VERSION, Artifact, ClockError, Timestamp};
 pub use chat::{
     ChatCompletions, MAX_TOKENS, MAX_TOKENS_THINKING, ModelReader, completion_budget, context_fits,
     min_context_length, models_from,
@@ -54,6 +55,10 @@ pub use prompt::{FACTORY_PROMPT, PROMPT_LABEL, Prompt, factory_descriptor};
 pub use provider::{ExplainRequest, Provider, ProviderError, ProviderErrorKind};
 pub use render::{Body, Section, SectionKind};
 pub use retry::{Failure, FailureKind, Stopped};
+pub use runner::{
+    CredentialError, CredentialState, PromptChoice, Recall, RunNotice, Runner, RunnerError,
+    Turn, TurnFailure, TurnNotice, UnavailableError, resolve_credential,
+};
 pub use secrets::{
     Cleared, EnvSecrets, KeySource, KeyringSecrets, MemorySecrets, ResolvedKey, SecretError,
     SecretStore, Secrets, Stored, env_var_name,

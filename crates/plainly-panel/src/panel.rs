@@ -168,8 +168,9 @@ struct Surface {
     wanted: Rc<Cell<Wanted>>,
     provenance: gtk::Label,
     /// The status line: what an action just did — `已复制`, `复制失败`, or the
-    /// sentence `open.rs` gives when ⤢ cannot start the window — because a layer
-    /// surface has nowhere to put a banner.
+    /// sentence `open.rs` gives when ⤢ cannot start the window — and the run's
+    /// own notices, which are shown here once rather than repeated per chunk,
+    /// because a layer surface has nowhere to put a banner.
     ///
     /// Separate from the 复制 button's own label, which is a control rather than a
     /// place to report: a button that renamed itself after a failed ⤢ would be a
@@ -1018,7 +1019,9 @@ impl Surface {
 
         clear(&slot);
         match outcome {
-            Outcome::Explained { artifact, .. } => {
+            Outcome::Explained {
+                artifact, warnings, ..
+            } => {
                 for section in document::sections(artifact, prefs) {
                     let heading = heading(strings::section(section.kind));
                     let expander = gtk::Expander::new(None);
@@ -1029,6 +1032,13 @@ impl Surface {
                     expander.set_expanded(true);
                     expander.add(&body_widget(&section.body));
                     slot.pack_start(&expander, false, false, 0);
+                }
+                // Warnings go under the body, not instead of it: the answer is
+                // still the answer (today the history could not keep it), and a
+                // warning that replaced it would be the lost-answer bug the
+                // runner exists to stop (ADR 0003).
+                for warning in warnings {
+                    slot.pack_start(&warning_label(warning), false, false, 0);
                 }
             }
             Outcome::Failed(reason) => {
@@ -1079,8 +1089,23 @@ impl Surface {
         // which sections exist. A chunk that lands after someone edited the file
         // is drawn the way the trigger that asked for it drew it.
         let prefs = self.trigger.borrow().prefs.clone();
+        // The run-level notices shown so far. Kept together rather than read
+        // back off the label, so a notice cannot pick up whatever an action put
+        // there (`已复制`, a ⤢ failure) and the sentences are always reported in
+        // the order the run produced them.
+        let mut notices: Vec<String> = Vec::new();
         while let Ok(event) = receiver.recv().await {
             if !self.is_current(generation) {
+                continue;
+            }
+
+            // A run-level notice is shown once, in the status line, rather than
+            // repeated under every chunk. Appending to the run's own list is what
+            // lets a notice a later `Bypass` turn adds appear beside the one the
+            // open already reported, with neither said twice.
+            if let Event::Notice(message) = &event {
+                notices.push(message.clone());
+                self.status.set_text(&notices.join("\n"));
                 continue;
             }
 
@@ -1090,6 +1115,8 @@ impl Surface {
             let changed = match &event {
                 Event::Chunk { index, .. } => Some(*index),
                 Event::Failed(_) => None,
+                // Handled above: a notice never repaints a slot.
+                Event::Notice(_) => continue,
             };
             state::apply(&mut self.trigger.borrow_mut(), event);
 
@@ -1343,6 +1370,18 @@ fn provenance_label(text: &str) -> gtk::Label {
 fn note_label(text: &str) -> gtk::Label {
     let label = body_label(text);
     label.style_context().add_class("plainly-note");
+    label
+}
+
+/// The warning line under an answered Passage's body.
+///
+/// The answer itself is untouched above it: a warning that stood in for the
+/// Explanation would be the lost-answer bug of ADR 0003. It is marked as a
+/// warning rather than ordinary body text, and it is not the note under the
+/// content — that one is about the provider, this one is about this answer.
+fn warning_label(text: &str) -> gtk::Label {
+    let label = body_label(text);
+    label.style_context().add_class("plainly-warning");
     label
 }
 
