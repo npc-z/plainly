@@ -50,3 +50,12 @@ Status: resolved
 - **devShell 的包清单不变**——桌面 crate 仍然需要那套 GTK/webkit 依赖，flake 照样要提供。
 - **但 workspace 必须拆到能单独构建 CLI**（`cargo build -p plainly-cli`），否则"CLI 不依赖图形库"只是一句空话。这条约束落在实现阶段的 crate 布局上，flake 只需保证 `-p` 单独构建能跑通（CI 若要跑 CLI 单测，就靠这个）。
 - 因此票据 13 的"是否同时当 CI 环境"那条推迟决定依然成立，但**多了一个前提**：CI 里的 CLI 作业需要用 `-p plainly-cli` 构建，而不是整个 workspace。
+
+## 2026-10-18 修订：Cachix 缓存已建立
+
+创建了公开缓存 `plainly-npc-z`（<https://app.cachix.org/cache/plainly-npc-z>），所以 Answer 第 1 条"不抄 readest 的 `nixConfig`"与第 4 条"暂无 Cachix"的现实前提不再成立：
+
+- `flake.nix` 现在声明 `nixConfig.extra-substituters = [ "https://plainly-npc-z.cachix.org" ]` 与 `extra-trusted-public-keys`（公钥 `plainly-npc-z.cachix.org-1:F7TqG/U7AJfUZ8McMct3VHbxchqKZSF/oSop0pv9/SE=`）。
+- 推送是手动的：`just cache-push`（`nix build --no-link --print-out-paths .#default .#plainly | cachix push plainly-npc-z`），推两个包的运行时闭包；依赖闭包的推送命令在 README "Binary cache"。
+- 缓存只在 flake 被信任时生效，且 flake 作为 input 时 `nixConfig` 不随它进入导入方；`--accept-flake-config` / `accept-flake-config = true` / 导入方自己的 `nix.settings` 三种方式由 README 覆盖。
+- CI 仍然不跑 Nix，本修订没有把推送放进 CI；原答案里 readest 的另一条教训（`checks` 不指向应用构建）仍然保留。

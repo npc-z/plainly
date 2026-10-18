@@ -1,11 +1,22 @@
 {
   description = "Plainly development environment and packages";
 
-  # No `nixConfig` block: that is where readest points at its public Cachix
-  # cache, and we have no equivalent. Declaring a cache that does not exist is
-  # noise; development works off the upstream binary caches already configured
-  # on the machine (`substituters`), because `nix develop` pulls prebuilt
-  # dependencies rather than building the Rust stack from source.
+  # The public binary cache the packages are pushed to (README, "Binary
+  # cache"). `nix build` / `nix profile install` against this flake can
+  # substitute both packages from here instead of compiling the Rust stack;
+  # `just cache-push` is what fills it. Nix only applies a flake's `nixConfig`
+  # when that flake is trusted: pass `--accept-flake-config` (or set
+  # `accept-flake-config = true` in nix.conf), or Nix treats these two settings
+  # as untrusted (it warns; an interactive run may ask first) and the build is
+  # unchanged. A flake *input* does not carry its `nixConfig` into the importing
+  # flake, so someone adding plainly as an input enables the cache in their own
+  # `nix.settings` (README says how).
+  nixConfig = {
+    extra-substituters = [ "https://plainly-npc-z.cachix.org" ];
+    extra-trusted-public-keys = [
+      "plainly-npc-z.cachix.org-1:F7TqG/U7AJfUZ8McMct3VHbxchqKZSF/oSop0pv9/SE="
+    ];
+  };
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
@@ -285,7 +296,7 @@
           env.LIBCLANG_PATH = "${pkgs.llvm.lib}/lib";
           meta = {
             description = "Make difficult English understandable in English";
-            homepage = "https://github.com/npc/plainly";
+            homepage = "https://github.com/npc-z/plainly";
             license = lib.licenses.mit;
             platforms = [ "x86_64-linux" ];
             mainProgram = "plainly";
@@ -416,9 +427,15 @@
       {
         # The shell for working on the code, so the one that asks for the editor
         # tooling. Nothing else does, which is the point.
+        #
+        # `cachix` is the client `just cache-push` drives (README, "Binary
+        # cache"). It is a publishing tool for whoever fills the cache, not
+        # something building or running plainly needs, so it goes to the shell
+        # that pushes rather than into `devTools`; `inspect` below stays lean.
         devShells.default = mkPlainlyShell {
           name = "plainly-dev";
           editors = true;
+          extraTools = [ pkgs.cachix ];
         };
 
         # `sqlite3` is not needed to build or run plainly — `rusqlite`'s

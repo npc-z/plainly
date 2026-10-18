@@ -25,6 +25,11 @@ nix profile install .             # the same three, into a profile
 `nix profile install .#plainly` installs the command line alone, on a machine
 with no graphics stack: that package's closure reaches no GTK, WebKit or Wayland.
 
+Both packages are also pushed to a binary cache, and `just nix-build` passes
+`--accept-flake-config` so a pushed revision substitutes instead of rebuilding.
+A bare `nix build .` does not: Nix applies a flake's cache settings only when it
+trusts the flake, which "Binary cache" below covers.
+
 The development environment is the flake at the repository root, and it is for
 people changing the code rather than for running it:
 
@@ -66,6 +71,165 @@ Those two are what CI runs (`.github/workflows/ci.yml`), and deliberately not th
 workspace: they are the crates that must not grow a graphics dependency. The
 panel and the main window need GTK, WebKit and a compositor, so a runner is not
 where they are checked — `docs/manual-checks.md` is.
+
+## Use it from the flake
+
+The flake is also the install path for someone who does not want to clone this
+repository. With flakes enabled, the apps and packages are reachable through the
+GitHub reference:
+
+```
+nix run github:npc-z/plainly -- --version            # the command line, smoke test
+echo "The manager had already gone to ground." | nix run github:npc-z/plainly
+nix run github:npc-z/plainly#desktop                 # the main window
+nix run github:npc-z/plainly#panel -- --clipboard    # the panel, for the clipboard
+nix profile install github:npc-z/plainly             # all three binaries
+nix profile install github:npc-z/plainly#plainly     # the command line alone
+```
+
+`github:npc-z/plainly` follows the repository's default branch, so these commands
+see whatever was last pushed there. A flake input in someone else's configuration
+is pinned by their `flake.lock`; a bare command can be pinned to a revision:
+
+```
+nix run github:npc-z/plainly/<rev> -- --version
+```
+
+As an input, the packages are ordinary flake outputs. This NixOS fragment puts
+the three binaries on `PATH`:
+
+```nix
+{
+  nixConfig = {
+    extra-substituters = [ "https://plainly-npc-z.cachix.org" ];
+    extra-trusted-public-keys = [
+      "plainly-npc-z.cachix.org-1:F7TqG/U7AJfUZ8McMct3VHbxchqKZSF/oSop0pv9/SE="
+    ];
+  };
+
+  inputs.plainly.url = "github:npc-z/plainly";
+
+  outputs = { self, nixpkgs, plainly, ... }:
+    let
+      system = "x86_64-linux";
+    in
+    {
+      nixosConfigurations.myhost = nixpkgs.lib.nixosSystem {
+        inherit system;
+        modules = [
+          ({ ... }: {
+            environment.systemPackages = [ plainly.packages.${system}.default ];
+          })
+        ];
+      };
+    };
+}
+```
+
+The `nixConfig` block is the consumer-side version of what the flake itself
+declares: Nix applies it to this flake once it is trusted (`--accept-flake-config`
+or the one-time prompt). The system-wide `nix.settings` form under "Binary cache"
+needs no per-flake trust.
+
+A home-manager user who wants only the command line writes
+`home.packages = [ plainly.packages.x86_64-linux.plainly ];` instead, and anyone
+building from another flake can name the same attributes. v0 exposes
+`x86_64-linux` only, so there is no package for any other system.
+
+The cache matters most here: a `nix run` or `nix profile install` against a
+pushed revision substitutes the packages, while a revision that was never pushed
+builds from source. "Binary cache" below is how to make sure the substitute is
+used.
+
+## Binary cache
+
+Builds are pushed to the public Cachix cache
+[`plainly-npc-z`](https://app.cachix.org/cache/plainly-npc-z), and the flake
+declares it in `nixConfig`:
+
+```
+extra-substituters         = https://plainly-npc-z.cachix.org
+extra-trusted-public-keys = plainly-npc-z.cachix.org-1:F7TqG/U7AJfUZ8McMct3VHbxchqKZSF/oSop0pv9/SE=
+```
+
+The cache holds only what was pushed, for the revision and `flake.lock` that
+produced it: a different nixpkgs input changes the derivations, and a miss is an
+ordinary source build.
+
+Nix applies a flake's `nixConfig` only when it trusts the flake. Add
+`--accept-flake-config` to the `nix` command that reads it:
+
+```
+nix build --accept-flake-config github:npc-z/plainly
+nix run --accept-flake-config github:npc-z/plainly
+nix profile install --accept-flake-config github:npc-z/plainly
+```
+
+or accept flake configuration globally — `accept-flake-config = true` in
+`~/.config/nix/nix.conf` or `/etc/nix/nix.conf`, or on NixOS
+`nix.settings.accept-flake-config = true`. Without either, Nix treats the
+settings as untrusted: a non-interactive run prints `warning: ignoring
+untrusted flake configuration setting ...` and builds from source, while an
+interactive run asks first and saves the answer. Either way it is the same
+result, only slower.
+
+A flake's `nixConfig` belongs to the flake that is the top-level reference; it
+does **not** travel with the flake as an input. If plainly is one input of
+someone's NixOS or home-manager flake, they enable the cache in their own
+settings:
+
+```nix
+nix.settings = {
+  extra-substituters = [ "https://plainly-npc-z.cachix.org" ];
+  extra-trusted-public-keys = [
+    "plainly-npc-z.cachix.org-1:F7TqG/U7AJfUZ8McMct3VHbxchqKZSF/oSop0pv9/SE="
+  ];
+};
+```
+
+or run `cachix use plainly-npc-z` once on a machine that has Cachix.
+
+### Filling it
+
+The cache is public to read and token-authenticated to write. Nothing is in it
+until it is pushed, so a revision nobody pushed builds from source for everyone.
+Authenticate once with the token from
+<https://app.cachix.org/personal-auth-tokens> (or a per-cache token from the
+cache's settings):
+
+```
+cachix authtoken <token>          # or: export CACHIX_AUTH_TOKEN=<token>
+```
+
+Then, from a committed tree, after a build that changed anything:
+
+```
+just cache-push
+```
+
+Commit before pushing: a build of a dirty tree produces store paths that no
+other checkout can name, so those entries are dead weight. The useful entry is
+the one built from the commit a consumer's `github:npc-z/plainly/<rev>` points
+at.
+
+That recipe is `nix build --no-link --print-out-paths .#default .#plainly |
+cachix push plainly-npc-z`. It pushes both packages' runtime closures — under a
+gigabyte uncompressed together — which is what an install substitutes. It is
+the whole automation: CI deliberately runs no Nix job (see `AGENTS.md`), so
+pushes are manual and a revision without a push is not cached.
+
+To also save the *dependency* builds — useful to someone rebuilding this flake's
+source, and several gigabytes — push the build-time closure as Cachix documents:
+
+```
+nix-store -qR --include-outputs $(nix-store -qd $(nix build --no-link --print-out-paths .#default .#plainly)) \
+  | grep -v '\.drv$' \
+  | cachix push plainly-npc-z
+```
+
+Cachix's free tier for open-source projects is 5 GB; the packages fit well
+inside it, which is why `just cache-push` starts there rather than pushing the
+toolchain too.
 
 ## First run
 

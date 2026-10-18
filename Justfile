@@ -31,8 +31,13 @@ build-cli:
     {{dev_shell}} cargo build -p plainly-cli
 
 # Build the installed binaries with Nix: result/bin/{plainly,plainly-panel,plainly-desktop}.
+# `--accept-flake-config` trusts this flake's own cache settings (README, "Binary
+# cache"): a clean, pushed revision substitutes instead of rebuilding, while an
+# edit changes the derivation and still builds. This is a convenience recipe, so
+# it opts in; `check-packages` below deliberately does not — that check has to
+# prove the source builds, not that the cache can supply the result.
 nix-build:
-    nix build .
+    nix build --accept-flake-config .
 
 # -- run -- -------------------------------------------------------------------
 #
@@ -148,6 +153,15 @@ check-incremental-self-test:
 # Update flake inputs. Commit the result, then run `just check-incremental`.
 update-flake:
     nix flake update
+
+# -- binary cache -------------------------------------------------------------
+
+# Push both packages' runtime closures to the public Cachix cache (README,
+# "Binary cache"). Needs `cachix authtoken <token>` once, or CACHIX_AUTH_TOKEN.
+# Run after a build that changed anything, or the revision on the cache and the
+# revision in the repository drift apart.
+cache-push:
+    nix build --no-link --print-out-paths .#default .#plainly | {{dev_shell}} cachix push plainly-npc-z
 
 # -- manual checks -- ---------------------------------------------------------
 
