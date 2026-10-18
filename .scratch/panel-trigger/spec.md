@@ -11,10 +11,10 @@ Labels: ready-for-agent
 
 ## Problem Statement
 
-「按一下键 / ⟳ 意味着什么」和「读回来的剪贴板意味着什么」是**纯决策**，今天却都住在 GTK 文件里：
+「按一下键 / ⟳ 意味着什么」和「读回来的剪贴板意味着什么」是**纯决策**，改动前都住在 GTK 文件里（下面是改动前的快照，行号与文件位置都按改动前；`plan.rs` 现已删除）：
 
-- [panel.rs](../../crates/plainly-panel/src/panel.rs) 现在是 1598 行（GTK 实现 1487 行、测试 111 行）。`Press { Refresh, Regenerate }` 在 [94–111](../../crates/plainly-panel/src/panel.rs#L94-L111)；`start` 把 Press 解析成 `Recall` 在 [484–487](../../crates/plainly-panel/src/panel.rs#L484-L487)；读回结果的完整分发（`clipboard::Error` → `Nothing` / `Unreadable`，`Clipboard` → Plan → Showing）是 [633–663](../../crates/plainly-panel/src/panel.rs#L633-L663) 这一段，夹在线程、generation 与 widget 代码之间。要测它们只能构造窗口。
-- [`plan.rs`](../../crates/plainly-panel/src/plan.rs) 的 `Plan` 有 5 个变体，与 `Showing` 的 5 个非运行状态一一对应；[panel.rs:644–662](../../crates/plainly-panel/src/panel.rs#L644-L662) 拿到 Plan 之后立刻一对一重匹配成 Showing。第二套词汇只为跨过模块边界存在。
+- [panel.rs](../../crates/plainly-panel/src/panel.rs) 当时 1598 行（GTK 实现 1487 行、测试 111 行）。`Press { Refresh, Regenerate }` 在 94–111 行；`start` 把 Press 解析成 `Recall` 在 484–487 行；读回结果的完整分发（`clipboard::Error` → `Nothing` / `Unreadable`，`Clipboard` → Plan → Showing）在 633–663 行，夹在线程、generation 与 widget 代码之间。要测它们只能构造窗口。
+- `plan.rs` 的 `Plan` 有 5 个变体，与 `Showing` 的 5 个非运行状态一一对应；panel.rs 的 644–662 行拿到 Plan 之后立刻一对一重匹配成 Showing。第二套词汇只为跨过模块边界存在。
 - [`state.rs`](../../crates/plainly-panel/src/state.rs) 的模块注释（3–8 行）已经写着「panel.rs then owns widgets and nothing else — it draws what this says and asks it what an action means」；今天这句话只对 `Showing` 成立，trigger 的迁移还在 GTK 侧。
 - 后果：改一次触发语义要同时改不可测的一侧；评审点名的三类判断——「本地 ⟳ 换云端」「空剪贴板 vs 读失败」「TooLong」——今天没有任何无显示测试盯着 panel.rs 里的落点。
 
@@ -26,7 +26,7 @@ Labels: ready-for-agent
 - `Trigger::press(press: Press, prefs: Prefs) -> Trigger`：离开时是 `Showing::Loading`，内部按配置解析 `Recall`（`Refresh → Recall::Reuse`；`Regenerate → prefs.regenerate_recall()`），`prefs` 快照随 trigger 走（今天它已经在 `Trigger.prefs` 里）。
 - `Trigger::read(&mut self, result: Result<Clipboard, clipboard::Error>) -> Option<Vec<String>>`：把读取结果落成 `Showing`——`Sensitive` / `Unread` / `Nothing` / `TooLong` / `Stack`，`NoPassage` 落 `Nothing`、其它错误落 `Unreadable`；`Some(passages)` 表示这条触发要为这些 Passage 跑一次，`None` 表示已落成一句状态。`Plan` 与 `plan.rs` 删除，判断与构造合一。
 - `Trigger.showing` 私有，只有迁移能写；`Trigger::stack` 收为私有。
-- `panel.rs` 的 `Surface::show` / `Surface::stack` 改成只读绘制（`draw_message` / `draw_stack`），不再写 state；`pending: RefCell<Option<Recall>>` 删除——`Trigger` 本身就是等待 focus 的那份待读状态。
+- `panel.rs` 的 `Surface::show` / `Surface::stack` 改成只读绘制（`draw_message` / `draw_stack`），不再写 state；`pending: RefCell<Option<Recall>>` 换成 `pending: RefCell<Option<Trigger>>`——等待 focus 的是 `Trigger::press` 在按下时就建好的完整 Trigger（recall 按触发开始时的配置解析），由 `read` 安装；上一条运行在等待期间继续拥有当前 trigger。
 
 ## User Stories
 
@@ -70,21 +70,21 @@ Labels: ready-for-agent
 
 - `pub enum Press { Refresh, Regenerate }` 从 `panel.rs` 搬进 `state.rs`，为什么是 Press 而不是 Recall 的注释一起搬（recall 依赖触发开始时读到的配置，提前解析就是「云端 provider 取自上一次触发」那个 bug）。
 - `pub fn press(press: Press, prefs: Prefs) -> Self`：`Showing::Loading`；`Refresh → Recall::Reuse`；`Regenerate → prefs.regenerate_recall()`；`prefs` 存进 trigger。
-- `Trigger::loading(Recall, Prefs)` 保留 `pub`，只作 `Panel::new` 的初始占位（「任何触发之前」）。
-- `Trigger::read` 返回的 `Option<Vec<String>>` 是交给 I/O 的下一手：`Some` 的列表就是 `Stack` 的 slot 顺序；`read` 在非 `Loading` 状态被调用是编程错误（panel 的 generation 保证不会发生），按覆盖处理，不 panic——与 `commit` / `fail` 的宽松风格一致。
+- `Trigger::loading(Recall, Prefs)` 保留 `pub`：`Panel::new` 的初始占位（「任何触发之前」）、`Trigger::press` 的构造体，以及测试的直接构造。
+- `Trigger::read` 返回的 `Option<Vec<String>>` 是交给 I/O 的下一手：`Some` 的列表就是 `Stack` 的 slot 顺序；`read` 一进来替换的就是 panel 装好的 `Loading` trigger（等待 focus 的那份也由 `read` 安装），即便如此，它在非 `Loading` 状态被调用也按覆盖处理、不 panic——与 `commit` / `fail` 的宽松风格一致，覆盖路径由 `a_read_on_a_failed_trigger_overwrites_it` 钉住。
 
 ### 3. `showing` 私有，绘制只读
 
-- `pub fn showing(&self) -> &Showing`；`showing` 字段私有。`recall` / `prefs` 保持 `pub`（只读事实，panel 要 clone 它们）。
+- `pub fn showing(&self) -> &Showing`；`showing` 字段私有。`recall` / `prefs` 同样私有，配 `pub fn recall()` / `pub fn prefs()`（panel 只读并 clone）；三个字段的写者都只剩迁移。
 - `Trigger::stack` 私有，只有 `Trigger::read` 用。
 - `panel.rs`：`Surface::show` → `draw_message(&self, message: &str)`，`Surface::stack` → `draw_stack(&self, passages: &[String])`；两者只画、不写 state。写 state 只发生在 `Trigger::press` / `Trigger::read` / `state::apply`（`commit` / `fail`）。
 
 ### 4. `panel.rs` 的触发路径
 
-- `Panel::start(press)`：`reread_prefs()` → `reset_dismiss()` → 把 `Trigger::press(press, prefs)` 装进 `surface.trigger` → 按 reader 分支：`DataControl` 直接 `read()`；`Gtk` 先 `present()`，已 active 则 `read()`，否则 `waiting = true`。
-- focus-in 处理器：`if waiting.replace(false) { Panel::read(self) }`。
-- `Panel::read(&self)` 不再带 `Recall` 参数：从 trigger cell 取 recall/prefs；照旧重置 READING 文案、状态行、复制按钮与 chip、推进 generation，然后读剪贴板。结果回来且 generation 仍当前时，`let to_run = trigger.read(result)`；`Some(passages)` → `draw_stack` 并用 trigger 的 recall 起 worker；`None` → `draw_message(showing.message())`。
-- `pending: RefCell<Option<Recall>>` 字段删除；`waiting: Cell<bool>` 保留。
+- `Panel::start(press)`：`reread_prefs()` → `reset_dismiss()` → 建 `Trigger::press(press, prefs)` → 按 reader 分支：`DataControl` 装进 `surface.trigger` 并 `read()`；`Gtk` 先 `present()`，已 active 则同样装并 `read()`，否则把 Trigger 存进 `pending`、`waiting = true`（**不安装**：等待期间当前 trigger 仍属于上一条运行，否则它的流式事件会画进新 `Loading`）。
+- focus-in 处理器：`if waiting.replace(false)` → 取出 `pending` 的 Trigger 装进 `surface.trigger`，再 `Panel::read(self)`。
+- `Panel::read(&self)` 不再带 `Recall` 参数：trigger 已在 cell 里（`start` 建好；立即读的路径由 `start` 装，等待路径由 focus 处理器装），照旧重置 READING 文案、状态行、复制按钮与 chip、推进 generation，然后读剪贴板。结果回来且 generation 仍当前时，`let to_run = trigger.read(result)`；`Some(passages)` → `draw_stack` 并从 trigger 取 recall 起 worker；`None` → `draw_message(showing.message())`。
+- `pending` 从 `Option<Recall>` 换成 `Option<Trigger>`；`waiting: Cell<bool>` 保留。
 - `Press` / `use crate::plan` 从 panel.rs 删除。
 
 ### 5. `plan.rs` 删除
@@ -102,7 +102,7 @@ Labels: ready-for-agent
 - 证明方式：迁移后的纯决策测试（无显示）+ 现有面板测试全绿 + clippy 零新警告 + 两条 grep 验收。
 - 命令：`nix develop -c cargo test -p plainly-panel`；`nix develop -c cargo clippy --workspace --all-targets`。
 - grep 验收（在仓库根执行，输出为空即通过）：
-  - `panel.rs` 里不再出现 `plan::`、`Press::`、`.showing =`、`= Showing::`；
+  - `panel.rs` 里不再出现 `plan::`、`.showing =`、`= Showing::`、`regenerate_recall`，也没有 `match press`；`Press::` 只作为 `Panel::start` 的实参出现在按键 / ⟳ 的接线处，不再定义或匹配；
   - `plan.rs` 文件与 `mod plan` 不再存在。
 - 真机 smoke（显示 Explanation、按 ⟳）**不作为完成条件**：行为必须逐字不变，自动化证明的是决策搬走了、迁移正确。可在 ticket 的 Comments 里留一次人工记录；本机有 `wayland-1` 会话时可做。
 - 面板不在 CI 里；`nix build` 的 checkPhase 用 `PLAINLY_TEST_NO_DISPLAY=1` 跑（GTK 测试被明确跳过）。这条是既有事实，本次既不改变也不假装改变。
@@ -119,10 +119,11 @@ Labels: ready-for-agent
 ## Further Notes
 
 - **触发配置的快照时点**：`start` 现在把 `Trigger::press(press, prefs)` 装好再等 focus，所以 trigger 的 `prefs` 是**触发开始时**那一份；旧的 `read(recall)` 在 focus 到达后才抓 live `prefs`。只有「focus 等待期间显示器插拔（`watch_monitors` 重读 Prefs）」这条路径能看出差别，且新行为才是 spec §12「每次触发开始时重读配置」的字面意思。这是本次唯一的边界收紧，记录在此而不是当行为变化宣传。
+- **等待 focus 的 Trigger**：Q9 的初版把 Trigger 在 `start` 就装进 cell，评审指出这在 GTK 降级路径上有一处真实差异——上一条运行的事件还在用当时仍当前的 generation 往新 `Loading` trigger 上画（chip 重置、复制变灰、`Failed` 落成句子而正文仍是旧 stack）。改成「`pending` 存整个 Trigger、`read` 才安装」后与旧行为一致：等待期间当前 trigger 继续归属上一条运行，它的 chip、复制与失败落点都照旧；`pending` 里也不再是第二份 recall，而是一个由 state 建好的完整 Trigger。
 - **词表**：`GLOSSARY.md` 不变；`Showing` / `Trigger` / `Press` / `Recall` 是代码名；`Plan` 从代码里消失。
 - **被否掉的替代**：保留 `plan.rs` 只删类型（留下从 plan 指向 state 的横向模块）；读取结果用中立类型（翻译层住在不可测侧）；`read` 不回传要跑的 Passage、由 panel match `Showing`（决策回到 GTK 文件）；`Surface::draw(&Showing)` 单入口（要么让「画」返回要跑的东西，要么再加 `to_run()`）；`pending` 继续带 `Recall`（同一判断两处表达）；全部字段继续 `pub`（约定而非编译期事实）；删 `Press` 改两个构造（少一套词汇却没省任何判断）。
 - **接续**：本规格的 tickets 在 `tickets/`：01（读取结果 → Showing）、02（Press → state）、03（验收与记录）；依赖序 01 → 02 → 03，每张都保持 workspace 可测。实现完成后在 03 的 Comments 里记验收输出。
-- **评审行号漂移**：评审 HTML 说 panel.rs 1446 行 / 引用 1447–1544，那一段现在是 Gloss/Example 控件代码；结构判断不受影响，本规格按今天的代码重锚所有行号。评审 HTML 只存在于临时目录，有意不入库。
+- **行号与评审 HTML**：§Problem Statement 是改动前的快照（panel.rs 当时 1598 行、plan.rs 137 行），不随后续改动重锚；评审 HTML 自己的引用（说 panel.rs 1446 行、1447–1544 是触发逻辑）同样漂移过，结构判断不受影响。评审 HTML 在仓库根且未被跟踪，沿用前四个候选的惯例不入库：提交时显式列出路径，不 `git add -A`。
 - **溯源（三轮 13 个决定）**：
 
 | # | 决定 | 落在 |
@@ -135,8 +136,8 @@ Labels: ready-for-agent
 | 6 | 自动化验收；真机 smoke 可选 | Testing Decisions |
 | 7 | 读取结果直接收 `clipboard::Error` | §1 |
 | 8 | `Trigger::press` + `Trigger::read -> Option<Vec<String>>`，保留 `Press` | §2、§4 |
-| 9 | 删 `pending`，只留 `waiting`，trigger cell 即待读状态 | §4 |
-| 10 | `showing` 私有 + getter；`stack` 私有；`loading` 留 pub | §3 |
+| 9 | `pending` 从 recall 改为整个 `Trigger`，由 `read` 安装（评审修正：等待期间当前 trigger 仍属上一条运行） | §4、Further Notes |
+| 10 | `showing` / `recall` / `prefs` 私有 + getter；`stack` 私有；`loading` 留 pub | §3 |
 | 11 | 绘制只读：`draw_message` / `draw_stack`，不新增 `match Showing` | §3、§4 |
 | 12 | 名字用 `press` / `read` | §2 |
 | 13 | 测试放 `mod trigger_tests`，plan 测试按新词汇改名 | §6 |

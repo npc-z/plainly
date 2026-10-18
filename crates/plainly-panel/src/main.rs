@@ -18,7 +18,6 @@ mod css;
 mod document;
 mod open;
 mod panel;
-mod plan;
 mod position;
 mod prefs;
 mod provenance;

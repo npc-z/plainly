@@ -29,11 +29,11 @@ use plainly_core::render::{Body, GlossView, SectionKind};
 
 use crate::position::Anchors;
 use crate::prefs::Prefs;
-use crate::state::{self, Outcome, Showing, Trigger};
+use crate::state::{self, Outcome, Press, Trigger};
 use crate::strings;
 use crate::watchdog::{self, RenderWatchdog};
 use crate::worker::{self, Event, Recall};
-use crate::{clipboard, css, document, open, plan, position};
+use crate::{clipboard, css, document, open, position};
 
 /// The gap between a layer surface and the screen edge.
 const MARGIN: i32 = 12;
@@ -83,31 +83,6 @@ pub enum Reader {
     DataControl,
     /// A focused window: through GTK, which works there.
     Gtk,
-}
-
-/// What set a trigger off.
-///
-/// A value, not the recall it resolves to: the recall for a ⟳ depends on the
-/// configuration read at the **start** of that trigger (a panel is reused, so the
-/// file may have changed since the last press), and resolving it any earlier is
-/// how the cloud move ended up chosen from the previous trigger's provider.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Press {
-    /// A key press: re-read the clipboard, reuse what the store holds.
-    Refresh,
-    /// ⟳: re-read the clipboard and go past the cache (spec §8).
-    ///
-    /// It reads the clipboard again rather than re-running what is on screen:
-    /// "generate this again" means the Passage the person last copied, and
-    /// regenerating the previous run's Passage would answer a question they have
-    /// moved on from.
-    ///
-    /// On a locally hosted model it also changes provider, when there is a cloud
-    /// one it can change to — the note under the content tells the person to press
-    /// this button for exactly that, so a button that re-ran the same local model
-    /// would make the sentence a lie (spec §12). Which provider that is is decided
-    /// from the configuration read at the start of the trigger.
-    Regenerate,
 }
 
 /// What an action button does.
@@ -224,13 +199,14 @@ pub struct Panel {
     prefs: Rc<RefCell<Prefs>>,
     /// Whether a trigger is waiting for the focus the GTK reader needs.
     waiting: Cell<bool>,
-    /// The trigger that is waiting for the focus the GTK reader needs.
+    /// The trigger the focus wait carries, built at the press.
     ///
-    /// The whole [`Recall`], not a flag: ⟳ on a local model is a move to a named
-    /// cloud provider, and a `bool` here would drop the name and quietly re-run
-    /// the local model when the focus finally arrives — the one lie ⟳ exists to
-    /// avoid.
-    pending: RefCell<Option<Recall>>,
+    /// The whole [`Trigger`], not its `Recall`: ⟳ on a local model is a move to a
+    /// named cloud provider, and carrying just the recall would be a second value
+    /// to drift from what the state resolved. It is installed when the focus
+    /// arrives, just before [`Panel::read`], not by `start`: the run already on
+    /// screen keeps painting into the *current* trigger until then.
+    pending: RefCell<Option<Trigger>>,
     /// The pending auto-dismiss, if any.
     dismiss: RefCell<Option<glib::SourceId>>,
 }
@@ -368,14 +344,15 @@ impl Panel {
             let focused = Rc::clone(&panel);
             panel.window.connect_focus_in_event(move |_, _| {
                 if focused.waiting.replace(false) {
-                    let recall = focused.pending.borrow_mut().take().unwrap_or(Recall::Reuse);
-                    Panel::read(&focused, recall);
+                    let trigger = waited_trigger(&focused.pending, &focused.prefs.borrow());
+                    *focused.surface.trigger.borrow_mut() = trigger;
+                    Panel::read(&focused);
                 }
                 glib::Propagation::Proceed
             });
         }
 
-        Surface::message(&panel.surface, strings::READING);
+        Surface::draw_message(&panel.surface, strings::READING);
         panel.window.show_all();
         Panel::refresh(&panel);
         panel
@@ -481,27 +458,30 @@ impl Panel {
         // focus is a panel with only ✕ (spec §12).
         Panel::reset_dismiss(self);
 
-        let recall = match press {
-            Press::Refresh => Recall::Reuse,
-            Press::Regenerate => self.prefs.borrow().regenerate_recall(),
-        };
+        // The state owns what the press means: it resolves the recall against the
+        // configuration just read, and carries the snapshot the body and 复制
+        // render from. On the focus path it is parked rather than installed — the
+        // previous run still owns the current trigger until this read supersedes
+        // it, and installing here would paint that run's events into a Loading
+        // state it no longer belongs to.
+        let trigger = Trigger::press(press, self.prefs.borrow().clone());
 
         match self.reader {
             // A layer surface never has focus, and data-control does not need it:
             // the read can happen straight away.
-            Reader::DataControl => Panel::read(self, recall),
+            Reader::DataControl => {
+                *self.surface.trigger.borrow_mut() = trigger;
+                Panel::read(self);
+            }
             // This path's window is the one that takes focus, and the keybinding
             // press does not give it any: ask for it, and read when it arrives.
             Reader::Gtk => {
                 self.window.present();
                 if self.window.is_active() {
-                    Panel::read(self, recall);
+                    *self.surface.trigger.borrow_mut() = trigger;
+                    Panel::read(self);
                 } else {
-                    // The recall travels with the wait: a ⟳ on a window that has
-                    // not been given focus yet must not become a cache hit when
-                    // the focus arrives, and a cloud move must not lose the name
-                    // of the provider it was going to.
-                    *self.pending.borrow_mut() = Some(recall);
+                    *self.pending.borrow_mut() = Some(trigger);
                     self.waiting.set(true);
                 }
             }
@@ -565,13 +545,14 @@ impl Panel {
 
     /// Read the clipboard and put the outcome on the screen.
     ///
-    /// The data-control read happens on its own thread: the transfer waits for
-    /// the clipboard's owner to write, and an owner that stalls must not take the
-    /// main loop down with it — ✕ and the watchdog both live there.
-    fn read(&self, recall: Recall) {
-        let prefs = self.prefs.borrow().clone();
-        *self.surface.trigger.borrow_mut() = Trigger::loading(recall.clone(), prefs);
-        Surface::message(&self.surface, strings::READING);
+    /// The trigger this starts is already installed — by `start` on the paths that
+    /// read at once, by the focus handler on the one that waits — so this resets
+    /// the screen for it and does the I/O. The data-control read happens on its
+    /// own thread: the transfer waits for the clipboard's owner to write, and an
+    /// owner that stalls must not take the main loop down with it — ✕ and the
+    /// watchdog both live there.
+    fn read(&self) {
+        Surface::draw_message(&self.surface, strings::READING);
         // The status line is where the last trigger's 已复制 / 复制失败 / ⤢ 的报错
         // lived; a new trigger is a new answer, so it starts empty.
         self.surface.status.set_text("");
@@ -585,7 +566,7 @@ impl Panel {
         // or a read error — which never reaches a run — would leave it up for good.
         self.surface
             .provenance
-            .set_text(&self.surface.trigger.borrow().showing.chip());
+            .set_text(&self.surface.trigger.borrow().showing().chip());
 
         let generation = self.surface.generation.get() + 1;
         self.surface.generation.set(generation);
@@ -622,7 +603,7 @@ impl Panel {
 
         let surface = self.surface.clone();
         glib::spawn_future_local(async move {
-            let Ok(clipboard) = receiver.recv().await else {
+            let Ok(result) = receiver.recv().await else {
                 return;
             };
             // A later press owns the panel; an earlier read is stale.
@@ -630,40 +611,26 @@ impl Panel {
                 return;
             }
 
-            let passages = match clipboard {
-                // An empty clipboard is not an error state, and it reads in the
-                // panel's own language; anything else is, and says so in it too.
-                Err(clipboard::Error::NoPassage(_)) => {
-                    Surface::show(&surface, Showing::Nothing);
-                    return;
+            // The outcome is the state's: what the read came back with becomes a
+            // Showing, and the state names the Passages a run must explain. What
+            // is left here is the I/O — draw that, and run what it named.
+            let to_run = surface.trigger.borrow_mut().read(result);
+            match to_run {
+                Some(passages) => {
+                    Surface::draw_stack(&surface, &passages);
+                    let recall = surface.trigger.borrow().recall().clone();
+                    glib::spawn_future_local(Surface::run(surface, passages, recall, generation));
                 }
-                Err(error) => {
-                    Surface::show(&surface, Showing::Unreadable(error.to_string()));
-                    return;
+                None => {
+                    let message = surface
+                        .trigger
+                        .borrow()
+                        .showing()
+                        .message()
+                        .expect("a settled trigger that runs nothing has a sentence");
+                    Surface::draw_message(&surface, &message);
                 }
-                Ok(clipboard) => match plan::plan(clipboard) {
-                    plan::Plan::Sensitive => {
-                        Surface::show(&surface, Showing::Sensitive);
-                        return;
-                    }
-                    plan::Plan::Unread => {
-                        Surface::show(&surface, Showing::Unread);
-                        return;
-                    }
-                    plan::Plan::Nothing => {
-                        Surface::show(&surface, Showing::Nothing);
-                        return;
-                    }
-                    plan::Plan::TooLong(too_many) => {
-                        Surface::show(&surface, Showing::TooLong(too_many));
-                        return;
-                    }
-                    plan::Plan::Passages(passages) => passages,
-                },
-            };
-
-            Surface::stack(&surface, &passages);
-            glib::spawn_future_local(Surface::run(surface, passages, recall, generation));
+            }
         });
     }
 
@@ -950,35 +917,13 @@ impl Surface {
         self.wanted.set(Wanted { width, body });
     }
 
-    /// One sentence in the body: a refusal, a wait, an error.
-    ///
-    /// The note under the content is **not** touched here: it hangs off the
-    /// provider rather than off an Explanation, so it is decided once per trigger
-    /// with the position and the timer, and a failed run keeps the warning that
-    /// applied to it (spec §12).
-    fn message(&self, text: &str) {
-        clear(&self.body);
-
-        let container = gtk::Box::new(gtk::Orientation::Vertical, 6);
-        container.style_context().add_class("plainly-message");
-        container.pack_start(&body_label(text), false, false, 0);
-        self.body.pack_start(&container, false, false, 0);
-        self.body.show_all();
-        self.state_body_height();
-    }
-
     /// The whole stack, with every Passage waiting.
-    fn stack(&self, passages: &[String]) {
+    ///
+    /// Drawing only: the state is already the one [`Trigger::read`] settled on
+    /// (it named these Passages), and a widget routine that rewrote it would be
+    /// the second opinion this ticket removes.
+    fn draw_stack(&self, passages: &[String]) {
         clear(&self.body);
-
-        // The state first, then the widgets: the panel is drawn from one value,
-        // and a body that existed before the state did would be a frame in which
-        // the two disagree.
-        let (recall, prefs) = {
-            let trigger = self.trigger.borrow();
-            (trigger.recall.clone(), trigger.prefs.clone())
-        };
-        *self.trigger.borrow_mut() = Trigger::stack(passages.to_vec(), recall, prefs);
 
         for (index, passage) in passages.iter().enumerate() {
             if index > 0 {
@@ -1063,15 +1008,23 @@ impl Surface {
         self.state_body_height();
     }
 
-    /// Replace the state with one of the sentence states and draw it.
-    fn show(&self, showing: Showing) {
-        let message = {
-            let mut trigger = self.trigger.borrow_mut();
-            trigger.showing = showing;
-            trigger.showing.message().unwrap_or_default()
-        };
+    /// Draw one sentence in the body: a refusal, a wait, an error.
+    ///
+    /// Drawing only, for the same reason as [`Surface::draw_stack`]: the message
+    /// is a fact about the state (`state::Showing::message`), and the widget
+    /// routine must not decide it. The note under the content is **not** touched here: it
+    /// hangs off the provider rather than off an Explanation, so it is decided
+    /// once per trigger with the position and the timer, and a failed run keeps
+    /// the warning that applied to it (spec §12).
+    fn draw_message(&self, message: &str) {
+        clear(&self.body);
 
-        self.message(&message);
+        let container = gtk::Box::new(gtk::Orientation::Vertical, 6);
+        container.style_context().add_class("plainly-message");
+        container.pack_start(&body_label(message), false, false, 0);
+        self.body.pack_start(&container, false, false, 0);
+        self.body.show_all();
+        self.state_body_height();
     }
 
     /// Run the passages, painting each into its slot as it lands.
@@ -1087,7 +1040,7 @@ impl Surface {
         // one value, so the screen and the clipboard cannot be two opinions about
         // which sections exist. A chunk that lands after someone edited the file
         // is drawn the way the trigger that asked for it drew it.
-        let prefs = self.trigger.borrow().prefs.clone();
+        let prefs = self.trigger.borrow().prefs().clone();
         // The run-level notices shown so far. Kept together rather than read
         // back off the label, so a notice cannot pick up whatever an action put
         // there (`已复制`, a ⤢ failure) and the sentences are always reported in
@@ -1127,9 +1080,9 @@ impl Surface {
                 let trigger = self.trigger.borrow();
                 let indexes = match changed {
                     Some(index) => vec![index],
-                    None => (0..trigger.showing.slots().count()).collect(),
+                    None => (0..trigger.showing().slots().count()).collect(),
                 };
-                (indexes, trigger.showing.chip())
+                (indexes, trigger.showing().chip())
             };
             self.provenance.set_text(&chip);
             // Whether there is anything to copy is a question about the state, not
@@ -1137,12 +1090,12 @@ impl Surface {
             // markdown of every answered Passage on every chunk just to test it for
             // emptiness.
             self.copy
-                .set_sensitive(!self.trigger.borrow().showing.explained().is_empty());
+                .set_sensitive(!self.trigger.borrow().showing().explained().is_empty());
 
             for index in indexes {
                 let painted = {
                     let trigger = self.trigger.borrow();
-                    trigger.showing.slots().nth(index).and_then(|slot| {
+                    trigger.showing().slots().nth(index).and_then(|slot| {
                         slot.outcome
                             .as_ref()
                             .map(|outcome| (slot.passage.clone(), outcome.clone()))
@@ -1164,6 +1117,25 @@ impl Surface {
 /// vector of clones can.
 fn slot_name(index: usize) -> String {
     format!("plainly-slot-{index}")
+}
+
+/// The trigger a focus arrival starts.
+///
+/// `start` built it when the key was pressed and parked it instead of installing
+/// it, so the run already on screen kept painting into the current trigger while
+/// the window waited. The fallback is the old `unwrap_or(Recall::Reuse)`: a wait
+/// that somehow carries nothing behaves like a key press that reuses the store,
+/// read against the configuration in hand. The `debug_assert` is what makes that
+/// impossibility loud in tests instead of silently turning into a Refresh.
+fn waited_trigger(pending: &RefCell<Option<Trigger>>, prefs: &Prefs) -> Trigger {
+    debug_assert!(
+        pending.borrow().is_some(),
+        "a focus wait always carries the trigger its press built"
+    );
+    pending
+        .borrow_mut()
+        .take()
+        .unwrap_or_else(|| Trigger::loading(Recall::Reuse, prefs.clone()))
 }
 
 /// How the panel presents itself, and its shape decides how it reads the
@@ -1533,6 +1505,29 @@ mod tests {
             );
             false
         })
+    }
+
+    /// The focus wait starts the trigger the press built, and consumes it: that
+    /// handoff is what lets the previous run keep its events while the window
+    /// waits, so it is worth pinning without a display.
+    #[test]
+    fn a_focus_arrival_starts_the_trigger_the_press_carried() {
+        let pending = RefCell::new(Some(Trigger::loading(
+            Recall::Bypass {
+                provider: Some("deepseek".to_string()),
+            },
+            Prefs::default(),
+        )));
+
+        let started = waited_trigger(&pending, &Prefs::default());
+
+        assert_eq!(
+            started.recall(),
+            &Recall::Bypass {
+                provider: Some("deepseek".to_string())
+            }
+        );
+        assert!(pending.borrow().is_none(), "the wait is consumed");
     }
 
     /// The Key Help reaches the screen as text, never as the document's markup.

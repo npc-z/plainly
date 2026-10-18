@@ -6,16 +6,24 @@
 
 **Spec:** [spec.md](../spec.md) §Implementation Decisions §1、§3（读取侧）、§5、§6
 
-**Status:** ready-for-agent
+**Status:** done (2026-10-18)
 
-- [ ] `Trigger::read` 的签名与返回：`Some(Vec<String>)` 仅当 `Showing::Stack`，列表顺序即剪贴板顺序；`None` 覆盖全部一句状态。
-- [ ] 映射逐条不变：`NoPassage → Nothing`（reason 不显示）、其它错误 → `Unreadable`、Sensitive/Unread、TooLong、空列表 → Nothing。
-- [ ] `plan.rs` 删除，`main.rs` 的 `mod plan;` 删除；`panel.rs` 里没有 `plan::`。
-- [ ] `Trigger.showing` 私有；`pub fn showing(&self) -> &Showing`；`Trigger::stack` 私有；`recall` / `prefs` 仍 `pub`。
-- [ ] `panel.rs` 只剩 `draw_message(&str)` / `draw_stack(&[String])` 两种只读绘制；没有 `.showing =` 或 `= Showing::`。
-- [ ] `mod trigger_tests`：6 条 plan 测试已迁入并改名；新增读取结果的错误落点与 `Some` 顺序测试；现有 `mod tests` 与 `planning_tests` 未改。
-- [ ] `nix develop -c cargo test -p plainly-panel` 全绿；`cargo clippy -p plainly-panel --all-targets` 无新警告。
+- [x] `Trigger::read` 的签名与返回：`Some(Vec<String>)` 仅当 `Showing::Stack`，列表顺序即剪贴板顺序；`None` 覆盖全部一句状态。
+- [x] 映射逐条不变：`NoPassage → Nothing`（reason 不显示）、其它错误 → `Unreadable`、Sensitive/Unread、TooLong、空列表 → Nothing。
+- [x] `plan.rs` 删除，`main.rs` 的 `mod plan;` 删除；`panel.rs` 里没有 `plan::`。
+- [x] `Trigger.showing` 私有；`pub fn showing(&self) -> &Showing`；`Trigger::stack` 私有；`recall` / `prefs` 同样私有，配只读 getter。
+- [x] `panel.rs` 只剩 `draw_message(&str)` / `draw_stack(&[String])` 两种只读绘制；没有 `.showing =` 或 `= Showing::`。
+- [x] `mod trigger_tests`：6 条 plan 测试已迁入并改名；新增读取结果的错误落点与 `Some` 顺序测试；现有 `mod tests` 与 `planning_tests` 未改。
+- [x] `nix develop -c cargo test -p plainly-panel` 全绿；`cargo clippy -p plainly-panel --all-targets` 无新警告。
 
 ## Comments
 
-（实现后填：commit、测试数、偏差。）
+实现：本 commit（`panel: state owns the trigger transitions`）。`Trigger::read` 接手读取结果与 `Plan` 的五个落点（Sensitive / Unread / Nothing / TooLong / Stack，另加 `NoPassage → Nothing`、其它错误 → `Unreadable`）；`plan.rs` 与 `main.rs` 的 `mod plan;` 删除；6 条 plan 测试迁入 `state.rs` 的 `mod trigger_tests` 并按新词汇改名，另加 `NoPassage`、`ReadFailed`、recall/prefs 保真三条；`Trigger.showing` 私有 + `showing()`，`Trigger::stack` 私有；`Surface::show` / `stack` 换成只读的 `draw_message` / `draw_stack`。
+
+验证：`nix develop -c cargo test -p plainly-panel`：81 passed（迁移前 71；plan 的 6 条迁入，trigger_tests 共 16 条，净增 10——评审又补了「在 Failed 上覆盖读」与「press→read 顺序」两条）；`cargo clippy -p plainly-panel --all-targets` 零警告；`grep -nE 'plan::|\.showing =|= Showing::' crates/plainly-panel/src/panel.rs` 无输出。
+
+偏差：无。
+
+评审后收紧（第二轮）：`Trigger::read` 的 Stack 分支改为只替换 `showing`（不再 `*self = Trigger::stack(...)`，以后给 `Trigger` 加字段不会被静默丢掉）；`stack` 变成 test-only 的便利构造；`commit` / `fail` 改私有，`state::apply` 因此是模块外唯一入口；`a_read_keeps_the_triggers_recall_and_prefs` 追加了句子态同样保留 recall/prefs 的断言。
+
+评审后收紧（第三轮）：`recall` / `prefs` 也改成私有 + `recall()` / `prefs()` getter，panel 只读并 clone；三个字段的写者都只剩 state 的迁移。

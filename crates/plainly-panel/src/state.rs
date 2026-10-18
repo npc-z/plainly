@@ -7,6 +7,14 @@
 //! owns widgets and nothing else — it draws what this says and asks it what an
 //! action means.
 //!
+//! It also owns what a trigger *means*: [`Trigger::press`] turns a key press or
+//! ⟳ into the [`Recall`] the run will use, and [`Trigger::read`] turns what the
+//! clipboard read came back with into a [`Showing`]. The press used to be resolved
+//! in `panel.rs`, and the read result used to be judged in two places at once —
+//! `clipboard::Error` to `Showing` in `panel.rs`, and a `Plan` in `plan.rs`
+//! re-matched one-for-one. Both decisions are here now, where they are reachable
+//! without a display.
+//!
 //! The shape of a trigger is **the four states the spec names** (loading, result,
 //! error, refusal), told apart as data rather than as the absence of a widget:
 //!
@@ -20,9 +28,11 @@
 
 use std::collections::HashMap;
 
-use plainly_core::split::TooManyChunks;
+use plainly_core::clipboard::{Clipboard, Reading};
+use plainly_core::split::{self, TooManyChunks};
 use plainly_core::{Artifact, RunNotice};
 
+use crate::clipboard;
 use crate::document;
 use crate::prefs::Prefs;
 use crate::provenance::Provenance;
@@ -184,6 +194,31 @@ pub fn failure_sentence(reason: &str) -> String {
     format!("{reason}\n{}", strings::NOTHING_STORED)
 }
 
+/// What set a trigger off.
+///
+/// A value, not the recall it resolves to: the recall for a ⟳ depends on the
+/// configuration read at the **start** of that trigger (a panel is reused, so the
+/// file may have changed since the last press), and resolving it any earlier is
+/// how the cloud move ended up chosen from the previous trigger's provider.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Press {
+    /// A key press: re-read the clipboard, reuse what the store holds.
+    Refresh,
+    /// ⟳: re-read the clipboard and go past the cache (spec §8).
+    ///
+    /// It reads the clipboard again rather than re-running what is on screen:
+    /// "generate this again" means the Passage the person last copied, and
+    /// regenerating the previous run's Passage would answer a question they have
+    /// moved on from.
+    ///
+    /// On a locally hosted model it also changes provider, when there is a cloud
+    /// one it can change to — the note under the content tells the person to press
+    /// this button for exactly that, so a button that re-ran the same local model
+    /// would make the sentence a lie (spec §12). Which provider that is is decided
+    /// from the configuration read at the start of the trigger.
+    Regenerate,
+}
+
 /// One trigger's run, as the panel accumulates it.
 ///
 /// A value rather than a set of widget handles: the run arrives one Passage at a
@@ -191,9 +226,15 @@ pub fn failure_sentence(reason: &str) -> String {
 /// and the tests of that are the tests of a `Trigger`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Trigger {
-    pub showing: Showing,
+    /// What this trigger is showing.
+    ///
+    /// Private: the transitions ([`Trigger::read`], [`Trigger::commit`],
+    /// [`Trigger::fail`], [`apply`]) are the only writers, so "the state owns the
+    /// trigger" is a fact the compiler keeps rather than a comment. The panel
+    /// reads it through [`Trigger::showing`].
+    showing: Showing,
     /// Whether this run goes past the cache.
-    pub recall: Recall,
+    recall: Recall,
     /// The configuration this trigger was started on.
     ///
     /// Carried here rather than read again when 复制 asks for its text: the body
@@ -201,10 +242,41 @@ pub struct Trigger {
     /// disagree with the screen it is supposed to be a copy of. That is the whole
     /// promise of 复制, and it is why this travels with the state rather than
     /// living beside it.
-    pub prefs: Prefs,
+    prefs: Prefs,
 }
 
 impl Trigger {
+    /// What this trigger is showing, borrowed.
+    pub fn showing(&self) -> &Showing {
+        &self.showing
+    }
+
+    /// The cache/provider instruction this run carries, borrowed.
+    pub fn recall(&self) -> &Recall {
+        &self.recall
+    }
+
+    /// The configuration snapshot the body and 复制 render from, borrowed.
+    pub fn prefs(&self) -> &Prefs {
+        &self.prefs
+    }
+
+    /// The trigger a press starts: Loading, with its recall resolved against the
+    /// configuration read at the start of the trigger.
+    ///
+    /// A key press reuses what the store holds; ⟳ goes past the cache, and on a
+    /// local model it names the cloud provider to move to when one is usable
+    /// ([`Prefs::regenerate_recall`]). Resolving the recall here, rather than in
+    /// the GTK file before the focus wait, is what keeps a second copy of it from
+    /// drifting.
+    pub fn press(press: Press, prefs: Prefs) -> Self {
+        let recall = match press {
+            Press::Refresh => Recall::Reuse,
+            Press::Regenerate => prefs.regenerate_recall(),
+        };
+        Self::loading(recall, prefs)
+    }
+
     /// A run that has not read the clipboard yet.
     pub fn loading(recall: Recall, prefs: Prefs) -> Self {
         Self {
@@ -214,25 +286,89 @@ impl Trigger {
         }
     }
 
+    /// The Stack state for these Passages, none answered yet.
+    fn stacked(passages: &[String]) -> Showing {
+        Showing::Stack(
+            passages
+                .iter()
+                .map(|passage| Slot {
+                    passage: passage.clone(),
+                    outcome: None,
+                })
+                .collect(),
+        )
+    }
+
     /// The Passages are up and no Explanation has arrived.
-    pub fn stack(passages: Vec<String>, recall: Recall, prefs: Prefs) -> Self {
+    ///
+    /// Test-only: the panel's own path reaches the Stack through [`Trigger::read`],
+    /// which replaces only the `Showing` so the run settings it is carrying cannot
+    /// be lost.
+    #[cfg(test)]
+    fn stack(passages: Vec<String>, recall: Recall, prefs: Prefs) -> Self {
         Self {
             recall,
             prefs,
-            showing: Showing::Stack(
-                passages
-                    .into_iter()
-                    .map(|passage| Slot {
-                        passage,
-                        outcome: None,
-                    })
-                    .collect(),
-            ),
+            showing: Self::stacked(&passages),
+        }
+    }
+
+    /// Take what the clipboard read came back with into the trigger.
+    ///
+    /// The judgement is core's ([`Clipboard::reading`], [`split::panel_chunks`]);
+    /// this names the outcome so the surface can word each one differently, and so
+    /// the rule is reachable from a unit test without a display. `Plan` used to
+    /// name the same five outcomes in a parallel vocabulary and the GTK file
+    /// re-matched it one-for-one; this is that judgement folded into the trigger.
+    ///
+    /// Returns the Passages the run must explain, or `None` when the trigger
+    /// settled into one of the sentence states. What is left for the panel is the
+    /// I/O: draw what the state says, and run the Passages it named.
+    pub fn read(&mut self, result: Result<Clipboard, clipboard::Error>) -> Option<Vec<String>> {
+        let read = match result {
+            // An empty clipboard is not an error state, and the sentence it gets
+            // is the panel's own: the read module's reason for finding no text is
+            // not shown (it never has been).
+            Err(clipboard::Error::NoPassage(_)) => {
+                self.showing = Showing::Nothing;
+                return None;
+            }
+            // Anything else is an error, and says so in the panel's own language.
+            Err(error) => {
+                self.showing = Showing::Unreadable(error.to_string());
+                return None;
+            }
+            Ok(read) => read,
+        };
+
+        match read.reading() {
+            Reading::Sensitive => {
+                self.showing = Showing::Sensitive;
+                None
+            }
+            Reading::Unread => {
+                self.showing = Showing::Unread;
+                None
+            }
+            Reading::Passage(passage) => match split::panel_chunks(&passage) {
+                Err(too_many) => {
+                    self.showing = Showing::TooLong(too_many);
+                    None
+                }
+                Ok(chunks) if chunks.is_empty() => {
+                    self.showing = Showing::Nothing;
+                    None
+                }
+                Ok(passages) => {
+                    self.showing = Self::stacked(&passages);
+                    Some(passages)
+                }
+            },
         }
     }
 
     /// One Passage's turn came out.
-    pub fn commit(&mut self, index: usize, outcome: Outcome) {
+    fn commit(&mut self, index: usize, outcome: Outcome) {
         if let Showing::Stack(slots) = &mut self.showing
             && let Some(slot) = slots.get_mut(index)
         {
@@ -246,7 +382,7 @@ impl Trigger {
     /// each keeps its original on screen, and a person looking at the fourth of
     /// five Passages has to be able to see why there is no Explanation for it
     /// (spec §12).
-    pub fn fail(&mut self, reason: &str) {
+    fn fail(&mut self, reason: &str) {
         if let Showing::Stack(slots) = &mut self.showing {
             for slot in slots {
                 slot.outcome = Some(Outcome::Failed(reason.to_string()));
@@ -794,5 +930,326 @@ mod planning_tests {
             &new[0],
             RunNotice::KeyringUnavailable { provider, .. } if provider == "deepseek"
         ));
+    }
+}
+
+#[cfg(test)]
+mod trigger_tests {
+    //! What a trigger's transitions mean, without a display.
+    //!
+    //! These were `plan.rs`'s tests when `Plan` was a second vocabulary; they now
+    //! exercise the constructor the panel actually calls, so the mapping and the
+    //! state it produces cannot drift apart.
+
+    use super::*;
+    use crate::clipboard;
+    use plainly_core::clipboard::{Clipboard, MimeType, PASSWORD_HINT};
+    use plainly_core::split::{CHUNK_WORDS, PANEL_CHUNK_LIMIT};
+
+    const PASSAGE: &str = "The committee had already gone to ground.";
+
+    fn clipboard(types: Vec<MimeType>) -> Clipboard {
+        Clipboard {
+            passage: PASSAGE.to_string(),
+            types,
+        }
+    }
+
+    fn hint(value: Option<&str>) -> MimeType {
+        MimeType {
+            mime: PASSWORD_HINT.to_string(),
+            value: value.map(|value| value.as_bytes().to_vec()),
+        }
+    }
+
+    /// A paragraph of exactly `count` words, so a test can count Passages.
+    fn paragraph(tag: &str, count: usize) -> String {
+        (0..count)
+            .map(|word| format!("{tag}{word}"))
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    /// One read, and the trigger it left behind.
+    fn read(result: Result<Clipboard, clipboard::Error>) -> (Trigger, Option<Vec<String>>) {
+        let mut trigger = Trigger::loading(Recall::Reuse, Prefs::default());
+        let passages = trigger.read(result);
+        (trigger, passages)
+    }
+
+    fn loading_slots(passages: &[String]) -> Showing {
+        Showing::Stack(
+            passages
+                .iter()
+                .map(|passage| Slot {
+                    passage: passage.clone(),
+                    outcome: None,
+                })
+                .collect(),
+        )
+    }
+
+    #[test]
+    fn a_secret_clipboard_settles_as_a_refusal() {
+        let (trigger, passages) = read(Ok(clipboard(vec![hint(Some("secret"))])));
+
+        assert_eq!(trigger.showing(), &Showing::Sensitive);
+        assert_eq!(passages, None, "a refusal runs nothing");
+    }
+
+    #[test]
+    fn a_clipboard_whose_marker_was_not_read_settles_as_unread() {
+        let (trigger, passages) = read(Ok(clipboard(vec![hint(None)])));
+
+        assert_eq!(trigger.showing(), &Showing::Unread);
+        assert_eq!(passages, None);
+    }
+
+    #[test]
+    fn an_unmarked_clipboard_is_one_passage_to_explain() {
+        let (trigger, passages) = read(Ok(clipboard(vec![hint(Some("public"))])));
+
+        assert_eq!(trigger.showing(), &loading_slots(&[PASSAGE.to_string()]));
+        assert_eq!(passages, Some(vec![PASSAGE.to_string()]));
+    }
+
+    #[test]
+    fn an_empty_clipboard_settles_as_nothing() {
+        let (trigger, passages) = read(Ok(Clipboard {
+            passage: "  \n".to_string(),
+            types: vec![],
+        }));
+
+        assert_eq!(trigger.showing(), &Showing::Nothing);
+        assert_eq!(passages, None);
+    }
+
+    /// The panel's hard limit is core's, not a number the surface keeps: over it
+    /// the trigger settles as a refusal that carries how far over.
+    #[test]
+    fn more_than_the_panel_limit_settles_as_too_long() {
+        let passage = (0..PANEL_CHUNK_LIMIT + 1)
+            .map(|_| paragraph("w", CHUNK_WORDS))
+            .collect::<Vec<_>>()
+            .join("\n\n");
+
+        let (trigger, passages) = read(Ok(Clipboard {
+            passage,
+            types: vec![],
+        }));
+
+        assert_eq!(
+            trigger.showing(),
+            &Showing::TooLong(TooManyChunks {
+                chunks: PANEL_CHUNK_LIMIT + 1,
+                limit: PANEL_CHUNK_LIMIT,
+            })
+        );
+        assert_eq!(passages, None);
+    }
+
+    /// Up to the limit the Passages arrive in the clipboard's order, both in the
+    /// state and in the list handed to the run.
+    #[test]
+    fn several_passages_arrive_in_order() {
+        let paragraphs: Vec<String> = (0..3)
+            .map(|n| paragraph(&format!("p{n}w"), CHUNK_WORDS))
+            .collect();
+        let passage = paragraphs.join("\n\n");
+
+        let (trigger, passages) = read(Ok(Clipboard {
+            passage,
+            types: vec![],
+        }));
+
+        assert_eq!(trigger.showing(), &loading_slots(&paragraphs));
+        assert_eq!(passages, Some(paragraphs));
+    }
+
+    /// An empty clipboard and a clipboard whose text cannot be read are told
+    /// apart exactly as they were before the move: no text is `Nothing`, a read
+    /// that failed is an error state with the read module's reason.
+    #[test]
+    fn a_clipboard_that_holds_no_text_is_nothing_to_explain() {
+        let (trigger, passages) = read(Err(clipboard::Error::NoPassage(
+            "the clipboard holds no text".to_string(),
+        )));
+
+        assert_eq!(trigger.showing(), &Showing::Nothing);
+        assert_eq!(passages, None);
+    }
+
+    #[test]
+    fn a_clipboard_that_cannot_be_read_is_an_error_state() {
+        let (trigger, passages) = read(Err(clipboard::Error::Failed(
+            "cannot read the clipboard's type list".to_string(),
+        )));
+
+        assert_eq!(
+            trigger.showing(),
+            &Showing::Unreadable("cannot read the clipboard's type list".to_string())
+        );
+        assert_eq!(passages, None);
+    }
+
+    /// No secrets at all: the provider facts in these tests are about the file.
+    fn no_secrets() -> plainly_core::Secrets {
+        plainly_core::Secrets::with_stores(plainly_core::EnvSecrets::empty(), None)
+    }
+
+    /// A key press reuses what the store holds, and starts Loading.
+    #[test]
+    fn a_key_press_reuses_what_the_store_holds() {
+        let trigger = Trigger::press(Press::Refresh, Prefs::default());
+
+        assert_eq!(trigger.recall, Recall::Reuse);
+        assert_eq!(trigger.showing(), &Showing::Loading);
+        assert_eq!(trigger.prefs, Prefs::default());
+    }
+
+    /// ⟳ on a hosted provider is that provider again, past the cache — even
+    /// though a cloud alternative is in the preferences.
+    #[test]
+    fn regenerate_on_a_hosted_provider_bypasses_the_same_provider() {
+        let prefs = Prefs::of(
+            &plainly_core::Config::default(),
+            &plainly_core::Secrets::with_stores(
+                plainly_core::EnvSecrets::from_pairs([(
+                    plainly_core::env_var_name("deepseek"),
+                    "k",
+                )]),
+                None,
+            ),
+        );
+
+        assert!(!prefs.provider.local);
+        assert!(
+            prefs.cloud.is_some(),
+            "a cloud alternative is in reach, so staying put is a decision"
+        );
+        assert_eq!(
+            Trigger::press(Press::Regenerate, prefs).recall,
+            Recall::Bypass { provider: None }
+        );
+    }
+
+    /// ⟳ on a local model with a usable cloud provider names the cloud move:
+    /// this is the note under the content's promise, decided where it can be
+    /// tested instead of inside the GTK file's focus wait.
+    #[test]
+    fn regenerate_on_a_local_model_moves_to_the_cloud() {
+        let prefs = Prefs::of(
+            &crate::support::local_config(),
+            &plainly_core::Secrets::with_stores(
+                plainly_core::EnvSecrets::from_pairs([(
+                    plainly_core::env_var_name("deepseek"),
+                    "k",
+                )]),
+                None,
+            ),
+        );
+
+        assert_eq!(
+            Trigger::press(Press::Regenerate, prefs).recall,
+            Recall::Bypass {
+                provider: Some("deepseek".to_string())
+            }
+        );
+    }
+
+    /// A local model with nothing to move to re-runs the same one, past the cache.
+    #[test]
+    fn regenerate_without_a_cloud_provider_stays_local() {
+        let prefs = Prefs::of(&crate::support::local_config(), &no_secrets());
+
+        assert_eq!(prefs.cloud, None);
+        assert_eq!(
+            Trigger::press(Press::Regenerate, prefs).recall,
+            Recall::Bypass { provider: None }
+        );
+    }
+
+    /// The prefs snapshot is the one read at the start of the trigger, and it
+    /// travels with the trigger: the body and 复制 render from it, and resolving
+    /// the recall must not drop it.
+    #[test]
+    fn a_press_carries_the_prefs_it_resolved_against() {
+        let prefs = Prefs::of(&crate::support::local_config(), &no_secrets());
+        let trigger = Trigger::press(Press::Regenerate, prefs.clone());
+
+        assert_eq!(trigger.prefs, prefs);
+    }
+
+    /// The focus wait can install a trigger over one whose run has not finished;
+    /// `read` is documented to overwrite whatever state it finds rather than
+    /// panic, and this pins that.
+    #[test]
+    fn a_read_on_a_failed_trigger_overwrites_it() {
+        let mut trigger = Trigger::loading(Recall::Reuse, Prefs::default());
+        trigger.fail("no provider named \"nope\"");
+        assert!(matches!(trigger.showing(), Showing::Failed(_)));
+
+        let passages = trigger.read(Ok(clipboard(vec![hint(Some("secret"))])));
+
+        assert_eq!(trigger.showing(), &Showing::Sensitive);
+        assert_eq!(passages, None);
+    }
+
+    /// The sequence the panel actually runs: a press builds the Loading trigger,
+    /// then the read settles it. The migrated tests start from `Trigger::loading`,
+    /// which after this change is only the pre-trigger placeholder.
+    #[test]
+    fn a_press_then_a_read_is_one_trigger() {
+        let prefs = Prefs::of(
+            &crate::support::local_config(),
+            &plainly_core::Secrets::with_stores(
+                plainly_core::EnvSecrets::from_pairs([(
+                    plainly_core::env_var_name("deepseek"),
+                    "k",
+                )]),
+                None,
+            ),
+        );
+        let mut trigger = Trigger::press(Press::Regenerate, prefs);
+
+        assert_eq!(trigger.showing(), &Showing::Loading);
+        let passages = trigger.read(Ok(clipboard(vec![hint(Some("public"))])));
+
+        assert_eq!(passages, Some(vec![PASSAGE.to_string()]));
+        assert_eq!(trigger.showing(), &loading_slots(&[PASSAGE.to_string()]));
+        assert_eq!(
+            trigger.recall,
+            Recall::Bypass {
+                provider: Some("deepseek".to_string())
+            },
+            "the press's recall survives the read"
+        );
+    }
+
+    /// A read must not lose the trigger's own run settings: the recall the run
+    /// will use and the switches the body and 复制 render from travel with it.
+    #[test]
+    fn a_read_keeps_the_triggers_recall_and_prefs() {
+        let prefs = Prefs::default();
+        let recall = Recall::Bypass {
+            provider: Some("deepseek".to_string()),
+        };
+        let mut trigger = Trigger::loading(recall.clone(), prefs.clone());
+
+        assert_eq!(
+            trigger.read(Ok(clipboard(vec![hint(Some("public"))]))),
+            Some(vec![PASSAGE.to_string()])
+        );
+
+        assert_eq!(trigger.recall, recall);
+        assert_eq!(trigger.prefs, prefs);
+
+        // A sentence state replaces the Showing, not the run settings: an error
+        // or a refusal read keeps the recall and the switches it was started on.
+        let mut refused = Trigger::loading(recall.clone(), prefs.clone());
+        assert_eq!(refused.read(Ok(clipboard(vec![hint(Some("secret"))]))), None);
+        assert_eq!(refused.showing(), &Showing::Sensitive);
+        assert_eq!(refused.recall, recall);
+        assert_eq!(refused.prefs, prefs);
     }
 }
